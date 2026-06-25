@@ -1,102 +1,83 @@
-# Features
+# Product Features Matrix
 
-This document provides a comprehensive list of all functional features currently implemented in the Beverage POS System. Features are organized by module for easy reference.
-
-## Table of Contents
-
-- [Authentication & Access Control](#authentication--access-control)
-- [Worker Module (Sales & Billing)](#worker-module-sales--billing)
-- [Admin Dashboard](#admin-dashboard)
-- [Inventory Management](#inventory-management)
-- [Retailer Management (CRM)](#retailer-management-crm)
-- [Reporting & Analytics](#reporting--analytics)
+This document provides a comprehensive list of all functional features implemented in the Beverage POS System. Features are organized by module for easy reference.
 
 ---
 
 ## Authentication & Access Control
 
-### Role-Based Access
-- **Admin Access:** Full system access including dashboards, inventory management, retailer CRM, and all reports.
-- **Worker Access:** Restricted access strictly to the Sales Billing interface. Workers cannot view reports, alter global inventory outside of sales, or manage retailer profiles.
-- **Protected Routes:** Unauthorized users are automatically redirected to the login screen. Attempting to access admin-only routes as a worker redirects to the appropriate worker interface.
+### 🔐 JWT-Based Authentication
+- **Secure Token Lifecycle:** Implements dual-token JWT login.
+  - **Access Token:** Short-lived (15 minutes) token returned in JSON response payload.
+  - **Refresh Token:** Long-lived (7 days) token stored in a secure, `httpOnly`, same-site cookie.
+- **Silent Re-Authentication:** The frontend interceptor automatically catches 401 errors, calls the refresh endpoint (`/api/auth/refresh`) using the HTTP cookie, updates the access token, and retries the original request without user interruption.
+- **Safe Session Revocation:** Standard logout endpoint clears the refresh token cookie on the backend.
 
-*Limitations:* Currently uses local session management without a connected backend for token validation.
+### 🛡️ Role-Based Access Control (RBAC)
+- **Role Privileges:** User sessions carry one of two roles, validated server-side for every API action:
+  - **Admin Access:** Full permission across inventory adjustments, reports, catalogs, CRM, and void operations.
+  - **Worker Access:** Restricted exclusively to the Sales page. Unauthorized route queries yield 403 Forbidden responses.
+- **UI Route Protection:** Client-side routing automatically redirects workers and admins to their respective views (e.g., workers are blocked from accessing `/admin/*`).
 
 ---
 
 ## Worker Module (Sales & Billing)
 
-### Dynamic Product Selection
-- **Brand-First Navigation:** Products are organized primarily by brand using a visual, image-centric card interface.
-- **Variant Drill-Down:** Clicking a brand reveals all available size variants and packaging types (e.g., RGB vs. Trays) for that specific brand.
+### 🖱️ Brand-First Selection
+- **Brand Cards:** Interactive visual grid displaying parent brands (`Pepsi`, `Dew`, `Fanta`, etc.) using high-contrast logos in `public/images/`.
+- **Variant Drill-Down:** Selecting a brand filters and displays its variants (e.g., `1.5L`, `Can`, `Glass Bottle (RGB)`) in a nested grid for rapid selection.
 
-### Shopping Cart Management
-- **Quantity Input:** Workers can input specific quantities for each product variant to be added to the cart.
-- **Real-Time Calculation:** The cart automatically calculates the subtotal, applies any manual discounts, and computes the final total.
-- **Price Override:** Workers have the ability to manually override the selling price of an item during checkout. *(Note: This triggers a price variance audit rule for Admins).*
-
-### Bill Finalization
-- **Payment Handling:** Supports multiple payment modes, allowing workers to record the amount paid upfront versus the amount left pending (Udhari).
-- **Print Preview:** Generates a summary view of the final bill suitable for printing before finalizing the transaction.
+### 🛒 Cart & Pricing Engine
+- **Calculations:** Real-time calculation of subtotal, applied item/cart discounts, and total values.
+- **Price Overrides:** Workers can manually overwrite unit pricing during checkout. This triggers price variance tracking rules.
+- **Print Preview Invoice:** Displays formatted invoices ready for print margins, appending carryover balances from the retailer's ledger.
 
 ---
 
 ## Admin Dashboard
 
-### Real-Time Metrics
-- **KPI Cards:** Displays high-level statistics including Today's Sales, Total Retailers, Active Products, and Total Stock measured in PET units.
+### 📈 Real-Time KPIs
+- **Metrics Grid:** Instantly updates metrics from the PostgreSQL database:
+  - **Today's Revenue** (Calculated from completed invoices)
+  - **Active Retailers** (CRM registry count)
+  - **Product Variants** (Catalog list)
+  - **Total Stock in PET Units** (Aggregated inventory)
 
-### Alert System
-- **Low Stock Warnings:** Automatically flags products that have fallen below their minimum stock thresholds.
-- **Expiry Risk Alerts:** Highlights stock batches that are approaching their expiration dates using color-coded urgency indicators.
-- **Credit Limit Alerts:** Warns when specific retailers are approaching or have exceeded their predefined credit limits.
-
-### Activity Feed
-- **Recent Bills Log:** A real-time scrolling table showing the most recent transactions processed by workers.
+### 🚨 Live Alerts Engine
+- **Low Stock Thresholds:** Flags products whose remaining batch quantities drop below standard thresholds.
+- **Expiry Risk Indicators:** Warns when batches expire within 30 days, using color-coded urgency styles (Yellow / Red).
+- **Credit Limit Monitor:** Flags retailers whose outstanding debt exceeds credit limits.
 
 ---
 
 ## Inventory Management
 
-### Stock Tracking
-- **Batch Management:** Inventory is tracked by distinct batches, ensuring accurate tracking of purchase dates and expiry dates.
-- **FIFO Readiness:** Stock batches are organized to support First-In-First-Out sales processing.
-- **PET Unit Standardization:** All liquid stock is standardized and displayed in "Bottle Equivalent" (PET) units for consistent volume tracking regardless of packaging size.
-
-### Stock Adjustments
-- **Add Stock:** Interface for receiving new shipments, recording supplier details, purchase price, selling price, and batch expiry.
-- **Manual Adjustments:** Ability to manually deduct stock, requiring a specified reason (e.g., Damage, Theft, Manual Correction) to maintain accurate audit logs.
+### 📦 Batch-Level Inventory
+- **FIFO Batch Depletion:** System deducts inventory starting from the oldest active stock batch, reducing expiry shrinkage.
+- **Manual Adjustments:** Interface for receiving new batches and recording supplier info, buy/sale prices, and expiry dates.
+- **Deduction Auditing:** Admin-only adjustments require selection of a standardized code (`damage`, `theft`, `manual_correction`) and a mandatory text log.
 
 ---
 
-## Retailer Management (CRM)
+## Retailer CRM
 
-### Retailer Profiles
-- **Basic Details:** Stores shop name, owner name, mobile number, and delivery address.
-- **Pricing Tiers:** Retailers can be assigned to different pricing tiers (Standard, Premium, Discount) which can influence default billing rates.
+### 👥 Profiles & pricing
+- **Retailer Profile:** Shop name, owner name, contact number, address, and special delivery directions.
+- **Pricing Tiers:** Supports distinct price lists (`standard`, `premium`, `discount`) linked to profiles, serving as default rates during billing.
 
-### Credit & Ledger Tracking
-- **Credit Limits:** Each retailer has a defined maximum credit limit. Visual progress bars indicate their current credit utilization.
-- **Outstanding Balances:** Automatically tracks how much money the retailer owes based on unpaid or partially paid bills.
-- **Ledger Integration:** A historical record of all transactions (sales, payments, returns) affecting the retailer's balance.
-
-### Crate (RGB) Management
-- **Empty Crate Tracking:** Dedicated tracking for Returnable Glass Bottles (RGB) and crates, recording how many crates have been issued to a retailer versus how many have been returned.
+### 💰 Ledger & Credit Checks
+- **Credit Limits:** Outstanding balances are capped. Attempts to check out invoices that raise total debt past a retailer's credit limit are blocked.
+- **Automatic Double-Entry Ledger:** Bill creations and payment logs automatically write matching debits and credits to the retailer ledger table, ensuring balances balance.
+- **RGB Crate Tracker:** Independently tracks returnable glass crates (`issuedQuantity`, `returnedQuantity`, `balance`) to balance container assets separately from cash transactions.
 
 ---
 
 ## Reporting & Analytics
 
-### Sales Analytics
-- **Trend Reports:** View sales performance aggregated by daily, weekly, monthly, or yearly periods.
-
-### Performance Tracking
-- **Product Performance:** Identifies fast-moving versus slow-moving products to inform purchasing decisions.
-- **Worker Accountability:** Tracks the volume of sales processed by individual workers, including any discounts applied.
-
-### Audit & Compliance
-- **Price Variance Detection:** Automatically generates a report flagging any instances where a worker sold a product below its designated default price.
-- **Voided Bills Log:** Maintains a secure audit trail of any bills that have been cancelled or voided by an Admin.
-- **Credit Report:** Comprehensive view of all outstanding debts across the entire retailer network.
-
-*Limitations:* Export to CSV functionality is structurally prepared but currently serves as a framework pending backend integration.
+### 📊 Audit Reports
+- **Sales Trends:** Renders sales performance aggregated by daily, weekly, monthly, or yearly scales.
+- **Worker Performance:** Tracks bill totals, average order value, and worker accountability metrics.
+- **Price Variance Report:** Lists invoices featuring manually overridden item prices that fall below default catalog list rates, showing worker name, variance amount, and date.
+- **Voided Bills Log:** Displays soft-deleted invoices, preserving the original worker, value, date, and admin void reasoning.
+- **Credit Outstanding Report:** Tabulates all outstanding balances across the retailer network.
+- **CSV Data Exporter:** Integrated endpoints ready to compile query responses for download.

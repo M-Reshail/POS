@@ -4,12 +4,13 @@
 
 1. [System Overview](#system-overview)
 2. [Tech Stack](#tech-stack)
-3. [Database Schema (Proposed)](#database-schema-proposed)
-4. [API Endpoints (For Backend Integration)](#api-endpoints)
+3. [Database Schema (Implemented via Prisma)](#database-schema-implemented-via-prisma)
+4. [API Endpoints](#api-endpoints)
 5. [Component Architecture](#component-architecture)
 6. [State Management](#state-management)
 7. [Authentication Flow](#authentication-flow)
-8. [Business Logic](#business-logic)
+8. [Business Logic Enforced Server-side](#business-logic-enforced-server-side)
+9. [Security Measures](#security-measures)
 
 ---
 
@@ -17,11 +18,13 @@
 
 ### High-Level Architecture
 
+The system follows a full-stack client-server architecture with state management on the client and database persistence on the backend.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Beverage POS System                       │
 ├─────────────────────────────────────────────────────────────┤
-│                                                               │
+│                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │        React Frontend (Vite + TypeScript)             │   │
 │  ├───────────────────┬────────────────────────────────┤   │
@@ -31,16 +34,23 @@
 │  │  - Retailers      │  - Price Override              │   │
 │  │  - Reports        │  - Print Preview               │   │
 │  └───────────────────┴────────────────────────────────┘   │
-│                         │                                    │
-│                    Zustand Store                             │
-│       (Current global state with mock data)                  │
-│                         │                                    │
-├─────────────────────────────────────────────────────────────┤
-│               [To Be Connected] Backend API                 │
-│  - Node.js/Express or Python/Django or ASP.NET             │
-│  - Authentication & JWT                                     │
-│  - Database Operations                                      │
-│  - Business Logic Validation                                │
+│                         │                                   │
+│                    Zustand Store                            │
+│           (API Client Services integration)                 │
+│                         │                                   │
+│                         │ HTTP REST APIs                    │
+├─────────────────────────┼───────────────────────────────────┤
+│                         ▼                                   │
+│         TypeScript Node.js / Express Backend                │
+│  - JWT Auth (Access/Refresh Tokens via httpOnly Cookie)     │
+│  - Business Logic Verification (FIFO, Credit, Price Variance) │
+│  - Controllers, Services, & Routes structure                │
+│                         │                                   │
+│                    Prisma ORM                               │
+├─────────────────────────┼───────────────────────────────────┤
+│                         ▼                                   │
+│                 PostgreSQL Database                         │
+│  - Relational Schema mapping 13 models                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -56,291 +66,226 @@
 | Language   | TypeScript   | 5.3.2   | Type Safety            |
 | Build Tool | Vite         | 5.0.7   | Fast Development/Build |
 | Styling    | Tailwind CSS | 3.3.6   | Utility-First CSS      |
-| State Mgmt | Zustand      | 4.4.2   | Global State           |
+| State Mgmt | Zustand      | 4.4.2   | Global State Store     |
 | Routing    | React Router | 6.20.0  | Client-Side Navigation |
 | Icons      | Lucide React | 0.344.0 | SVG Icons              |
 | Date Utils | date-fns     | 2.30.0  | Date Manipulation      |
 
-### Backend (To Be Implemented)
+### Backend
 
-- Node.js/Express or Python/Django or ASP.NET
-- PostgreSQL or MongoDB
-- JWT Authentication
-- RESTful or GraphQL API
+| Layer       | Technology   | Version | Purpose                      |
+| ----------- | ------------ | ------- | ---------------------------- |
+| Runtime     | Node.js      | 18+     | JavaScript Execution Runtime |
+| Framework   | Express      | 4.18.2  | REST API Router & Handlers   |
+| Language    | TypeScript   | 5.3.2   | Type Safety                  |
+| Database    | PostgreSQL   | 15+     | Relational Database          |
+| ORM         | Prisma       | 5.7.0   | Database client & migrations |
+| Validation  | Zod          | 3.22.4  | Schema & Env validation      |
+| Cryptography| bcrypt       | 5.1.1   | Password hashing             |
+| Tokens      | JSONWebToken | 9.0.2   | Stateless authentication     |
 
 ---
 
-## Database Schema (Proposed)
+## Database Schema (Implemented via Prisma)
 
-_Note: The frontend currently uses TypeScript interfaces mapped closely to this relational schema._
+The database schema is defined in `backend/prisma/schema.prisma` and uses PostgreSQL. The model names and field mappings are defined below:
 
-### Users Table
+### Enums
+- **`UserRole`**: `admin`, `worker`
+- **`ProductCategory`**: `soft_drink`, `juice`, `water`, `energy_drink`
+- **`AdjustmentReason`**: `damage`, `theft`, `manual_correction`
+- **`PriceTier`**: `standard`, `premium`, `discount`
+- **`LedgerEntryType`**: `sale`, `payment`, `return`, `adjustment`
+- **`LedgerPaymentMode`**: `cash`, `bank_transfer`, `check`
+- **`BillPaymentMode`**: `cash`, `credit`, `udhar`, `generate_only`
+- **`BillStatus`**: `pending`, `paid`, `partial`
 
-```sql
-CREATE TABLE users (
-  id UUID PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  role ENUM('admin', 'worker') NOT NULL,
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+### Users (`users`)
+Represents an individual with access to the system.
+- `id` (String/UUID, PK)
+- `name` (String)
+- `email` (String, Unique)
+- `passwordHash` (String)
+- `role` (UserRole)
+- `isActive` (Boolean, default `true`)
+- `createdAt` (DateTime, default `now()`)
 
-### Products Table
+### Products (`products`)
+Represents a sellable beverage brand/variant catalog.
+- `id` (String/UUID, PK)
+- `brand` (String) - e.g., 'Pepsi', 'Sprite'
+- `category` (ProductCategory)
+- `variant` (String) - e.g., '1.5L', 'Can'
+- `petConversionFactor` (Int) - Multiplier to convert Variant to Bottle Equivalents (PET)
+- `description` (String, Nullable)
 
-```sql
-CREATE TABLE products (
-  id UUID PRIMARY KEY,
-  brand VARCHAR(100) NOT NULL,
-  category ENUM('soft-drink', 'juice', 'water', 'energy-drink') NOT NULL,
-  variant VARCHAR(100) NOT NULL,
-  pet_conversion_factor INT NOT NULL,
-  description TEXT
-);
-```
+### Stock Batches (`stock_batches`)
+Represents a specific shipment of a Product received into inventory. FIFO queue is resolved across these batches.
+- `id` (String/UUID, PK)
+- `productId` (String/UUID, FK -> `Product.id`)
+- `quantity` (Int) - Remaining inventory count in PET units
+- `buyPrice` (Decimal, 10,2) - Wholesale purchase cost per PET unit
+- `salePrice` (Decimal, 10,2) - Retail price per PET unit
+- `batchNumber` (String, Unique) - Identifier from manufacturer
+- `expiryDate` (DateTime) - Expiry date
+- `purchaseDate` (DateTime) - Purchase date
+- `supplierId` (String, Nullable)
+- `supplier` (String, Nullable)
+- `createdAt` (DateTime, default `now()`)
 
-### Stock Batches Table
+### Stock Adjustments (`stock_adjustments`)
+Logs manual adjustments made to a specific StockBatch (shrinkage audit trail).
+- `id` (String/UUID, PK)
+- `batchId` (String/UUID, FK -> `StockBatch.id`)
+- `quantity` (Int) - Positive for additions, negative for deductions
+- `reason` (AdjustmentReason)
+- `notes` (String)
+- `adminId` (String/UUID, FK -> `User.id` - Admin responsible)
+- `createdAt` (DateTime, default `now()`)
 
-```sql
-CREATE TABLE stock_batches (
-  id UUID PRIMARY KEY,
-  product_id UUID NOT NULL REFERENCES products(id),
-  quantity INT NOT NULL,
-  buy_price DECIMAL(10,2) NOT NULL,
-  sale_price DECIMAL(10,2) NOT NULL,
-  batch_number VARCHAR(50) UNIQUE NOT NULL,
-  expiry_date DATE NOT NULL,
-  purchase_date DATE NOT NULL,
-  supplier_id UUID,
-  supplier VARCHAR(255),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  INDEX (product_id),
-  INDEX (expiry_date)
-);
-```
+### Retailers (`retailers`)
+Represents a customer/shop interacting with the wholesale business.
+- `id` (String/UUID, PK)
+- `shopName` (String)
+- `ownerName` (String)
+- `mobileNumber` (String)
+- `address` (String)
+- `deliveryLocation` (String, Nullable)
+- `creditLimit` (Decimal, 12,2) - Ceiling for pending debts
+- `priceTier` (PriceTier, default `standard`)
+- `createdAt` (DateTime, default `now()`)
 
-### Stock Adjustments Table
+### Ledger Entries (`ledger_entries`)
+Records transactions affecting a Retailer's credit balance.
+- `id` (String/UUID, PK)
+- `retailerId` (String/UUID, FK -> `Retailer.id`)
+- `billId` (String/UUID, FK -> `Bill.id`, Nullable)
+- `entryType` (LedgerEntryType)
+- `amount` (Decimal, 12,2) - Amount added/subtracted
+- `balance` (Decimal, 12,2) - Retailer's running outstanding balance *after* transaction
+- `paymentMode` (LedgerPaymentMode, Nullable)
+- `notes` (String, Nullable)
+- `createdAt` (DateTime, default `now()`)
 
-```sql
-CREATE TABLE stock_adjustments (
-  id UUID PRIMARY KEY,
-  batch_id UUID NOT NULL REFERENCES stock_batches(id),
-  quantity INT NOT NULL,
-  reason ENUM('damage', 'theft', 'manual-correction') NOT NULL,
-  notes TEXT,
-  admin_id UUID NOT NULL REFERENCES users(id),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+### RGB Tracking (`rgb_tracking`)
+Tracks the issue and return of Returnable Glass Bottles (crates) independently of cash balance.
+- `id` (String/UUID, PK)
+- `retailerId` (String/UUID, FK -> `Retailer.id`, Unique)
+- `issuedQuantity` (Int, default `0`)
+- `returnedQuantity` (Int, default `0`)
+- `balance` (Int, default `0`) - `issuedQuantity - returnedQuantity`
+- `lastUpdated` (DateTime, updated automatic)
 
-### Retailers Table
+### Bills (`bills`)
+Represents a finalized sales invoice.
+- `id` (String/UUID, PK)
+- `billNumber` (String, Unique) - Human readable code
+- `retailerId` (String/UUID, FK -> `Retailer.id`)
+- `workerId` (String/UUID, FK -> `User.id`) - Worker who generated bill
+- `subtotal` (Decimal, 12,2)
+- `discount` (Decimal, default `0`)
+- `total` (Decimal, 12,2)
+- `paidAmount` (Decimal, default `0`)
+- `pendingAmount` (Decimal, 12,2) - Added to outstanding balance
+- `paymentMode` (BillPaymentMode, Nullable)
+- `previousPendingAdded` (Decimal, Nullable) - Outstanding balance injected on printed bill
+- `oldPendingPaymentApplied` (Decimal, Nullable) - Payment applied to historical balance during checkout
+- `status` (BillStatus)
+- `createdAt` (DateTime, default `now()`)
+- `updatedAt` (DateTime, updated automatic)
 
-```sql
-CREATE TABLE retailers (
-  id UUID PRIMARY KEY,
-  shop_name VARCHAR(255) NOT NULL,
-  owner_name VARCHAR(255) NOT NULL,
-  mobile_number VARCHAR(20) NOT NULL,
-  address TEXT NOT NULL,
-  delivery_location TEXT,
-  credit_limit DECIMAL(12,2) NOT NULL,
-  price_tier ENUM('standard', 'premium', 'discount') DEFAULT 'standard',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+### Bill Items (`bill_items`)
+Line items nested inside a Bill.
+- `id` (String/UUID, PK)
+- `billId` (String/UUID, FK -> `Bill.id` on delete Cascade)
+- `productId` (String/UUID, FK -> `Product.id`)
+- `quantity` (Int) - Count of PET units purchased
+- `price` (Decimal, 10,2) - Price sold at
+- `discount` (Decimal, default `0`)
+- `total` (Decimal, 12,2) - `(quantity * price) - discount`
 
-### Bills Table
+### Payment Records (`payment_records`)
+Logs historical partial payments applied directly against a specific Bill.
+- `id` (String/UUID, PK)
+- `billId` (String/UUID, FK -> `Bill.id` on delete Cascade)
+- `amount` (Decimal, 12,2)
+- `date` (DateTime, default `now()`)
+- `paymentMode` (BillPaymentMode)
+- `notes` (String, Nullable)
 
-```sql
-CREATE TABLE bills (
-  id UUID PRIMARY KEY,
-  bill_number VARCHAR(50) UNIQUE NOT NULL,
-  retailer_id UUID NOT NULL REFERENCES retailers(id),
-  worker_id UUID NOT NULL REFERENCES users(id),
-  subtotal DECIMAL(12,2) NOT NULL,
-  discount DECIMAL(12,2) DEFAULT 0,
-  total DECIMAL(12,2) NOT NULL,
-  paid_amount DECIMAL(12,2) DEFAULT 0,
-  pending_amount DECIMAL(12,2) NOT NULL,
-  payment_mode ENUM('cash', 'credit', 'udhar', 'generate-only'),
-  previous_pending_added DECIMAL(12,2),
-  old_pending_payment_applied DECIMAL(12,2),
-  status ENUM('pending', 'paid', 'partial') NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  INDEX (retailer_id),
-  INDEX (worker_id),
-  INDEX (created_at)
-);
-```
+### Price History (`price_history`)
+Logs when an Admin alters a Product variant's baseline selling configuration.
+- `id` (String/UUID, PK)
+- `productId` (String/UUID, FK -> `Product.id`)
+- `oldPrice` (Decimal, 10,2)
+- `newPrice` (Decimal, 10,2)
+- `changedBy` (String/UUID, FK -> `User.id` - Admin responsible)
+- `date` (DateTime, default `now()`)
 
-### Bill Items Table
-
-```sql
-CREATE TABLE bill_items (
-  id UUID PRIMARY KEY,
-  bill_id UUID NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
-  product_id UUID NOT NULL REFERENCES products(id),
-  quantity INT NOT NULL,
-  price DECIMAL(10,2) NOT NULL,
-  discount DECIMAL(10,2) DEFAULT 0,
-  total DECIMAL(12,2) NOT NULL,
-  INDEX (bill_id)
-);
-```
-
-### Payment Records Table
-
-```sql
-CREATE TABLE payment_records (
-  id UUID PRIMARY KEY,
-  bill_id UUID NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
-  amount DECIMAL(12,2) NOT NULL,
-  date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  payment_mode ENUM('cash', 'credit', 'udhar', 'generate-only'),
-  notes TEXT
-);
-```
-
-### Ledger Table
-
-```sql
-CREATE TABLE ledger (
-  id UUID PRIMARY KEY,
-  retailer_id UUID NOT NULL REFERENCES retailers(id),
-  bill_id UUID REFERENCES bills(id),
-  entry_type ENUM('sale', 'payment', 'return', 'adjustment') NOT NULL,
-  amount DECIMAL(12,2) NOT NULL,
-  balance DECIMAL(12,2) NOT NULL,
-  payment_mode ENUM('cash', 'bank-transfer', 'check'),
-  notes TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  INDEX (retailer_id),
-  INDEX (created_at)
-);
-```
-
-### Price History Table
-
-```sql
-CREATE TABLE price_history (
-  id UUID PRIMARY KEY,
-  product_id UUID NOT NULL REFERENCES products(id),
-  old_price DECIMAL(10,2) NOT NULL,
-  new_price DECIMAL(10,2) NOT NULL,
-  changed_by UUID NOT NULL REFERENCES users(id),
-  date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### RGB Tracking Table
-
-```sql
-CREATE TABLE rgb_tracking (
-  id UUID PRIMARY KEY,
-  retailer_id UUID NOT NULL UNIQUE REFERENCES retailers(id),
-  issued_quantity INT NOT NULL DEFAULT 0,
-  returned_quantity INT NOT NULL DEFAULT 0,
-  balance INT NOT NULL DEFAULT 0,
-  last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Voided Bill Logs Table
-
-```sql
-CREATE TABLE voided_bill_logs (
-  id UUID PRIMARY KEY,
-  bill_id UUID NOT NULL,
-  worker_id UUID NOT NULL REFERENCES users(id),
-  voided_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  bill_value DECIMAL(12,2) NOT NULL,
-  reason TEXT NOT NULL
-);
-```
+### Voided Bill Logs (`voided_bill_logs`)
+Maintains an audit trail of soft-deleted invoices.
+- `id` (String/UUID, PK)
+- `billId` (String/UUID, FK -> `Bill.id`, Unique)
+- `workerId` (String/UUID, FK -> `User.id` - Worker who processed it originally)
+- `voidedAt` (DateTime, default `now()`)
+- `billValue` (Decimal, 12,2)
+- `reason` (String) - Explanation required from Admin
 
 ---
 
 ## API Endpoints
 
-### Authentication
+All backend routes are protected under RBAC middleware (with `/api` prefix).
 
-```
-POST   /api/auth/login           - Login user
-POST   /api/auth/logout          - Logout user
-POST   /api/auth/refresh-token   - Refresh JWT token
-GET    /api/auth/me             - Get current user
-```
+### Authentication (`/api/auth`)
+- `POST /login` - Single login endpoint for Admin and Worker. Decodes credentials and sets short-lived Access Token in response JSON and long-lived Refresh Token in secure, `httpOnly` cookie.
+- `POST /logout` - Clears cookie.
+- `POST /refresh` - Issues new access token based on valid refresh cookie.
+- `GET /me` - Fetches current user profile from JWT request token.
 
-### Products
+### Products (`/api/products`)
+- `GET /` - List all products (Admin only).
+- `GET /in-stock` - List active products with available inventory (both roles for Sales panel).
+- `GET /:id` - Get product details.
+- `POST /` - Create product (Admin only).
+- `PUT /:id` - Update product catalog entry (Admin only).
 
-```
-GET    /api/products             - List all products
-GET    /api/products/:id         - Get product details
-POST   /api/products             - Create product (Admin)
-PUT    /api/products/:id         - Update product (Admin)
-```
+### Inventory (`/api/inventory`)
+- `GET /` - List stock batches.
+- `GET /:id` - Get stock batch details.
+- `POST /` - Add stock batch (Admin only).
+- `PUT /:id` - Update batch quantity/prices manually (Admin only).
+- `POST /:id/adjust` - Record manual stock adjustment with reasoning (Admin only).
+- `GET /low-stock` - Fetch variants running below critical threshold.
+- `GET /expiry-risk` - Fetch batches expiring within 30 days.
 
-### Stock
+### Retailers (`/api/retailers`)
+- `GET /` - List all retailers.
+- `GET /:id` - Get retailer info.
+- `POST /` - Create retailer.
+- `PUT /:id` - Update retailer profile.
+- `GET /:id/ledger` - Fetch paginated ledger entries for retailer.
+- `GET /:id/rgb` - Fetch crate tracking balances.
 
-```
-GET    /api/stock                - List stock batches
-POST   /api/stock                - Add stock batch (Admin)
-PUT    /api/stock/:id            - Update stock (Admin)
-POST   /api/stock/:id/adjust     - Adjust stock (Admin)
-GET    /api/stock/low-stock      - Get low stock alerts
-GET    /api/stock/expiry-risk    - Get expiry risk products
-```
+### Bills (`/api/bills`)
+- `POST /` - Creates a bill. Triggers a database transaction: validates limits → depletes FIFO inventory batches → posts ledger entries.
+- `GET /` - List bills (Admin: all, Worker: own only).
+- `GET /:id` - Get bill details.
+- `POST /:id/void` - Soft-deletes bill (cancels transaction), performs inventory reversion, writes ledger reversal, logs audit reason.
 
-### Retailers
-
-```
-GET    /api/retailers            - List all retailers
-GET    /api/retailers/:id        - Get retailer details
-POST   /api/retailers            - Create retailer (Admin)
-PUT    /api/retailers/:id        - Update retailer (Admin)
-GET    /api/retailers/:id/ledger - Get retailer ledger
-```
-
-### Bills
-
-```
-POST   /api/bills                - Create bill
-GET    /api/bills                - List bills
-GET    /api/bills/:id            - Get bill details
-GET    /api/bills/print/:id      - Print bill
-POST   /api/bills/:id/cancel     - Cancel bill (Admin)
-```
-
-### Ledger
-
-```
-GET    /api/ledger/retailer/:id  - Get retailer account
-POST   /api/ledger/payment       - Record payment (Admin)
-```
-
-### Reports
-
-```
-GET    /api/reports/sales        - Sales report
-GET    /api/reports/products     - Product performance
-GET    /api/reports/workers      - Worker performance
-GET    /api/reports/price-variance - Price variance report
-GET    /api/reports/credit       - Credit/Ledger report
-```
+### Ledger (`/api/ledger`)
+- `GET /` - Combined list and summary across all retailers.
+- `GET /retailer/:id` - Fetch retailer ledger entries.
+- `POST /payment` - Records direct payment against retailer outstanding balance.
 
 ---
 
 ## Component Architecture
 
-### Component Tree
-
 ```
-App.tsx
+App.tsx (Vite root router)
 ├── LoginPage
-├── Layout (Sidebar + Header)
+├── Layout (Sidebar + Header shell)
 │   ├── Worker Routes
 │   │   └── SalesPage
 │   │       ├── Product Selector (Brand-first drill-down)
@@ -359,188 +304,69 @@ App.tsx
 │       │   ├── RetailersTable
 │       │   ├── AddRetailerModal
 │       │   └── LedgerSummary
-│       └── ReportsPage
-│           ├── ReportFilter
-│           ├── SalesReport
-│           ├── ProductReport
-│           ├── WorkerReport
-│           ├── PriceVarianceReport
-│           └── CreditReport
-└── Notifications
+│       └── ReportsPage (Sales, Product performance, Worker accountability, Price variance)
+└── Notifications (Global toast context)
 ```
-
-### Common Components
-
-- `Button` - Primary action button
-- `Input` - Text input with label
-- `Select` - Dropdown selector
-- `Card` - Container card
-- `Badge` - Status badge
-- `Modal` - Dialog modal
 
 ---
 
 ## State Management
 
-### Current Implementation
-
-The application currently relies entirely on **Zustand** for state management, operating on purely client-side mock data without hitting external API endpoints.
+Zustand (`src/store/index.ts`) is configured to coordinate with backend endpoints. The local store acts as a repository of synced database records:
 
 ```typescript
 interface Store {
-  // Auth
+  // Sync States
   currentUser: User | null;
-  setCurrentUser: (user: User | null) => void;
-
-  // Data
   retailers: Retailer[];
   products: Product[];
   stockBatches: StockBatch[];
   bills: Bill[];
-
-  // Current Operations
-  currentBill: Partial<Bill> | null;
-  setCurrentBill: (bill: Partial<Bill> | null) => void;
-
-  // Notifications
-  notifications: Notification[];
-  addNotification: (type: string, message: string) => void;
-  removeNotification: (id: string) => void;
+  
+  // Actions
+  fetchInventory: () => Promise<void>;
+  fetchRetailers: () => Promise<void>;
+  fetchBills: () => Promise<void>;
+  createBill: (billData: any) => Promise<void>;
+  // ...
 }
-```
-
-### Store Usage Example
-
-```typescript
-// Get state
-const bills = useStore((state) => state.bills);
-
-// Update state
-const addBill = useStore((state) => state.addBill);
-addBill(newBill);
 ```
 
 ---
 
 ## Authentication Flow
 
-### Planned API Flow
-
-```
-1. User enters email/password
-   ↓
-2. Frontend sends to /api/auth/login
-   ↓
-3. Backend validates credentials
-   ↓
-4. Backend returns JWT token + user data
-   ↓
-5. Frontend stores token (localStorage/session)
-   ↓
-6. Frontend sets currentUser in Zustand
-   ↓
-7. Redirects to dashboard/sales based on role
-```
-
-### Protected Routes
-
-```typescript
-<Route
-  path="/admin/dashboard"
-  element={
-    <ProtectedRoute requiredRole="admin">
-      <AdminDashboard />
-    </ProtectedRoute>
-  }
-/>
-```
+1. User submits credentials on the single login form.
+2. API endpoint `/api/auth/login` checks credentials.
+3. Server returns Access Token (payload: `id`, `role`, `email`, expires in 15m) and sets Refresh Token in `httpOnly` secure cookie.
+4. Client attaches Access Token in `Authorization: Bearer <token>` request header.
+5. In case of 401 response (expired access token), the client calls `/api/auth/refresh` automatically to re-authenticate using the refresh cookie without logging the user out.
 
 ---
 
-## Business Logic
+## Business Logic Enforced Server-side
 
-### PET Conversion Formula
+All core business calculations are finalized inside backend services (`/backend/src/modules/`):
 
-```
-Physical Units = PET Units × Conversion Factor
-Example: Pepsi 1.5L (1 PET) = 12 bottles
+### 1. FIFO Stock Movement
+When a bill is checkout out:
+- System queries active batches of selected products ordered by `expiryDate` (or `purchaseDate` as secondary).
+- Deducts required quantities sequentially from oldest batches.
+- If total stock is insufficient, the transaction is rolled back.
 
-Stock Calculation:
-- Display to user: In PET units
-- Purchase: In PET units
-- Sales: In PET units
-- Reports: Aggregated in PET units
-```
+### 2. Credit limit enforcement
+- `Outstanding Debt = Total Purchases - Total Payments`
+- A transaction raising outstanding debt above `100%` of the retailer's `creditLimit` is blocked.
+- Warning statuses (`70%` and `90%`) are automatically calculated on retailer query.
 
-### Credit Management
-
-```
-Outstanding = Total Billed - Total Paid
-Credit Available = Credit Limit - Outstanding
-
-Alert Triggers:
-- Orange: Outstanding > 70% of limit
-- Red: Outstanding > 90% of limit
-- Block: Outstanding > 100% of limit
-```
-
-### Price Variance Detection
-
-```
-Flag Condition: Billed Price < Default Price
-Report Fields:
-- Product
-- Default Price
-- Billed Price
-- Discount %
-- Worker Name
-- Date/Time
-```
-
-### FIFO Stock Movement
-
-```
-When selling:
-1. Get oldest batch of product
-2. Check available quantity
-3. Reduce quantity from batch
-4. Move to next batch when empty
-5. Log transaction
-```
+### 3. Price variance detection
+- If billing price < default retail price configured on active stock batches, the line item is logged with variance tags, auto-flagging it in variance query logic.
 
 ---
 
 ## Security Measures
 
-- ✅ Input validation and sanitization
-- ✅ SQL injection prevention (use ORM)
-- ✅ XSS protection
-- ✅ CSRF tokens
-- ✅ JWT token expiration
-- ✅ Rate limiting on API endpoints
-- ✅ HTTPS only in production
-- ✅ Secure password hashing
-- ✅ Role-based access control
-- ✅ Audit logging for critical operations
-- ✅ Data encryption at rest
-- ✅ Regular security updates
-
----
-
-## Monitoring & Logging
-
-### What to Monitor
-
-- API response times
-- Error rates
-- Database performance
-- User activity
-- Stock movements
-- Credit transactions
-
-### Logging Strategy
-
-- Info: Bill creation, stock updates, payments
-- Warning: Low stock, credit limit alerts
-- Error: System errors, failed transactions
-- Debug: Detailed request/response logs
+- **JWT + httpOnly Cookie**: Prevents XSS-based theft of refresh tokens.
+- **Transactional Consistency**: Relies on Prisma `$transaction` blocks to ensure stock depletion, ledger balance updates, and invoice writes either succeed together or fail together.
+- **RBAC Guards**: Restricts write access and reporting endpoints to accounts carrying the `admin` role.
+- **Input Validation**: Uses `Zod` schemas to validate payload structures and prevent SQL injection or database type errors.

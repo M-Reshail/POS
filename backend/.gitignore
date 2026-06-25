@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment secrets — NEVER commit .env
+.env
+
+# Prisma generated client (regenerate with `prisma generate`)
+# Keep this if you want to commit generated types:
+# prisma/generated/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

@@ -2,22 +2,6 @@
 
 This document outlines the UI standards, design patterns, and reusable components used throughout the Beverage POS System. The application is built using React and styled exclusively with Tailwind CSS to ensure a consistent, modern, and highly responsive user experience.
 
-## Table of Contents
-
-- [Design Principles](#design-principles)
-- [Typography & Colors](#typography--colors)
-- [Reusable Components](#reusable-components)
-  - [Buttons](#buttons)
-  - [Form Inputs](#form-inputs)
-  - [Cards](#cards)
-  - [Badges](#badges)
-  - [Modals & Dialogs](#modals--dialogs)
-- [Layout & Navigation](#layout--navigation)
-- [Application States](#application-states)
-  - [Loading States](#loading-states)
-  - [Empty States](#empty-states)
-  - [Error States & Notifications](#error-states--notifications)
-
 ---
 
 ## Design Principles
@@ -108,7 +92,9 @@ Implemented specifically in the Sales and Inventory product views:
 ## Application States
 
 ### Loading States
-Currently, the application relies heavily on instantaneous state updates via Zustand. When async API integrations are finalized, the UI expects standard skeleton loaders (`animate-pulse` on gray rectangles) or centered spinners for full-page loads.
+As the frontend transitions to integrate with backend APIs, the UI uses standard loading patterns:
+- **Skeleton Loaders:** Renders gray placeholders with pulse animation (`animate-pulse`) while tables fetch data.
+- **Form Disabling:** Buttons display spinner icons and turn `disabled` when saving form contents to prevent double requests.
 
 ### Empty States
 When tables or grids have no data (e.g., empty cart, no search results):
@@ -121,3 +107,8 @@ The global `Notifications` component (rendered in `App.tsx`) handles transient f
 - **Behavior:** Toast notifications slide in at the top-right corner.
 - **Auto-dismiss:** Toasts automatically disappear after 5 seconds.
 - **Styling:** Colors map strictly to the notification type (Green = Success, Red = Error, Yellow = Warning).
+
+---
+
+**Last Updated**: June 26, 2026  
+**Version**: 2.0.0  
