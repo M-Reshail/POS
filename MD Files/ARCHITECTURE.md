@@ -72,7 +72,7 @@
 
 ## Database Schema (Proposed)
 
-*Note: The frontend currently uses TypeScript interfaces mapped closely to this relational schema.*
+_Note: The frontend currently uses TypeScript interfaces mapped closely to this relational schema._
 
 ### Users Table
 
