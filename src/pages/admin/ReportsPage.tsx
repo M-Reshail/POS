@@ -1,359 +1,358 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Button, Card, Select, Badge } from '../../components/common';
+import { Card } from '../../components/common';
 import { useStore } from '../../store';
-import { BarChart3, Users, Package, TrendingUp, Download, Calendar, ShoppingCart } from 'lucide-react';
+import { expensesService } from '../../services/expenses';
+import {
+  BarChart3, Users, Package, TrendingUp, ShoppingCart, DollarSign,
+  ArrowUpRight, ArrowDownRight,
+} from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area,
+} from 'recharts';
+
+const ADMIN_SIDEBAR = [
+  { label: 'Dashboard', icon: <BarChart3 size={18} />, path: '/admin/dashboard' },
+  { label: 'Create Sale', icon: <ShoppingCart size={18} />, path: '/worker/sales' },
+  { label: 'Inventory', icon: <Package size={18} />, path: '/admin/inventory' },
+  { label: 'Retailers', icon: <Users size={18} />, path: '/admin/retailers' },
+  { label: 'Workers', icon: <Users size={18} />, path: '/admin/workers' },
+  { label: 'Expenses', icon: <DollarSign size={18} />, path: '/admin/expenses' },
+  { label: 'Bills', icon: <ShoppingCart size={18} />, path: '/admin/bills' },
+  { label: 'Reports', icon: <TrendingUp size={18} />, path: '/admin/reports' },
+];
+
+
+type RangeType = '7d' | '30d' | '90d';
 
 export const ReportsPage: React.FC = () => {
-  const bills = useStore((state) => state.bills);
-  const retailers = useStore((state) => state.retailers);
-  const [reportType, setReportType] = useState('sales');
-  const [dateRange, setDateRange] = useState('monthly');
+  const { bills, retailers, products, fetchInitialData } = useStore();
+  const [expenseSummary, setExpenseSummary] = useState<any>(null);
+  const [range, setRange] = useState<RangeType>('30d');
 
-  const formatPeriod = (date: Date) => {
-    if (dateRange === 'daily') return date.toLocaleDateString();
-    if (dateRange === 'yearly') return date.getFullYear().toString();
-    return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
-  };
+  useEffect(() => {
+    fetchInitialData();
+    expensesService.getSummary().then(setExpenseSummary).catch(() => {});
+  }, []);
 
-  const salesRows = Array.from(
-    bills.reduce((map, bill) => {
-      const period = formatPeriod(new Date(bill.createdAt));
-      const current = map.get(period) || { period, sales: 0, pets: 0, count: 0, paid: 0, pending: 0 };
-      current.sales += bill.total;
-      current.pets += bill.items.reduce((sum, item) => sum + item.quantity, 0);
-      current.count += 1;
-      current.paid += bill.paidAmount;
-      current.pending += bill.pendingAmount;
-      map.set(period, current);
-      return map;
-    }, new Map<string, { period: string; sales: number; pets: number; count: number; paid: number; pending: number }>())
-      .values()
+  const rangeDays = range === '7d' ? 7 : range === '30d' ? 30 : 90;
+
+  const now = new Date();
+  const rangeStart = new Date(now);
+  rangeStart.setDate(rangeStart.getDate() - rangeDays);
+
+  const filteredBills = useMemo(
+    () => bills.filter((b) => new Date(b.createdAt) >= rangeStart),
+    [bills, range]
   );
 
-  const productsData = Array.from(
-    bills.reduce((map, bill) => {
-      bill.items.forEach((item) => {
-        const current = map.get(item.productId) || { product: item.productId, sold: 0, revenue: 0 };
-        current.sold += item.quantity;
-        current.revenue += item.total;
-        map.set(item.productId, current);
-      });
-      return map;
-    }, new Map<string, { product: string; sold: number; revenue: number }>())
-      .values()
-  );
+  // ── KPIs ──────────────────────────────────────────────────────────────────────
+  const totalRevenue = filteredBills.reduce((s, b) => s + Number(b.total), 0);
+  const totalPaid = filteredBills.reduce((s, b) => s + Number(b.paidAmount), 0);
+  const totalPending = filteredBills.reduce((s, b) => s + Number(b.pendingAmount), 0);
+  const totalDiscount = filteredBills.reduce((s, b) => s + Number(b.discount || 0), 0);
+  const totalPET = filteredBills.reduce((s, b) => s + b.items.reduce((ss, i) => ss + i.quantity, 0), 0);
+  const monthlyExpenses = expenseSummary?.month || 0;
+  const netProfit = totalRevenue - monthlyExpenses;
 
-  const workerPerformance = Array.from(
-    bills.reduce((map, bill) => {
-      const worker = bill.workerId || 'Unknown';
-      const current = map.get(worker) || { name: worker, salesValue: 0, pets: 0, bills: 0, paid: 0, pending: 0 };
-      current.salesValue += bill.total;
-      current.pets += bill.items.reduce((sum, item) => sum + item.quantity, 0);
-      current.bills += 1;
-      current.paid += bill.paidAmount;
-      current.pending += bill.pendingAmount;
-      map.set(worker, current);
-      return map;
-    }, new Map<string, { name: string; salesValue: number; pets: number; bills: number; paid: number; pending: number }>())
-      .values()
-  );
+  // ── Daily Sales Chart ─────────────────────────────────────────────────────────
+  const dailySalesData = useMemo(() => {
+    const map = new Map<string, { date: string; revenue: number; bills: number; paid: number }>();
+    for (let i = rangeDays - 1; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().split('T')[0];
+      const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      map.set(key, { date: label, revenue: 0, bills: 0, paid: 0 });
+    }
+    filteredBills.forEach((b) => {
+      const key = new Date(b.createdAt).toISOString().split('T')[0];
+      const existing = map.get(key);
+      if (existing) {
+        existing.revenue += Number(b.total);
+        existing.bills += 1;
+        existing.paid += Number(b.paidAmount);
+      }
+    });
+    return Array.from(map.values());
+  }, [filteredBills, range]);
 
-  const priceVariance = bills.flatMap((bill) =>
-    bill.items
-      .filter((item) => item.discount || item.price <= 0)
-      .map((item) => ({
-        date: new Date(bill.createdAt).toLocaleDateString(),
-        worker: bill.workerId || 'Unknown',
-        product: item.productId,
-        defaultPrice: item.price + (item.discount || 0),
-        billedPrice: item.price,
-        status: 'flagged',
-      }))
-  );
+  // ── Revenue by Product ────────────────────────────────────────────────────────
+  const productRevenueData = useMemo(() => {
+    const map = new Map<string, { name: string; revenue: number; sold: number }>();
+    filteredBills.forEach((b) =>
+      b.items.forEach((item) => {
+        const product = products.find((p) => p.id === item.productId);
+        const name = product ? `${product.brand} ${product.variant}` : item.productId.slice(0, 10);
+        const existing = map.get(item.productId) || { name, revenue: 0, sold: 0 };
+        existing.revenue += Number(item.total);
+        existing.sold += item.quantity;
+        map.set(item.productId, existing);
+      })
+    );
+    return Array.from(map.values())
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 8);
+  }, [filteredBills, products]);
 
-  const creditReport = Array.from(
-    bills.reduce((map, bill) => {
-      const retailer = retailers.find((r) => r.id === bill.retailerId);
-      const current = map.get(bill.retailerId) || {
-        retailer: retailer?.shopName || bill.retailerId,
-        limit: retailer?.creditLimit || 0,
-        outstanding: 0,
-        paid: 0,
-        status: 'paid',
-      };
-      current.outstanding += bill.pendingAmount;
-      current.paid += bill.paidAmount;
-      current.status = current.outstanding > 0 ? 'active' : 'paid';
-      map.set(bill.retailerId, current);
-      return map;
-    }, new Map<string, { retailer: string; limit: number; outstanding: number; paid: number; status: string }>())
-      .values()
-  );
+  // ── Revenue by Worker ─────────────────────────────────────────────────────────
+  const workerRevenueData = useMemo(() => {
+    const map = new Map<string, { name: string; revenue: number; bills: number; discount: number }>();
+    filteredBills.forEach((b) => {
+      const workerName = (b as any).worker?.name || b.workerId.slice(0, 8);
+      const existing = map.get(b.workerId) || { name: workerName, revenue: 0, bills: 0, discount: 0 };
+      existing.revenue += Number(b.total);
+      existing.bills += 1;
+      existing.discount += Number(b.discount || 0);
+      map.set(b.workerId, existing);
+    });
+    return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
+  }, [filteredBills]);
 
-  const sidebarItems = [
-    { label: 'Dashboard', icon: <BarChart3 size={20} />, path: '/admin/dashboard' },
-    { label: 'Create Sale', icon: <ShoppingCart size={20} />, path: '/worker/sales' },
-    { label: 'Inventory', icon: <Package size={20} />, path: '/admin/inventory' },
-    { label: 'Retailers', icon: <Users size={20} />, path: '/admin/retailers' },
-    { label: 'Reports', icon: <TrendingUp size={20} />, path: '/admin/reports' },
-  ];
+  // ── Revenue by Retailer ───────────────────────────────────────────────────────
+  const retailerRevenueData = useMemo(() => {
+    const map = new Map<string, { name: string; revenue: number; outstanding: number }>();
+    filteredBills.forEach((b) => {
+      const retailer = retailers.find((r) => r.id === b.retailerId);
+      const name = retailer?.shopName || b.retailerId.slice(0, 10);
+      const existing = map.get(b.retailerId) || { name, revenue: 0, outstanding: 0 };
+      existing.revenue += Number(b.total);
+      existing.outstanding += Number(b.pendingAmount);
+      map.set(b.retailerId, existing);
+    });
+    return Array.from(map.values())
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 8);
+  }, [filteredBills, retailers]);
+
+  // ── Status breakdown pie ─────────────────────────────────────────────────────
+  const statusPieData = useMemo(() => {
+    const paid = filteredBills.filter((b) => b.status === 'paid').length;
+    const pending = filteredBills.filter((b) => b.status === 'pending').length;
+    const partial = filteredBills.filter((b) => b.status === 'partial').length;
+    return [
+      { name: 'Paid', value: paid, color: '#10b981' },
+      { name: 'Pending', value: pending, color: '#f59e0b' },
+      { name: 'Partial', value: partial, color: '#3b82f6' },
+    ].filter((d) => d.value > 0);
+  }, [filteredBills]);
+
+  const KPI = ({
+    label, value, subValue, color, icon,
+  }: {
+    label: string; value: string; subValue?: string; color: string; icon: React.ReactNode;
+  }) => (
+    <Card className={`border-l-4 border-${color}-500`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-gray-500">{label}</p>
+          <p className={`text-2xl font-bold mt-1 text-${color}-700`}>{value}</p>
+          {subValue && <p className="text-xs text-gray-400 mt-0.5">{subValue}</p>}
+        </div>
+        <div className={`text-${color}-400 opacity-60`}>{icon}</div>
+      </div>
+    </Card>
+  );
 
   return (
-    <Layout sidebarItems={sidebarItems}>
+    <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">Reports & Analytics</h1>
-          <Button variant="secondary">
-            <Download size={18} className="mr-2" />
-            Export Reportor
-          </Button>
+        {/* Header + Range */}
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Reports & Analytics</h1>
+            <p className="text-sm text-gray-500 mt-0.5">Business performance insights</p>
+          </div>
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            {(['7d', '30d', '90d'] as RangeType[]).map((r) => (
+              <button
+                key={r}
+                onClick={() => setRange(r)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                  range === r ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {r === '7d' ? '7 Days' : r === '30d' ? '30 Days' : '90 Days'}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Filter Section */}
-        <Card className="mb-6">
-          <div className="flex flex-wrap gap-4 items-end">
-            <div className="flex-1 min-w-48">
-              <Select
-                label="Report Type"
-                value={reportType}
-                onChange={(e) => setReportType(e.target.value)}
-                options={[
-                  { value: 'sales', label: 'Sales Summary' },
-                  { value: 'products', label: 'Product Performance' },
-                  { value: 'workers', label: 'Worker Performance' },
-                  { value: 'price-variance', label: 'Price Variance' },
-                  { value: 'credit', label: 'Credit & Ledger' },
-                ]}
-              />
-            </div>
-            <div className="flex-1 min-w-48">
-              <Select
-                label="Date Range"
-                value={dateRange}
-                onChange={(e) => setDateRange(e.target.value)}
-                options={[
-                  { value: 'daily', label: 'Daily' },
-                  { value: 'weekly', label: 'Weekly' },
-                  { value: 'monthly', label: 'Monthly' },
-                  { value: 'yearly', label: 'Yearly' },
-                ]}
-              />
-            </div>
-            <Button variant="secondary">
-              <Calendar size={18} className="mr-2" />
-              Filter
-            </Button>
-          </div>
+        {/* KPI Row 1 */}
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-5">
+          <KPI label="Total Revenue" value={`₨${(totalRevenue / 1000).toFixed(1)}K`} color="blue" icon={<TrendingUp size={22} />} />
+          <KPI label="Total Paid" value={`₨${(totalPaid / 1000).toFixed(1)}K`} color="green" icon={<DollarSign size={22} />} />
+          <KPI label="Outstanding" value={`₨${(totalPending / 1000).toFixed(1)}K`} color="orange" icon={<ArrowDownRight size={22} />} />
+          <KPI label="Expenses (Month)" value={`₨${(monthlyExpenses / 1000).toFixed(1)}K`} color="red" icon={<ArrowDownRight size={22} />} />
+          <KPI label="Net Profit" value={`₨${(netProfit / 1000).toFixed(1)}K`} color="purple" icon={<ArrowUpRight size={22} />} />
+          <KPI label="PET Sold" value={totalPET.toLocaleString()} color="teal" icon={<Package size={22} />} />
+        </div>
+
+        {/* Row 2: Summary stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          <Card>
+            <p className="text-xs text-gray-500">Total Bills</p>
+            <p className="text-xl font-bold">{filteredBills.length}</p>
+          </Card>
+          <Card>
+            <p className="text-xs text-gray-500">Avg Bill Value</p>
+            <p className="text-xl font-bold">₨{filteredBills.length > 0 ? (totalRevenue / filteredBills.length).toFixed(0) : 0}</p>
+          </Card>
+          <Card>
+            <p className="text-xs text-gray-500">Total Discounts</p>
+            <p className="text-xl font-bold text-purple-600">₨{(totalDiscount / 1000).toFixed(1)}K</p>
+          </Card>
+          <Card>
+            <p className="text-xs text-gray-500">Collection Rate</p>
+            <p className="text-xl font-bold text-green-600">
+              {totalRevenue > 0 ? ((totalPaid / totalRevenue) * 100).toFixed(0) : 0}%
+            </p>
+          </Card>
+        </div>
+
+        {/* Daily Sales Area Chart */}
+        <Card title={`Daily Revenue — Last ${rangeDays} Days`} className="mb-5">
+          {dailySalesData.some((d) => d.revenue > 0) ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={dailySalesData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                <defs>
+                  <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="paidGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} interval={Math.floor(rangeDays / 7)} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `₨${(v / 1000).toFixed(0)}K`} />
+                <Tooltip formatter={(v: any) => `₨${Number(v).toFixed(0)}`} />
+                <Legend iconType="circle" iconSize={8} />
+                <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#3b82f6" fill="url(#revenueGrad)" strokeWidth={2} dot={false} />
+                <Area type="monotone" dataKey="paid" name="Paid" stroke="#10b981" fill="url(#paidGrad)" strokeWidth={2} dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-48 flex items-center justify-center text-gray-400 text-sm">No bill data for this period</div>
+          )}
         </Card>
 
-        {/* Sales Report */}
-        {reportType === 'sales' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card>
-                <p className="text-gray-600 text-sm">Total Sales</p>
-                <p className="text-3xl font-bold mt-2">
-                  ₨{salesRows.reduce((sum, m) => sum + m.sales, 0).toFixed(0)}
-                </p>
-                <p className="text-xs text-gray-500 mt-2">Last 3 months</p>
-              </Card>
-              <Card>
-                <p className="text-gray-600 text-sm">Total PET Moved</p>
-                <p className="text-3xl font-bold mt-2">
-                  {salesRows.reduce((sum, m) => sum + m.pets, 0)}
-                </p>
-              </Card>
-              <Card>
-                <p className="text-gray-600 text-sm">Avg Monthly</p>
-                <p className="text-3xl font-bold mt-2">
-                  ₨{(salesRows.reduce((sum, m) => sum + m.sales, 0) / Math.max(1, salesRows.length)).toFixed(0)}
-                </p>
-              </Card>
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+          {/* Revenue by Product */}
+          <Card title="Revenue by Product">
+            {productRevenueData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={productRevenueData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `₨${(v / 1000).toFixed(0)}K`} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
+                  <Tooltip formatter={(v: any) => [`₨${Number(v).toFixed(0)}`, 'Revenue']} />
+                  <Bar dataKey="revenue" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-48 flex items-center justify-center text-gray-400 text-sm">No data</div>
+            )}
+          </Card>
 
-            <Card title="Sales Trend">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-2">Period</th>
-                      <th className="text-right py-2">Sales Value</th>
-                      <th className="text-right py-2">PET Units</th>
-                      <th className="text-right py-2">Transactions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {salesRows.map((row, idx) => (
-                      <tr key={idx} className="border-b hover:bg-gray-50">
-                        <td className="py-2">{row.period}</td>
-                        <td className="py-2 text-right font-semibold">₨{row.sales.toFixed(0)}</td>
-                        <td className="py-2 text-right">{row.pets}</td>
-                        <td className="py-2 text-right">{row.count}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          {/* Revenue by Worker */}
+          <Card title="Revenue by Worker">
+            {workerRevenueData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={workerRevenueData} margin={{ top: 5, right: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `₨${(v / 1000).toFixed(0)}K`} />
+                  <Tooltip formatter={(v: any, name: any) => [`₨${Number(v).toFixed(0)}`, name === 'revenue' ? 'Revenue' : 'Discount']} />
+                  <Legend iconType="circle" iconSize={8} />
+                  <Bar dataKey="revenue" name="Revenue" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="discount" name="Discounts" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-48 flex items-center justify-center text-gray-400 text-sm">No data</div>
+            )}
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Retailer Revenue */}
+          <Card title="Top Retailers by Revenue">
+            {retailerRevenueData.length > 0 ? (
+              <div className="space-y-2">
+                {retailerRevenueData.map((r, idx) => {
+                  const maxRev = retailerRevenueData[0].revenue;
+                  return (
+                    <div key={r.name} className="flex items-center gap-2">
+                      <span className="w-5 text-xs text-gray-400 font-bold">{idx + 1}</span>
+                      <div className="flex-1">
+                        <div className="flex justify-between text-xs mb-0.5">
+                          <span className="font-medium text-gray-800">{r.name}</span>
+                          <span className="text-gray-500">₨{(r.revenue / 1000).toFixed(1)}K</span>
+                        </div>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 rounded-full"
+                            style={{ width: `${(r.revenue / maxRev) * 100}%` }}
+                          />
+                        </div>
+                        {r.outstanding > 0 && (
+                          <p className="text-xs text-orange-500 mt-0.5">Outstanding: ₨{(r.outstanding / 1000).toFixed(1)}K</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </Card>
-          </div>
-        )}
+            ) : (
+              <div className="h-48 flex items-center justify-center text-gray-400 text-sm">No data</div>
+            )}
+          </Card>
 
-        {/* Products Report */}
-        {reportType === 'products' && (
-          <Card title="Product Performance">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="text-left py-3 px-4">Product</th>
-                    <th className="text-right py-3 px-4">Units Sold</th>
-                    <th className="text-right py-3 px-4">Revenue</th>
-                    <th className="text-center py-3 px-4">Trend</th>
-                    <th className="text-center py-3 px-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {productsData.map((row, idx) => (
-                    <tr key={idx} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 font-medium">{row.product}</td>
-                      <td className="py-3 px-4 text-right">{row.sold}</td>
-                      <td className="py-3 px-4 text-right">₨{row.revenue.toFixed(0)}</td>
-                      <td className="py-3 px-4 text-center text-green-600 font-semibold">Tracked</td>
-                      <td className="py-3 px-4 text-center">
-                        <Badge variant="success">Hot Seller</Badge>
-                      </td>
-                    </tr>
+          {/* Bill Status Pie */}
+          <Card title="Bill Status Breakdown">
+            {statusPieData.length > 0 ? (
+              <div className="flex items-center gap-4">
+                <ResponsiveContainer width="60%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={statusPieData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={75}
+                      innerRadius={45}
+                      label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`}
+                      labelLine={false}
+                    >
+                      {statusPieData.map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex-1 space-y-3">
+                  {statusPieData.map((item) => (
+                    <div key={item.name} className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-gray-700">{item.name}</p>
+                        <p className="text-lg font-bold" style={{ color: item.color }}>{item.value}</p>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              </div>
+            ) : (
+              <div className="h-48 flex items-center justify-center text-gray-400 text-sm">No bill data</div>
+            )}
           </Card>
-        )}
-
-        {/* Worker Performance */}
-        {reportType === 'workers' && (
-          <Card title="Worker Performance">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="text-left py-3 px-4">Worker</th>
-                    <th className="text-right py-3 px-4">Total Sales</th>
-                    <th className="text-right py-3 px-4">PET Sold</th>
-                    <th className="text-right py-3 px-4">Bills</th>
-                    <th className="text-right py-3 px-4">Paid</th>
-                    <th className="text-right py-3 px-4">Pending</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {workerPerformance.map((row, idx) => (
-                    <tr key={idx} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 font-medium">{row.name}</td>
-                      <td className="py-3 px-4 text-right">₨{row.salesValue.toFixed(0)}</td>
-                      <td className="py-3 px-4 text-right">{row.pets}</td>
-                      <td className="py-3 px-4 text-right">{row.bills}</td>
-                      <td className="py-3 px-4 text-right">₨{row.paid.toFixed(0)}</td>
-                      <td className="py-3 px-4 text-right text-orange-600 font-semibold">₨{row.pending.toFixed(0)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
-
-        {/* Price Variance Report */}
-        {reportType === 'price-variance' && (
-          <Card title="Price Variance Report">
-            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
-              <p className="text-sm text-yellow-800">
-                ⚠️ These flagged entries show deviations from default sale prices. Review for patterns.
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="text-left py-3 px-4">Date</th>
-                    <th className="text-left py-3 px-4">Worker</th>
-                    <th className="text-left py-3 px-4">Product</th>
-                    <th className="text-right py-3 px-4">Default Price</th>
-                    <th className="text-right py-3 px-4">Billed Price</th>
-                    <th className="text-right py-3 px-4">Variance</th>
-                    <th className="text-center py-3 px-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {priceVariance.map((row, idx) => (
-                    <tr key={idx} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 text-xs">{row.date}</td>
-                      <td className="py-3 px-4">{row.worker}</td>
-                      <td className="py-3 px-4">{row.product}</td>
-                      <td className="py-3 px-4 text-right">₨{row.defaultPrice}</td>
-                      <td className="py-3 px-4 text-right">₨{row.billedPrice}</td>
-                      <td className="py-3 px-4 text-right text-red-600 font-semibold">
-                        -₨{row.defaultPrice - row.billedPrice}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <Badge variant="warning">Flagged</Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
-
-        {/* Credit Report */}
-        {reportType === 'credit' && (
-          <Card title="Credit & Ledger Report">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="text-left py-3 px-4">Retailer</th>
-                    <th className="text-right py-3 px-4">Credit Limit</th>
-                    <th className="text-right py-3 px-4">Outstanding</th>
-                    <th className="text-right py-3 px-4">Paid</th>
-                    <th className="text-center py-3 px-4">Usage %</th>
-                    <th className="text-center py-3 px-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {creditReport.map((row, idx) => {
-                    const usage = (row.outstanding / row.limit) * 100;
-                    return (
-                      <tr key={idx} className="border-b hover:bg-gray-50">
-                        <td className="py-3 px-4 font-medium">{row.retailer}</td>
-                        <td className="py-3 px-4 text-right">₨{row.limit.toFixed(0)}</td>
-                        <td className="py-3 px-4 text-right text-orange-600 font-semibold">
-                          ₨{row.outstanding.toFixed(0)}
-                        </td>
-                        <td className="py-3 px-4 text-right">₨{row.paid.toFixed(0)}</td>
-                        <td className="py-3 px-4 text-right">{usage.toFixed(1)}%</td>
-                        <td className="py-3 px-4 text-center">
-                          <Badge
-                            variant={
-                              row.status === 'paid'
-                                ? 'success'
-                                : row.status === 'active'
-                                ? 'info'
-                                : 'warning'
-                            }
-                          >
-                            {row.status}
-                          </Badge>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
+        </div>
       </PageContainer>
     </Layout>
   );

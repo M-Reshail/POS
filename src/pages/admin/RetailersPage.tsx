@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card, Input, Select, Modal, Badge } from '../../components/common';
 import { useStore } from '../../store';
 import { Users, Plus, Phone, BarChart3, Package, TrendingUp, ShoppingCart } from 'lucide-react';
-import { Retailer } from '../../types';
+
+import { retailersService } from '../../services/retailers';
 
 export const RetailersPage: React.FC = () => {
   const store = useStore();
@@ -19,74 +20,51 @@ export const RetailersPage: React.FC = () => {
     priceTier: 'standard' as 'standard' | 'premium' | 'discount',
   });
 
-  // Mock retailer data
-  const mockRetailers: Retailer[] = [
-    {
-      id: '1',
-      shopName: 'Ali Store',
-      ownerName: 'Ali Khan',
-      mobileNumber: '03001234567',
-      address: 'Karachi, Sindh',
-      deliveryLocation: 'Clifton, Karachi',
-      creditLimit: 100000,
-      priceTier: 'standard',
-      createdAt: new Date('2024-01-15'),
-    },
-    {
-      id: '2',
-      shopName: 'Future Shop',
-      ownerName: 'Fatima Ahmed',
-      mobileNumber: '03009876543',
-      address: 'Lahore, Punjab',
-      deliveryLocation: 'Mall Road, Lahore',
-      creditLimit: 150000,
-      priceTier: 'premium',
-      createdAt: new Date('2024-02-20'),
-    },
-    {
-      id: '3',
-      shopName: 'Quick Store',
-      ownerName: 'Hassan Malik',
-      mobileNumber: '03015555555',
-      address: 'Islamabad, ICT',
-      creditLimit: 75000,
-      priceTier: 'discount',
-      createdAt: new Date('2024-03-10'),
-    },
-  ];
+  // Use store data
+  const mockRetailers = store.retailers;
 
-  // Mock ledger data
-  const retailerLedger: Record<string, { outstanding: number; paid: number; rgbBalance: number }> = {
-    '1': { outstanding: 45000, paid: 120000, rgbBalance: 50 },
-    '2': { outstanding: 0, paid: 200000, rgbBalance: 75 },
-    '3': { outstanding: 32000, paid: 50000, rgbBalance: 30 },
-  };
+  useEffect(() => {
+    store.fetchInitialData();
+  }, [store.fetchInitialData]);
 
-  const handleAddRetailer = () => {
+  // Compute ledger dynamically from bills
+  const retailerLedger = mockRetailers.reduce((acc, retailer) => {
+    const retailerBills = store.bills.filter(b => b.retailerId === retailer.id);
+    acc[retailer.id] = {
+      outstanding: retailerBills.reduce((sum, b) => sum + b.pendingAmount, 0),
+      paid: retailerBills.reduce((sum, b) => sum + b.paidAmount, 0),
+      rgbBalance: 0, // Would need dedicated RGB tracking API to populate this
+    };
+    return acc;
+  }, {} as Record<string, { outstanding: number; paid: number; rgbBalance: number }>);
+
+  const handleAddRetailer = async () => {
     if (addRetailerForm.shopName && addRetailerForm.ownerName && addRetailerForm.creditLimit) {
-      const newRetailer: Retailer = {
-        id: Date.now().toString(),
-        shopName: addRetailerForm.shopName,
-        ownerName: addRetailerForm.ownerName,
-        mobileNumber: addRetailerForm.mobileNumber,
-        address: addRetailerForm.address,
-        deliveryLocation: addRetailerForm.deliveryLocation,
-        creditLimit: parseFloat(addRetailerForm.creditLimit),
-        priceTier: addRetailerForm.priceTier,
-        createdAt: new Date(),
-      };
-      store.addRetailer(newRetailer);
-      setAddRetailerForm({
-        shopName: '',
-        ownerName: '',
-        mobileNumber: '',
-        address: '',
-        deliveryLocation: '',
-        creditLimit: '',
-        priceTier: 'standard',
-      });
-      setIsAddRetailerModalOpen(false);
-      store.addNotification('success', 'Retailer added successfully');
+      try {
+        await retailersService.create({
+          shopName: addRetailerForm.shopName,
+          ownerName: addRetailerForm.ownerName,
+          mobileNumber: addRetailerForm.mobileNumber,
+          address: addRetailerForm.address,
+          deliveryLocation: addRetailerForm.deliveryLocation,
+          creditLimit: parseFloat(addRetailerForm.creditLimit),
+          priceTier: addRetailerForm.priceTier,
+        });
+        store.fetchRetailers();
+        setAddRetailerForm({
+          shopName: '',
+          ownerName: '',
+          mobileNumber: '',
+          address: '',
+          deliveryLocation: '',
+          creditLimit: '',
+          priceTier: 'standard',
+        });
+        setIsAddRetailerModalOpen(false);
+        store.addNotification('success', 'Retailer added successfully');
+      } catch (err: any) {
+        store.addNotification('error', err.response?.data?.message || 'Failed to add retailer');
+      }
     }
   };
 
@@ -158,7 +136,7 @@ export const RetailersPage: React.FC = () => {
                 {mockRetailers.map((retailer) => {
                   const ledger = retailerLedger[retailer.id] || { outstanding: 0, paid: 0, rgbBalance: 0 };
                   const creditStatusColor = getCreditStatusColor(ledger.outstanding, retailer.creditLimit);
-                  const usagePercentage = (ledger.outstanding / retailer.creditLimit) * 100;
+                  const usagePercentage = retailer.creditLimit > 0 ? (ledger.outstanding / retailer.creditLimit) * 100 : 0;
                   
                   return (
                     <tr key={retailer.id} className="border-b hover:bg-gray-50">

@@ -3,10 +3,14 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { useStore } from './store';
 import { LoginPage } from './pages/auth/LoginPage';
 import { SalesPage } from './pages/worker/SalesPage';
+import { WorkerRetailersPage } from './pages/worker/WorkerRetailersPage';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { InventoryPage } from './pages/admin/InventoryPage';
 import { RetailersPage } from './pages/admin/RetailersPage';
 import { ReportsPage } from './pages/admin/ReportsPage';
+import { WorkersPage } from './pages/admin/WorkersPage';
+import { ExpensesPage } from './pages/admin/ExpensesPage';
+import { AdminBillsPage } from './pages/admin/AdminBillsPage';
 import { X } from 'lucide-react';
 import './index.css';
 
@@ -83,54 +87,23 @@ export default function App() {
     <Router>
       <Notifications />
       <Routes>
-        {/* Auth Routes */}
+        {/* Auth */}
         <Route path="/login" element={<LoginPage />} />
 
         {/* Worker Routes */}
-        <Route
-          path="/worker/sales"
-          element={
-            <ProtectedRoute requiredRole="worker">
-              <SalesPage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/worker/sales" element={<ProtectedRoute requiredRole="worker"><SalesPage /></ProtectedRoute>} />
+        <Route path="/worker/retailers" element={<ProtectedRoute requiredRole="worker"><WorkerRetailersPage /></ProtectedRoute>} />
 
         {/* Admin Routes */}
-        <Route
-          path="/admin/dashboard"
-          element={
-            <ProtectedRoute requiredRole="admin">
-              <AdminDashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/inventory"
-          element={
-            <ProtectedRoute requiredRole="admin">
-              <InventoryPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/retailers"
-          element={
-            <ProtectedRoute requiredRole="admin">
-              <RetailersPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/reports"
-          element={
-            <ProtectedRoute requiredRole="admin">
-              <ReportsPage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/admin/dashboard" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
+        <Route path="/admin/inventory" element={<ProtectedRoute requiredRole="admin"><InventoryPage /></ProtectedRoute>} />
+        <Route path="/admin/retailers" element={<ProtectedRoute requiredRole="admin"><RetailersPage /></ProtectedRoute>} />
+        <Route path="/admin/reports" element={<ProtectedRoute requiredRole="admin"><ReportsPage /></ProtectedRoute>} />
+        <Route path="/admin/workers" element={<ProtectedRoute requiredRole="admin"><WorkersPage /></ProtectedRoute>} />
+        <Route path="/admin/expenses" element={<ProtectedRoute requiredRole="admin"><ExpensesPage /></ProtectedRoute>} />
+        <Route path="/admin/bills" element={<ProtectedRoute requiredRole="admin"><AdminBillsPage /></ProtectedRoute>} />
 
-        {/* Default Route */}
+        {/* Default */}
         <Route
           path="/"
           element={
@@ -146,7 +119,6 @@ export default function App() {
           }
         />
 
-        {/* 404 Route */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>

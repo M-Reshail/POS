@@ -7,6 +7,33 @@ export interface User {
   email: string;
   role: UserRole;
   isActive: boolean;
+  cnic?: string;
+  phone?: string;
+  joinDate?: Date | string;
+  createdAt: Date;
+}
+
+// Worker (extends User with sales stats)
+export interface Worker extends User {
+  totalBills: number;
+  totalRevenue: number;
+  totalPaid: number;
+  totalPending: number;
+  billsCreated?: any[];
+}
+
+// Expense Types
+export type ExpenseCategory = 'fuel' | 'salary' | 'delivery' | 'electricity' | 'maintenance' | 'other';
+
+export interface Expense {
+  id: string;
+  title: string;
+  amount: number;
+  category: ExpenseCategory;
+  description?: string;
+  date: Date | string;
+  createdById: string;
+  createdBy?: { id: string; name: string; role: string };
   createdAt: Date;
 }
 
@@ -28,11 +55,12 @@ export interface StockBatch {
   buyPrice: number;
   salePrice: number;
   batchNumber: string;
-  expiryDate: Date;
-  purchaseDate: Date;
-  supplierId: string;
-  supplier: string;
+  expiryDate: Date | string;
+  purchaseDate: Date | string;
+  supplierId?: string;
+  supplier?: string;
   createdAt: Date;
+  product?: Product;
 }
 
 export interface StockAdjustment {
@@ -79,6 +107,7 @@ export interface BillItem {
   price: number;
   discount?: number;
   total: number;
+  product?: { brand: string; variant: string };
 }
 
 export interface PaymentRecord {
@@ -103,8 +132,10 @@ export interface Bill {
   paymentMode?: 'cash' | 'credit' | 'udhar' | 'generate-only';
   previousPendingAdded?: number;
   oldPendingPaymentApplied?: number;
-  paymentHistory: PaymentRecord[]; // Track all payments with dates
+  paymentHistory: PaymentRecord[];
   status: 'pending' | 'paid' | 'partial';
+  retailer?: { id: string; shopName: string; ownerName: string; mobileNumber?: string };
+  worker?: { id: string; name: string };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -125,7 +156,7 @@ export interface PriceHistory {
   productId: string;
   oldPrice: number;
   newPrice: number;
-  changedBy: string; // Admin/Worker ID
+  changedBy: string;
   date: Date;
 }
 

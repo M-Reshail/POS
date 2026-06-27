@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
-import { User } from '../../types';
+import { authService } from '../../services/auth';
 import { Input, Button, Card } from '../../components/common';
 
 export const LoginPage: React.FC = () => {
@@ -12,31 +12,7 @@ export const LoginPage: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Mock users - in real app, this would be from an API
-  const mockUsers: Record<string, { password: string; user: User }> = {
-    'admin@pos.com': {
-      password: 'admin123',
-      user: {
-        id: '1',
-        name: 'Admin User',
-        email: 'admin@pos.com',
-        role: 'admin',
-        isActive: true,
-        createdAt: new Date(),
-      },
-    },
-    'worker@pos.com': {
-      password: 'worker123',
-      user: {
-        id: '2',
-        name: 'Shop Worker',
-        email: 'worker@pos.com',
-        role: 'worker',
-        isActive: true,
-        createdAt: new Date(),
-      },
-    },
-  };
+  // Mock users removed; using API
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -44,18 +20,12 @@ export const LoginPage: React.FC = () => {
     setLoading(true);
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const userRecord = mockUsers[email];
-      if (userRecord && userRecord.password === password) {
-        setCurrentUser(userRecord.user);
-        navigate(userRecord.user.role === 'admin' ? '/admin/dashboard' : '/worker/sales');
-      } else {
-        setError('Invalid email or password');
-      }
-    } catch (err) {
-      setError('Login failed. Please try again.');
+      const { accessToken, user } = await authService.login(email, password);
+      localStorage.setItem('accessToken', accessToken);
+      setCurrentUser(user);
+      navigate(user.role === 'admin' ? '/admin/dashboard' : '/worker/sales');
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -75,7 +45,7 @@ export const LoginPage: React.FC = () => {
             type="email"
             value={email}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-            placeholder="admin@pos.com or worker@pos.com"
+            placeholder="admin@gmail.com or worker@gmail.com"
             required
           />
 
@@ -96,8 +66,8 @@ export const LoginPage: React.FC = () => {
 
           <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600">
             <p className="font-medium mb-2">Demo Credentials:</p>
-            <p>Admin: admin@pos.com / admin123</p>
-            <p>Worker: worker@pos.com / worker123</p>
+            <p>Admin: admin@gmail.com / admin</p>
+            <p>Worker: worker@gmail.com / worker</p>
           </div>
         </form>
       </Card>

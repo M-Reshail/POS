@@ -26,6 +26,8 @@ import inventoryRoutes from './modules/inventory/inventory.routes';
 import retailerRoutes from './modules/retailers/retailer.routes';
 import billRoutes from './modules/bills/bill.routes';
 import ledgerRoutes from './modules/ledger/ledger.routes';
+import workerRoutes from './modules/workers/worker.routes';
+import expenseRoutes from './modules/expenses/expense.routes';
 
 
 // Prisma client (imported here to ensure singleton is initialized)
@@ -39,7 +41,9 @@ const app = express();
 
 app.use(
   cors({
-    origin: env.CORS_ORIGIN,
+    origin: env.CORS_ORIGIN.includes(',')
+      ? env.CORS_ORIGIN.split(',').map((o) => o.trim())
+      : env.CORS_ORIGIN,
     credentials: true, // Required for httpOnly cookie (refresh token)
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -72,6 +76,8 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/retailers', retailerRoutes);
 app.use('/api/bills',     billRoutes);
 app.use('/api/ledger',    ledgerRoutes);
+app.use('/api/workers',   workerRoutes);
+app.use('/api/expenses',  expenseRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 
@@ -110,6 +116,8 @@ const server = app.listen(env.PORT, () => {
   console.log(`    /api/retailers  — Retailers, ledger & RGB`);
   console.log(`    /api/bills      — Sales bills & payments`);
   console.log(`    /api/ledger     — Ledger overview & payments`);
+  console.log(`    /api/workers    — Worker management (admin)`);
+  console.log(`    /api/expenses   — Expense tracking (admin)`);
   console.log('\n    Waiting for requests...\n');
 });
 

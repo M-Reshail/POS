@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card, Input, Select, Modal, Badge } from '../../components/common';
 import { useStore } from '../../store';
 import { Package, Plus, BarChart3, Users, TrendingUp, ShoppingCart } from 'lucide-react';
-import { StockBatch, Product } from '../../types';
+import { StockBatch } from '../../types';
+import { inventoryService } from '../../services/inventory';
 
 // Brand image map - reuses images from public/images/ (same as Products page)
 const BRAND_IMAGES: Record<string, string> = {
@@ -38,96 +39,63 @@ export const InventoryPage: React.FC = () => {
     notes: '',
   });
 
-  // Mock products
-  const mockProducts: Product[] = [
-    { id: '1', brand: 'Pepsi', category: 'soft-drink', variant: '1.5L', petConversionFactor: 12 },
-    { id: '2', brand: 'Sprite', category: 'soft-drink', variant: '2L', petConversionFactor: 8 },
-    { id: '3', brand: 'Fanta', category: 'soft-drink', variant: '500ml', petConversionFactor: 24 },
-    { id: '4', brand: 'Pure Water', category: 'water', variant: '5L', petConversionFactor: 4 },
-  ];
+  // Use store data
+  const mockProducts = store.products;
+  const mockStockBatches = store.stockBatches;
 
-  // Mock stock data
-  const mockStockBatches: StockBatch[] = [
-    {
-      id: '1',
-      productId: '1',
-      quantity: 50,
-      buyPrice: 60,
-      salePrice: 80,
-      batchNumber: 'BATCH001',
-      expiryDate: new Date('2026-06-15'),
-      purchaseDate: new Date('2024-12-15'),
-      supplierId: 'S1',
-      supplier: 'PepsiCo Pakistan',
-      createdAt: new Date('2024-12-15'),
-    },
-    {
-      id: '2',
-      productId: '2',
-      quantity: 30,
-      buyPrice: 70,
-      salePrice: 95,
-      batchNumber: 'BATCH002',
-      expiryDate: new Date('2026-05-20'),
-      purchaseDate: new Date('2025-01-10'),
-      supplierId: 'S2',
-      supplier: 'Coca-Cola Pakistan',
-      createdAt: new Date('2025-01-10'),
-    },
-    {
-      id: '3',
-      productId: '1',
-      quantity: 10,
-      buyPrice: 60,
-      salePrice: 80,
-      batchNumber: 'BATCH003',
-      expiryDate: new Date('2026-03-10'),
-      purchaseDate: new Date('2025-02-10'),
-      supplierId: 'S1',
-      supplier: 'PepsiCo Pakistan',
-      createdAt: new Date('2025-02-10'),
-    },
-  ];
+  useEffect(() => {
+    store.fetchInitialData();
+  }, [store.fetchInitialData]);
 
-  const handleAddStock = () => {
+  const handleAddStock = async () => {
     if (addStockForm.productId && addStockForm.quantity && addStockForm.buyPrice) {
-      const newBatch: StockBatch = {
-        id: Date.now().toString(),
-        productId: addStockForm.productId,
-        quantity: parseFloat(addStockForm.quantity),
-        buyPrice: parseFloat(addStockForm.buyPrice),
-        salePrice: parseFloat(addStockForm.salePrice),
-        batchNumber: addStockForm.batchNumber,
-        expiryDate: new Date(addStockForm.expiryDate),
-        purchaseDate: new Date(),
-        supplierId: 'S1',
-        supplier: addStockForm.supplier,
-        createdAt: new Date(),
-      };
-      store.addStockBatch(newBatch);
-      setAddStockForm({
-        productId: '',
-        quantity: '',
-        buyPrice: '',
-        salePrice: '',
-        batchNumber: '',
-        expiryDate: '',
-        supplier: '',
-      });
-      setIsAddStockModalOpen(false);
-      store.addNotification('success', 'Stock added successfully');
+      try {
+        await inventoryService.addBatch({
+          productId: addStockForm.productId,
+          quantity: parseFloat(addStockForm.quantity),
+          buyPrice: parseFloat(addStockForm.buyPrice),
+          salePrice: parseFloat(addStockForm.salePrice),
+          batchNumber: addStockForm.batchNumber,
+          expiryDate: new Date(addStockForm.expiryDate),
+          supplier: addStockForm.supplier,
+        });
+        store.fetchInventory();
+        setAddStockForm({
+          productId: '',
+          quantity: '',
+          buyPrice: '',
+          salePrice: '',
+          batchNumber: '',
+          expiryDate: '',
+          supplier: '',
+        });
+        setIsAddStockModalOpen(false);
+        store.addNotification('success', 'Stock added successfully');
+      } catch (err: any) {
+        store.addNotification('error', err.response?.data?.message || 'Failed to add stock');
+      }
     }
   };
 
-  const handleAdjustStock = () => {
+  const handleAdjustStock = async () => {
     if (selectedBatch && adjustStockForm.quantity) {
-      store.addNotification('success', `Stock adjusted: ${adjustStockForm.quantity} PET (${adjustStockForm.reason})`);
-      setIsAdjustStockModalOpen(false);
-      setAdjustStockForm({
-        reason: 'damage',
-        quantity: '',
-        notes: '',
-      });
+      try {
+        await inventoryService.adjustStock(selectedBatch.id, {
+          quantity: parseFloat(adjustStockForm.quantity),
+          reason: adjustStockForm.reason,
+          notes: adjustStockForm.notes,
+        });
+        store.fetchInventory();
+        store.addNotification('success', `Stock adjusted successfully`);
+        setIsAdjustStockModalOpen(false);
+        setAdjustStockForm({
+          reason: 'damage',
+          quantity: '',
+          notes: '',
+        });
+      } catch (err: any) {
+        store.addNotification('error', err.response?.data?.message || 'Failed to adjust stock');
+      }
     }
   };
 
@@ -149,7 +117,8 @@ export const InventoryPage: React.FC = () => {
     setIsAddStockModalOpen(true);
   };
 
-  const checkExpiryStatus = (expiryDate: Date) => {
+  const checkExpiryStatus = (expiryDateStr: any) => {
+    const expiryDate = new Date(expiryDateStr);
     const now = new Date();
     const daysUntilExpiry = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     
@@ -319,7 +288,7 @@ export const InventoryPage: React.FC = () => {
                       <td className="py-3 px-4 text-right">₨{batch.buyPrice}</td>
                       <td className="py-3 px-4 text-right">₨{batch.salePrice}</td>
                       <td className="py-3 px-4 text-center text-xs">
-                        {batch.expiryDate.toLocaleDateString()}
+                        {new Date(batch.expiryDate).toLocaleDateString()}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <Badge
