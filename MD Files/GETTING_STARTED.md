@@ -82,8 +82,8 @@ The frontend will start and automatically open in your browser, typically at **`
 The database seeder configures two test accounts:
 
 ### 1. Test Admin Role (Full Access)
-- **Email**: `admin@pos.com`
-- **Password**: `admin123`
+- **Email**: `admin@gmail.com`
+- **Password**: `admin`
 - **Actions to Try**:
   - Review the **Admin Dashboard** showing aggregated metrics, inventory alerts, and transaction logs.
   - Manage **Inventory** by adding a new stock batch or performing manual stock adjustments with reasons.
@@ -93,8 +93,8 @@ The database seeder configures two test accounts:
 ### 2. Test Worker Role (Billing Screen Only)
 - **Logout** from the Admin account.
 - **Login** using the worker credentials:
-  - **Email**: `worker@pos.com`
-  - **Password**: `worker123`
+- **Email**: `worker@gmail.com`
+- **Password**: `worker`
 - **Actions to Try**:
   - The worker is immediately redirected to the **Worker Sales** page.
   - Click on a brand card (e.g., `Pepsi` or `Sprite`) to open the variants catalog.

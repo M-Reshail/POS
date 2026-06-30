@@ -3,25 +3,13 @@ import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card } from '../../components/common';
 import { useStore } from '../../store';
 import { expensesService } from '../../services/expenses';
-import {
-  BarChart3, Users, Package, TrendingUp, ShoppingCart, DollarSign,
-  Plus, Trash2, X, FileText,
-} from 'lucide-react';
+import { Plus, Trash2, X, FileText } from 'lucide-react';
 import { Expense, ExpenseCategory } from '../../types';
+import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
 
-const ADMIN_SIDEBAR = [
-  { label: 'Dashboard', icon: <BarChart3 size={18} />, path: '/admin/dashboard' },
-  { label: 'Create Sale', icon: <ShoppingCart size={18} />, path: '/worker/sales' },
-  { label: 'Inventory', icon: <Package size={18} />, path: '/admin/inventory' },
-  { label: 'Retailers', icon: <Users size={18} />, path: '/admin/retailers' },
-  { label: 'Workers', icon: <Users size={18} />, path: '/admin/workers' },
-  { label: 'Expenses', icon: <DollarSign size={18} />, path: '/admin/expenses' },
-  { label: 'Bills', icon: <ShoppingCart size={18} />, path: '/admin/bills' },
-  { label: 'Reports', icon: <TrendingUp size={18} />, path: '/admin/reports' },
-];
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   fuel: '⛽ Fuel',
@@ -56,9 +44,14 @@ export const ExpensesPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState({
-    title: '', amount: '', category: 'fuel' as ExpenseCategory, description: '', date: new Date().toISOString().split('T')[0],
+    title: 'Fuel', amount: '', category: 'fuel' as ExpenseCategory, description: '', date: new Date().toISOString().split('T')[0],
   });
   const [addError, setAddError] = useState('');
+
+  // Table filters
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterCategory, setFilterCategory] = useState<ExpenseCategory | ''>('');
 
   const loadData = async () => {
     setLoading(true);
@@ -94,8 +87,14 @@ export const ExpensesPage: React.FC = () => {
 
   const handleCreate = async () => {
     setAddError('');
-    if (!addForm.title || !addForm.amount) {
-      setAddError('Title and amount are required.');
+    const isOther = addForm.category === 'other';
+    const resolvedTitle = isOther ? addForm.title : CATEGORY_LABELS[addForm.category];
+    if (isOther && !addForm.title.trim()) {
+      setAddError('Title is required for "Other" category.');
+      return;
+    }
+    if (!addForm.amount) {
+      setAddError('Amount is required.');
       return;
     }
     const amount = parseFloat(addForm.amount);
@@ -104,14 +103,19 @@ export const ExpensesPage: React.FC = () => {
       return;
     }
     try {
-      await expensesService.create({ ...addForm, amount });
+      await expensesService.create({ ...addForm, title: resolvedTitle, amount });
       store.addNotification('success', 'Expense recorded');
       setShowAddModal(false);
-      setAddForm({ title: '', amount: '', category: 'fuel', description: '', date: new Date().toISOString().split('T')[0] });
+      setAddForm({ title: 'Fuel', amount: '', category: 'fuel', description: '', date: new Date().toISOString().split('T')[0] });
       loadData();
     } catch (err: any) {
       setAddError(err.response?.data?.message || 'Failed to add expense');
     }
+  };
+
+  const handleCategoryChange = (cat: ExpenseCategory) => {
+    const autoTitle = cat !== 'other' ? CATEGORY_LABELS[cat] : '';
+    setAddForm((f) => ({ ...f, category: cat, title: autoTitle }));
   };
 
   const handleDelete = async (id: string) => {
@@ -125,7 +129,14 @@ export const ExpensesPage: React.FC = () => {
     }
   };
 
-  const totalForPeriod = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  // Client-side filtered expense list for the table
+  const filteredExpenses = expenses.filter((e) => {
+    const eDate = new Date(e.date).toISOString().split('T')[0];
+    const matchFrom = !filterDateFrom || eDate >= filterDateFrom;
+    const matchTo = !filterDateTo || eDate <= filterDateTo;
+    const matchCat = !filterCategory || e.category === filterCategory;
+    return matchFrom && matchTo && matchCat;
+  });
 
   const chartData = summary?.categoryBreakdown.map((c) => ({
     name: CATEGORY_LABELS[c.category],
@@ -148,20 +159,27 @@ export const ExpensesPage: React.FC = () => {
           </Button>
         </div>
 
-        {/* Summary KPI Cards */}
+        {/* Summary KPI Cards — clickable with selected state */}
         <div className="grid grid-cols-3 gap-4 mb-5">
           {([['today', 'Today', 'blue'], ['week', 'This Week', 'purple'], ['month', 'This Month', 'green']] as [PeriodTab, string, string][]).map(([key, label, color]) => (
             <button
               key={key}
               onClick={() => setPeriod(key)}
-              className={`p-4 rounded-xl border-2 text-left transition-all ${
-                period === key ? `border-${color}-500 bg-${color}-50` : 'border-gray-200 bg-white hover:border-gray-300'
+              className={`p-4 rounded-xl border-2 text-left transition-all cursor-pointer select-none ${
+                period === key
+                  ? `border-${color}-500 bg-${color}-50 ring-2 ring-${color}-200 scale-[1.02] shadow-sm`
+                  : 'border-gray-200 bg-white hover:border-gray-400 hover:shadow-sm hover:scale-[1.01]'
               }`}
             >
-              <p className="text-xs text-gray-500">{label}</p>
-              <p className={`text-2xl font-bold mt-1 ${period === key ? `text-${color}-700` : 'text-gray-900'}`}>
+              <p className="text-xs text-gray-500 font-medium">{label}</p>
+              <p className={`text-2xl font-bold mt-1 ${
+                period === key ? `text-${color}-700` : 'text-gray-900'
+              }`}>
                 ₨{summary ? (key === 'today' ? summary.today : key === 'week' ? summary.week : summary.month).toFixed(0) : '—'}
               </p>
+              {period === key && (
+                <p className="text-xs mt-1 font-semibold" style={{ color: `var(--tw-${color})` }}>● Selected</p>
+              )}
             </button>
           ))}
         </div>
@@ -218,15 +236,49 @@ export const ExpensesPage: React.FC = () => {
 
         {/* Expense List */}
         <Card>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-wrap items-center gap-3 mb-3">
             <h3 className="font-semibold text-gray-900 text-sm">
-              {PERIOD_LABELS[period]} — {expenses.length} expense{expenses.length !== 1 ? 's' : ''} &nbsp;
-              <span className="text-gray-500 font-normal">Total: ₨{totalForPeriod.toFixed(0)}</span>
+              {PERIOD_LABELS[period]} — {filteredExpenses.length} expense{filteredExpenses.length !== 1 ? 's' : ''}&nbsp;
+              <span className="text-gray-500 font-normal">Total: ₨{filteredExpenses.reduce((s, e) => s + Number(e.amount), 0).toFixed(0)}</span>
             </h3>
+            {/* Inline filters */}
+            <div className="flex flex-wrap gap-2 ml-auto items-center">
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:border-blue-400 focus:outline-none"
+                title="From date"
+              />
+              <span className="text-xs text-gray-400">–</span>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:border-blue-400 focus:outline-none"
+                title="To date"
+              />
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value as ExpenseCategory | '')}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:border-blue-400 focus:outline-none"
+              >
+                <option value="">All Categories</option>
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                ))}
+              </select>
+              {(filterDateFrom || filterDateTo || filterCategory) && (
+                <button
+                  onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); setFilterCategory(''); }}
+                  className="text-xs text-blue-600 hover:underline"
+                >Clear</button>
+              )}
+            </div>
           </div>
           {loading ? (
             <p className="text-center py-8 text-gray-400 text-sm">Loading...</p>
-          ) : expenses.length === 0 ? (
+          ) : filteredExpenses.length === 0 ? (
             <div className="text-center py-10">
               <FileText size={40} className="text-gray-300 mx-auto mb-2" />
               <p className="text-gray-400 text-sm">No expenses recorded for this period</p>
@@ -249,7 +301,7 @@ export const ExpensesPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {expenses.map((expense) => (
+                  {filteredExpenses.map((expense) => (
                     <tr key={expense.id} className="border-b border-gray-50 hover:bg-gray-50">
                       <td className="py-2 px-2 text-gray-500 text-xs">{new Date(expense.date).toLocaleDateString()}</td>
                       <td className="py-2 px-2 font-medium text-gray-900">{expense.title}</td>
@@ -292,16 +344,47 @@ export const ExpensesPage: React.FC = () => {
                 <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{addError}</div>
               )}
               <div className="space-y-3">
+                {/* Category first — auto-fills title */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Title *</label>
-                  <input
-                    type="text"
-                    value={addForm.title}
-                    onChange={(e) => setAddForm((f) => ({ ...f, title: e.target.value }))}
-                    placeholder="e.g. Fuel for delivery van"
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-blue-400 focus:outline-none"
-                  />
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Category</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {CATEGORIES.map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => handleCategoryChange(cat)}
+                        className={`py-1.5 text-xs font-semibold rounded-lg border-2 transition-all ${
+                          addForm.category === cat
+                            ? 'text-white border-transparent'
+                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}
+                        style={addForm.category === cat ? { backgroundColor: CATEGORY_COLORS[cat], borderColor: CATEGORY_COLORS[cat] } : {}}
+                      >
+                        {CATEGORY_LABELS[cat]}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
+                {/* Title — auto-filled & hidden for non-Other categories */}
+                {addForm.category === 'other' ? (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Title <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={addForm.title}
+                      onChange={(e) => setAddForm((f) => ({ ...f, title: e.target.value }))}
+                      placeholder="Describe the expense..."
+                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-blue-400 focus:outline-none"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Title <span className="text-xs text-gray-400 font-normal">(auto-filled)</span></label>
+                    <div className="w-full text-sm border border-gray-100 bg-gray-50 rounded-lg px-3 py-2 text-gray-600">
+                      {addForm.title || CATEGORY_LABELS[addForm.category]}
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-gray-600 mb-1">Amount (₨) *</label>
@@ -322,25 +405,6 @@ export const ExpensesPage: React.FC = () => {
                       onChange={(e) => setAddForm((f) => ({ ...f, date: e.target.value }))}
                       className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-blue-400 focus:outline-none"
                     />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Category</label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {CATEGORIES.map((cat) => (
-                      <button
-                        key={cat}
-                        onClick={() => setAddForm((f) => ({ ...f, category: cat }))}
-                        className={`py-1.5 text-xs font-semibold rounded-lg border-2 transition-all ${
-                          addForm.category === cat
-                            ? 'text-white border-transparent'
-                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                        }`}
-                        style={addForm.category === cat ? { backgroundColor: CATEGORY_COLORS[cat], borderColor: CATEGORY_COLORS[cat] } : {}}
-                      >
-                        {CATEGORY_LABELS[cat]}
-                      </button>
-                    ))}
                   </div>
                 </div>
                 <div>

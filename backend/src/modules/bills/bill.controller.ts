@@ -11,9 +11,9 @@ import { BillPaymentMode, BillStatus } from '@prisma/client';
 // ── Validation Schemas ────────────────────────────────────────────────────────
 
 const billItemSchema = z.object({
-  productId: z.string().uuid('Invalid product ID.'),
-  quantity: z.number().int().min(1, 'Quantity must be at least 1.'),
-  price: z.number().positive('Price must be positive.'),
+  productId: z.string().min(1, 'Product ID is required.'), // allows UUID or "rgb-*" strings
+  quantity: z.number().positive('Quantity must be positive.'),
+  price: z.number().min(0, 'Price must be non-negative.'),
   discount: z.number().min(0).optional().default(0),
 });
 

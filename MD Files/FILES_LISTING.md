@@ -21,10 +21,11 @@ Contains configuration files for the React frontend application and serves as th
 ## 2. Public Directory (`public/`)
 Houses static assets loaded directly by the client browser.
 
-- **public/images/brand-logos/** - Brand icons used on the SalesPage cards:
+- **public/images/** - Brand icons used on the SalesPage cards:
   - `coca-cola.png`
   - `dew.png`
   - `fanta.png`
+  - `marinda.png`
   - `pepsi.png`
   - `sprite.png`
   - `string.png`
@@ -61,7 +62,9 @@ Contains the Node.js API server codebase, Prisma ORM setups, and PostgreSQL migr
 
 ### Database Setup (`backend/prisma/`)
 - **schema.prisma** - Prisma ORM database models, relations, schemas, and enums.
-- **seed.ts** - Database seeder script which creates default accounts (`admin@pos.com`, `worker@pos.com`) and catalogs.
+- **seed.ts** - Database seeder script which creates default accounts (`admin@gmail.com`, `worker@gmail.com`).
+- **seed_products.ts** - Seeder script for beverage products (Coca Cola, Sprite, Marinda, Dew) and their variants/batches.
+- **check_db.ts** - Script to verify existing products and batches in PostgreSQL.
 
 ### API Source Code (`backend/src/`)
 - **index.ts** - Express server entry point. Configures security middlewares, routes, error handlers, and port listeners.
@@ -135,5 +138,5 @@ TypeScript Files: ~35
 CSS Files: 1
 Config Files: 8
 Documentation Files: 11
-Image Files: 6 (in public/images/)
+Image Files: 7 (in public/images/)
 ```

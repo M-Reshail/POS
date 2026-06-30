@@ -7,9 +7,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## Table of Contents
+- [[2.1.0] - 2026-06-30](#210---2026-06-30)
 - [[2.0.0] - 2026-06-26](#200---2026-06-26)
 - [[1.1.0] - 2026-06-19](#110---2026-06-19)
 - [[1.0.0] - 2026-02-19](#100---2026-02-19)
+
+---
+
+## [2.1.0] - 2026-06-30
+
+### Added
+- **Branding Personalization**: Rebranded the POS system to "AbdulHaq" across all user-facing headers, layouts, page titles, login page, and text receipt templates.
+- **Inventory Seeding Script**: Created a database seeding script (`seed_products.ts`) to easily populate new products and batches.
+- **Marinda Product Support**: Added `Marinda` (Mirinda) brand with support for image rendering and Returnable Glass Bottles (RGB) quick action logic.
+- **Beverage Catalog Expansion**: Added Coca Cola, Sprite, Marinda, and Dew brands with four standard packaging variants each:
+  - 250ml Glass (24 conversion factor)
+  - 500ml PET (12 conversion factor)
+  - 1.5L PET (6 conversion factor)
+  - 2.25L PET (6 conversion factor)
+- **Initial Inventory Stock**: Automatically seeded initial FIFO stock batches of **100 cases (PET units)** for all 16 new product variant combinations.
+- **Product Assets**: Generated and added high-quality `marinda.png` to static assets (`public/images/`).
 
 ---
 

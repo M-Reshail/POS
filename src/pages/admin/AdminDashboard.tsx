@@ -2,7 +2,8 @@ import React, { useEffect } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
 import { Card, Badge } from '../../components/common';
 import { useStore } from '../../store';
-import { BarChart3, Users, Package, TrendingUp, AlertCircle, ShoppingCart } from 'lucide-react';
+import { BarChart3, Users, Package, TrendingUp, AlertCircle } from 'lucide-react';
+import { ADMIN_SIDEBAR } from '../../constants/navigation';
 
 export const AdminDashboard: React.FC = () => {
   const bills = useStore((state) => state.bills);
@@ -24,19 +25,8 @@ export const AdminDashboard: React.FC = () => {
   const todaysSales = bills.filter(b => new Date(b.createdAt).toDateString() === today);
   const todaysSalesAmount = todaysSales.reduce((sum, bill) => sum + bill.total, 0);
 
-  const sidebarItems = [
-    { label: 'Dashboard', icon: <BarChart3 size={18} />, path: '/admin/dashboard' },
-    { label: 'Create Sale', icon: <ShoppingCart size={18} />, path: '/worker/sales' },
-    { label: 'Inventory', icon: <Package size={18} />, path: '/admin/inventory' },
-    { label: 'Retailers', icon: <Users size={18} />, path: '/admin/retailers' },
-    { label: 'Workers', icon: <Users size={18} />, path: '/admin/workers' },
-    { label: 'Expenses', icon: <TrendingUp size={18} />, path: '/admin/expenses' },
-    { label: 'Bills', icon: <ShoppingCart size={18} />, path: '/admin/bills' },
-    { label: 'Reports', icon: <TrendingUp size={18} />, path: '/admin/reports' },
-  ];
-
   return (
-    <Layout sidebarItems={sidebarItems}>
+    <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
           {/* Metrics Cards */}

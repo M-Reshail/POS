@@ -3,26 +3,12 @@ import { Layout, PageContainer } from '../../components/Layout';
 import { Card } from '../../components/common';
 import { useStore } from '../../store';
 import { expensesService } from '../../services/expenses';
-import {
-  BarChart3, Users, Package, TrendingUp, ShoppingCart, DollarSign,
-  ArrowUpRight, ArrowDownRight,
-} from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Package, TrendingUp, DollarSign } from 'lucide-react';
+import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area,
 } from 'recharts';
-
-const ADMIN_SIDEBAR = [
-  { label: 'Dashboard', icon: <BarChart3 size={18} />, path: '/admin/dashboard' },
-  { label: 'Create Sale', icon: <ShoppingCart size={18} />, path: '/worker/sales' },
-  { label: 'Inventory', icon: <Package size={18} />, path: '/admin/inventory' },
-  { label: 'Retailers', icon: <Users size={18} />, path: '/admin/retailers' },
-  { label: 'Workers', icon: <Users size={18} />, path: '/admin/workers' },
-  { label: 'Expenses', icon: <DollarSign size={18} />, path: '/admin/expenses' },
-  { label: 'Bills', icon: <ShoppingCart size={18} />, path: '/admin/bills' },
-  { label: 'Reports', icon: <TrendingUp size={18} />, path: '/admin/reports' },
-];
-
 
 type RangeType = '7d' | '30d' | '90d';
 

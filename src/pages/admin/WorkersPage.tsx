@@ -3,22 +3,9 @@ import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card, Badge } from '../../components/common';
 import { useStore } from '../../store';
 import { workersService } from '../../services/workers';
-import {
-  Users, Plus, BarChart3, Package, TrendingUp, ShoppingCart,
-  DollarSign, Eye, EyeOff, X, Lock, CheckCircle, XCircle,
-} from 'lucide-react';
+import { Eye, EyeOff, X, Lock, CheckCircle, XCircle, Users, Plus, TrendingUp } from 'lucide-react';
 import { Worker } from '../../types';
-
-const ADMIN_SIDEBAR = [
-  { label: 'Dashboard', icon: <BarChart3 size={18} />, path: '/admin/dashboard' },
-  { label: 'Create Sale', icon: <ShoppingCart size={18} />, path: '/worker/sales' },
-  { label: 'Inventory', icon: <Package size={18} />, path: '/admin/inventory' },
-  { label: 'Retailers', icon: <Users size={18} />, path: '/admin/retailers' },
-  { label: 'Workers', icon: <Users size={18} />, path: '/admin/workers' },
-  { label: 'Expenses', icon: <DollarSign size={18} />, path: '/admin/expenses' },
-  { label: 'Bills', icon: <ShoppingCart size={18} />, path: '/admin/bills' },
-  { label: 'Reports', icon: <TrendingUp size={18} />, path: '/admin/reports' },
-];
+import { ADMIN_SIDEBAR } from '../../constants/navigation';
 
 export const WorkersPage: React.FC = () => {
   const store = useStore();

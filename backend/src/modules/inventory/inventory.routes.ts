@@ -26,16 +26,17 @@ import {
 const router = Router();
 
 router.use(authenticate);
-router.use(requireRole('admin')); // All inventory routes are admin-only
 
-// Named sub-routes first (before /:id)
+// ── Both Roles (read-only) ─────────────────────────────────────────────────────
+// Workers need stock data to display availability in the sales screen
 router.get('/low-stock', getLowStock);
 router.get('/expiry-risk', getExpiryRisk);
-
 router.get('/', listStockBatches);
 router.get('/:id', getStockBatch);
-router.post('/', createStockBatch);
-router.put('/:id', updateStockBatch);
-router.post('/:id/adjust', adjustStock);
+
+// ── Admin Only (write operations) ─────────────────────────────────────────────
+router.post('/', requireRole('admin'), createStockBatch);
+router.put('/:id', requireRole('admin'), updateStockBatch);
+router.post('/:id/adjust', requireRole('admin'), adjustStock);
 
 export default router;

@@ -105,6 +105,9 @@ export const createBill = async (input: CreateBillInput) => {
     const priceVariances: PriceVarianceFlag[] = [];
 
     for (const item of input.items) {
+      // RGB items (empty crates) are virtual — skip DB lookup & stock check
+      if (item.productId.startsWith('rgb-')) continue;
+
       const product = await tx.product.findUnique({ where: { id: item.productId } });
       if (!product) throw new Error(`PRODUCT_NOT_FOUND:${item.productId}`);
 
@@ -188,8 +191,9 @@ export const createBill = async (input: CreateBillInput) => {
       },
     });
 
-    // 7. FIFO stock depletion ──────────────────────────────────────────────────
+    // 7. FIFO stock depletion (skip virtual RGB items) ────────────────────────
     for (const item of input.items) {
+      if (item.productId.startsWith('rgb-')) continue;
       await deductStockFIFO(tx, item.productId, item.quantity);
     }
 

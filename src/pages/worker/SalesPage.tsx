@@ -4,12 +4,12 @@ import { Button, Card } from '../../components/common';
 import { useStore } from '../../store';
 import {
   ShoppingCart, Plus, Trash2, Droplet, Edit2, Check, Search, X,
-  History, UserPlus, BarChart3, Package, Users, TrendingUp,
-  ChevronLeft, DollarSign,
+  History, UserPlus, ChevronLeft,
 } from 'lucide-react';
 import { Bill, BillItem } from '../../types';
 import { retailersService } from '../../services/retailers';
 import { billsService } from '../../services/bills';
+import { ADMIN_SIDEBAR, WORKER_SIDEBAR } from '../../constants/navigation';
 
 interface CartItem extends BillItem {
   isEditingPrice?: boolean;
@@ -29,10 +29,12 @@ const BRAND_IMAGES: Record<string, string> = {
   'Dew': '/images/dew.png',
   'String': '/images/string.png',
   'Fanta': '/images/fanta.png',
+  'Marinda': '/images/marinda.png',
+  'Mirinda': '/images/marinda.png',
 };
 
 // RGB brands (one-click: always adds 5 units)
-const RGB_BRANDS = ['Pepsi', 'Coca Cola', 'Sprite', 'Dew', 'String', 'Fanta'];
+const RGB_BRANDS = ['Pepsi', 'Coca Cola', 'Sprite', 'Dew', 'String', 'Fanta', 'Marinda', 'Mirinda'];
 const RGB_QTY_PER_CLICK = 5;
 
 export const SalesPage: React.FC = () => {
@@ -65,6 +67,7 @@ export const SalesPage: React.FC = () => {
   // Add Retailer Modal
   const [showAddRetailerModal, setShowAddRetailerModal] = useState(false);
   const [newRetailerForm, setNewRetailerForm] = useState({ shopName: '', ownerName: '', mobileNumber: '', address: '' });
+  const [retailerFormErrors, setRetailerFormErrors] = useState<{ shopName?: string; ownerName?: string; mobileNumber?: string; address?: string }>({});
 
   useEffect(() => {
     store.fetchInitialData();
@@ -313,7 +316,7 @@ export const SalesPage: React.FC = () => {
 
     const content = `
 ╔════════════════════════════════════════╗
-║         BEVERAGE POS SYSTEM            ║
+║                ABDULHAQ                ║
 ╚════════════════════════════════════════╝
 
 Bill#: ${bill.billNumber}
@@ -347,21 +350,34 @@ Thank you for your business!
   };
 
   const handleAddRetailer = async () => {
-    if (!newRetailerForm.shopName || !newRetailerForm.ownerName) {
-      store.addNotification('error', 'Fill required fields');
+    // Inline validation — keep modal open on error, preserve form values
+    const errors: typeof retailerFormErrors = {};
+    if (!newRetailerForm.shopName.trim()) errors.shopName = 'Shop name is required.';
+    if (!newRetailerForm.ownerName.trim()) errors.ownerName = 'Owner name is required.';
+    if (!newRetailerForm.address.trim()) errors.address = 'Address is required.';
+    if (newRetailerForm.mobileNumber && !/^\d{11}$/.test(newRetailerForm.mobileNumber)) {
+      errors.mobileNumber = 'Phone must be exactly 11 digits.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setRetailerFormErrors(errors); // Show errors inside modal, do NOT close
       return;
     }
+    setRetailerFormErrors({});
+
     try {
       const r = await retailersService.create({ ...newRetailerForm, creditLimit: 0, priceTier: 'standard' });
       store.fetchRetailers();
       setSelectedRetailer(r.id);
       store.addNotification('success', 'Retailer added');
+      // Only reset form on success
+      setNewRetailerForm({ shopName: '', ownerName: '', mobileNumber: '', address: '' });
+      setShowAddRetailerModal(false);
     } catch (err: any) {
-      store.addNotification('error', err.response?.data?.message || 'Failed to add retailer');
+      setRetailerFormErrors({ shopName: err.response?.data?.message || 'Failed to add retailer' });
     }
-    setNewRetailerForm({ shopName: '', ownerName: '', mobileNumber: '', address: '' });
-    setShowAddRetailerModal(false);
   };
+
 
   const updateBillPayment = async (billId: string, amount: number) => {
     const bill = bills.find((b) => b.id === billId);
@@ -392,21 +408,7 @@ Thank you for your business!
 
   // ── Sidebar ───────────────────────────────────────────────────────────────────
   const isAdmin = store.currentUser?.role === 'admin';
-  const sidebarItems = isAdmin
-    ? [
-        { label: 'Dashboard', icon: <BarChart3 size={18} />, path: '/admin/dashboard' },
-        { label: 'Create Sale', icon: <ShoppingCart size={18} />, path: '/worker/sales' },
-        { label: 'Inventory', icon: <Package size={18} />, path: '/admin/inventory' },
-        { label: 'Retailers', icon: <Users size={18} />, path: '/admin/retailers' },
-        { label: 'Workers', icon: <Users size={18} />, path: '/admin/workers' },
-        { label: 'Expenses', icon: <DollarSign size={18} />, path: '/admin/expenses' },
-        { label: 'Bills', icon: <ShoppingCart size={18} />, path: '/admin/bills' },
-        { label: 'Reports', icon: <TrendingUp size={18} />, path: '/admin/reports' },
-      ]
-    : [
-        { label: 'Create Sale', icon: <ShoppingCart size={18} />, path: '/worker/sales' },
-        { label: 'Retailers', icon: <Users size={18} />, path: '/worker/retailers' },
-      ];
+  const sidebarItems = isAdmin ? ADMIN_SIDEBAR : WORKER_SIDEBAR;
 
   return (
     <Layout sidebarItems={sidebarItems}>
@@ -671,9 +673,9 @@ Thank you for your business!
                                     onChange={(e) =>
                                       updateItemDiscount(item.id, 0, e.target.value as 'percent' | 'fixed')
                                     }
-                                    className="border border-gray-200 rounded text-xs py-0.5 focus:outline-none"
+                                    className="border border-gray-200 rounded text-xs py-0.5 px-1 focus:outline-none focus:border-blue-400 bg-white"
                                   >
-                                    <option value="fixed"><DollarSign size={10} /></option>
+                                    <option value="fixed">PKR</option>
                                     <option value="percent">%</option>
                                   </select>
                                   <input
@@ -981,32 +983,64 @@ Thank you for your business!
             <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-bold text-gray-900">Add Retailer</h3>
-                <button onClick={() => setShowAddRetailerModal(false)} className="text-gray-400 hover:text-gray-600">
+                <button onClick={() => { setShowAddRetailerModal(false); setRetailerFormErrors({}); }} className="text-gray-400 hover:text-gray-600">
                   <X size={18} />
                 </button>
               </div>
               <div className="space-y-3">
-                {[
-                  { label: 'Shop Name *', key: 'shopName', placeholder: 'e.g. Ali Store' },
-                  { label: 'Owner Name *', key: 'ownerName', placeholder: 'e.g. Ali Khan' },
-                  { label: 'Phone', key: 'mobileNumber', placeholder: '03001234567' },
-                  { label: 'Address', key: 'address', placeholder: 'City, Province' },
-                ].map(({ label, key, placeholder }) => (
-                  <div key={key}>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
-                    <input
-                      type="text"
-                      value={newRetailerForm[key as keyof typeof newRetailerForm]}
-                      onChange={(e) => setNewRetailerForm((f) => ({ ...f, [key]: e.target.value }))}
-                      placeholder={placeholder}
-                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-blue-400 focus:outline-none"
-                    />
-                  </div>
-                ))}
+                {/* Shop Name */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Shop Name <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={newRetailerForm.shopName}
+                    onChange={(e) => setNewRetailerForm((f) => ({ ...f, shopName: e.target.value }))}
+                    placeholder="e.g. Ali Store"
+                    className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${retailerFormErrors.shopName ? 'border-red-400' : 'border-gray-200'}`}
+                  />
+                  {retailerFormErrors.shopName && <p className="text-red-500 text-xs mt-1">{retailerFormErrors.shopName}</p>}
+                </div>
+                {/* Owner Name */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Owner Name <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={newRetailerForm.ownerName}
+                    onChange={(e) => setNewRetailerForm((f) => ({ ...f, ownerName: e.target.value }))}
+                    placeholder="e.g. Ali Khan"
+                    className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${retailerFormErrors.ownerName ? 'border-red-400' : 'border-gray-200'}`}
+                  />
+                  {retailerFormErrors.ownerName && <p className="text-red-500 text-xs mt-1">{retailerFormErrors.ownerName}</p>}
+                </div>
+                {/* Phone */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Phone <span className="text-gray-400 font-normal">(11 digits)</span></label>
+                  <input
+                    type="text"
+                    value={newRetailerForm.mobileNumber}
+                    onChange={(e) => setNewRetailerForm((f) => ({ ...f, mobileNumber: e.target.value }))}
+                    placeholder="03001234567"
+                    maxLength={11}
+                    className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${retailerFormErrors.mobileNumber ? 'border-red-400' : 'border-gray-200'}`}
+                  />
+                  {retailerFormErrors.mobileNumber && <p className="text-red-500 text-xs mt-1">{retailerFormErrors.mobileNumber}</p>}
+                </div>
+                {/* Address */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Address <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={newRetailerForm.address}
+                    onChange={(e) => setNewRetailerForm((f) => ({ ...f, address: e.target.value }))}
+                    placeholder="City, Province"
+                    className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${retailerFormErrors.address ? 'border-red-400' : 'border-gray-200'}`}
+                  />
+                  {retailerFormErrors.address && <p className="text-red-500 text-xs mt-1">{retailerFormErrors.address}</p>}
+                </div>
               </div>
               <div className="flex gap-2 mt-5">
                 <Button onClick={handleAddRetailer} className="flex-1">Add Retailer</Button>
-                <Button variant="secondary" onClick={() => setShowAddRetailerModal(false)} className="flex-1">Cancel</Button>
+                <Button variant="secondary" onClick={() => { setShowAddRetailerModal(false); setRetailerFormErrors({}); }} className="flex-1">Cancel</Button>
               </div>
             </div>
           </div>

@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card, Input, Select, Modal, Badge } from '../../components/common';
 import { useStore } from '../../store';
-import { Package, Plus, BarChart3, Users, TrendingUp, ShoppingCart } from 'lucide-react';
+import { Package, Plus } from 'lucide-react';
 import { StockBatch } from '../../types';
 import { inventoryService } from '../../services/inventory';
+import { productsService } from '../../services/products';
+import { ADMIN_SIDEBAR } from '../../constants/navigation';
 
 // Brand image map - reuses images from public/images/ (same as Products page)
 const BRAND_IMAGES: Record<string, string> = {
@@ -14,6 +16,8 @@ const BRAND_IMAGES: Record<string, string> = {
   'Dew': '/images/dew.png',
   'String': '/images/string.png',
   'Fanta': '/images/fanta.png',
+  'Marinda': '/images/marinda.png',
+  'Mirinda': '/images/marinda.png',
 };
 
 export const InventoryPage: React.FC = () => {
@@ -22,6 +26,19 @@ export const InventoryPage: React.FC = () => {
   const [isAdjustStockModalOpen, setIsAdjustStockModalOpen] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<StockBatch | null>(null);
   const [selectedInventoryBrand, setSelectedInventoryBrand] = useState('');
+
+  // Add Product state
+  const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
+  const [productForm, setProductForm] = useState({
+    brand: '',
+    variant: '',
+    category: 'soft-drink' as 'soft-drink' | 'juice' | 'water' | 'energy-drink',
+    petConversionFactor: '24',
+    supportsRgb: false,
+    description: '',
+  });
+  const [productFormErrors, setProductFormErrors] = useState<{ brand?: string; variant?: string }>({});
+  const [productFormLoading, setProductFormLoading] = useState(false);
   
   const [addStockForm, setAddStockForm] = useState({
     productId: '',
@@ -99,6 +116,32 @@ export const InventoryPage: React.FC = () => {
     }
   };
 
+  const handleCreateProduct = async () => {
+    const errors: typeof productFormErrors = {};
+    if (!productForm.brand.trim()) errors.brand = 'Brand name is required.';
+    if (!productForm.variant.trim()) errors.variant = 'Variant name is required.';
+    if (Object.keys(errors).length > 0) { setProductFormErrors(errors); return; }
+    setProductFormErrors({});
+    setProductFormLoading(true);
+    try {
+      await productsService.create({
+        brand: productForm.brand.trim(),
+        variant: productForm.variant.trim(),
+        category: productForm.category,
+        petConversionFactor: parseFloat(productForm.petConversionFactor) || 24,
+        description: productForm.description.trim() || undefined,
+      });
+      store.fetchProducts();
+      store.addNotification('success', `Product "${productForm.brand} ${productForm.variant}" created`);
+      setProductForm({ brand: '', variant: '', category: 'soft-drink', petConversionFactor: '24', supportsRgb: false, description: '' });
+      setIsAddProductModalOpen(false);
+    } catch (err: any) {
+      setProductFormErrors({ brand: err.response?.data?.message || 'Failed to create product' });
+    } finally {
+      setProductFormLoading(false);
+    }
+  };
+
   const getProductName = (productId: string) => {
     const product = mockProducts.find((p) => p.id === productId);
     return product ? `${product.brand} ${product.variant}` : 'Unknown';
@@ -136,27 +179,41 @@ export const InventoryPage: React.FC = () => {
     0
   );
 
-  const sidebarItems = [
-    { label: 'Dashboard', icon: <BarChart3 size={20} />, path: '/admin/dashboard' },
-    { label: 'Create Sale', icon: <ShoppingCart size={20} />, path: '/worker/sales' },
-    { label: 'Inventory', icon: <Package size={20} />, path: '/admin/inventory' },
-    { label: 'Retailers', icon: <Users size={20} />, path: '/admin/retailers' },
-    { label: 'Reports', icon: <TrendingUp size={20} />, path: '/admin/reports' },
-  ];
-
   return (
-    <Layout sidebarItems={sidebarItems}>
+    <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Inventory Management</h1>
-          <Button
-            variant="secondary"
-            onClick={() => store.addNotification('info', 'Select a product variant below to add stock')}
-          >
-            <Plus size={18} className="mr-2" />
-            Add Stock
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setIsAddProductModalOpen(true)}>
+              <Plus size={18} className="mr-2" /> New Product
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (mockProducts.length === 0) {
+                  store.addNotification('info', 'Create a product first before adding stock');
+                } else {
+                  setIsAddStockModalOpen(true);
+                }
+              }}
+            >
+              <Plus size={18} className="mr-2" /> Add Stock
+            </Button>
+          </div>
         </div>
+
+        {/* No Products empty-state */}
+        {mockProducts.length === 0 && (
+          <div className="mb-6 p-8 bg-blue-50 border-2 border-dashed border-blue-200 rounded-xl text-center">
+            <Package size={48} className="text-blue-300 mx-auto mb-3" />
+            <h3 className="text-lg font-bold text-gray-700 mb-1">No Products Yet</h3>
+            <p className="text-sm text-gray-500 mb-4">Create your first product to start managing inventory and creating bills.</p>
+            <Button onClick={() => setIsAddProductModalOpen(true)}>
+              <Plus size={16} className="mr-1" /> Create First Product
+            </Button>
+          </div>
+        )}
 
         {/* Inventory Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -437,6 +494,112 @@ export const InventoryPage: React.FC = () => {
             </div>
           )}
         </Modal>
+
+        {/* ── Add Product Modal ── */}
+        {isAddProductModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
+                <h2 className="text-lg font-bold text-gray-900">Create New Product</h2>
+                <button onClick={() => { setIsAddProductModalOpen(false); setProductFormErrors({}); }} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+                {/* Brand */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Brand Name <span className="text-red-500">*</span></label>
+                  <input
+                    className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${productFormErrors.brand ? 'border-red-400' : 'border-gray-200'}`}
+                    value={productForm.brand}
+                    onChange={(e) => setProductForm((f) => ({ ...f, brand: e.target.value }))}
+                    placeholder="e.g. Pepsi"
+                  />
+                  {productFormErrors.brand && <p className="text-red-500 text-xs mt-1">{productFormErrors.brand}</p>}
+                </div>
+                {/* Variant */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Variant Name <span className="text-red-500">*</span></label>
+                  <input
+                    className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${productFormErrors.variant ? 'border-red-400' : 'border-gray-200'}`}
+                    value={productForm.variant}
+                    onChange={(e) => setProductForm((f) => ({ ...f, variant: e.target.value }))}
+                    placeholder="e.g. 1.5L PET"
+                  />
+                  {productFormErrors.variant && <p className="text-red-500 text-xs mt-1">{productFormErrors.variant}</p>}
+                </div>
+                {/* Category */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Category</label>
+                  <select
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400"
+                    value={productForm.category}
+                    onChange={(e) => setProductForm((f) => ({ ...f, category: e.target.value as any }))}
+                  >
+                    <option value="soft-drink">Soft Drink</option>
+                    <option value="juice">Juice</option>
+                    <option value="water">Water</option>
+                    <option value="energy-drink">Energy Drink</option>
+                  </select>
+                </div>
+                {/* Unit Type / PET Conversion */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Units per Case <span className="text-gray-400 font-normal">(PET conversion factor)</span></label>
+                  <select
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400"
+                    value={productForm.petConversionFactor}
+                    onChange={(e) => setProductForm((f) => ({ ...f, petConversionFactor: e.target.value }))}
+                  >
+                    <option value="6">6 — Large (2L)</option>
+                    <option value="12">12 — Medium (1L)</option>
+                    <option value="24">24 — Standard (500ml)</option>
+                    <option value="48">48 — Small (250ml)</option>
+                  </select>
+                </div>
+                {/* RGB Support */}
+                <div className="flex items-center gap-3 py-2">
+                  <input
+                    type="checkbox"
+                    id="supportsRgb"
+                    checked={productForm.supportsRgb}
+                    onChange={(e) => setProductForm((f) => ({ ...f, supportsRgb: e.target.checked }))}
+                    className="w-4 h-4 rounded"
+                  />
+                  <label htmlFor="supportsRgb" className="text-sm text-gray-700 cursor-pointer">
+                    <span className="font-semibold">RGB Support</span>
+                    <span className="text-gray-400 text-xs ml-1">(can track empty crates)</span>
+                  </label>
+                </div>
+                {/* Description */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Description <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <input
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400"
+                    value={productForm.description}
+                    onChange={(e) => setProductForm((f) => ({ ...f, description: e.target.value }))}
+                    placeholder="e.g. Carbonated soft drink"
+                  />
+                </div>
+              </div>
+              {/* Footer */}
+              <div className="flex gap-2 px-6 py-4 border-t flex-shrink-0">
+                <button
+                  onClick={handleCreateProduct}
+                  disabled={productFormLoading}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg py-2 transition-colors"
+                >
+                  {productFormLoading ? 'Creating...' : 'Create Product'}
+                </button>
+                <button
+                  onClick={() => { setIsAddProductModalOpen(false); setProductFormErrors({}); }}
+                  className="flex-1 border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-semibold rounded-lg py-2 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </PageContainer>
     </Layout>
   );

@@ -1,24 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Button, Card, Input, Select, Modal, Badge } from '../../components/common';
+import { Button, Card, Badge } from '../../components/common';
 import { useStore } from '../../store';
-import { Users, Plus, Phone, BarChart3, Package, TrendingUp, ShoppingCart } from 'lucide-react';
-
+import { Plus, Phone, X } from 'lucide-react';
+import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import { retailersService } from '../../services/retailers';
+
+interface RetailerForm {
+  shopName: string;
+  ownerName: string;
+  mobileNumber: string;
+  address: string;
+  deliveryLocation: string;
+  creditLimit: string;
+  priceTier: 'standard' | 'premium' | 'discount';
+}
+
+const BLANK_FORM: RetailerForm = {
+  shopName: '',
+  ownerName: '',
+  mobileNumber: '',
+  address: '',
+  deliveryLocation: '',
+  creditLimit: '',
+  priceTier: 'standard',
+};
 
 export const RetailersPage: React.FC = () => {
   const store = useStore();
   const [isAddRetailerModalOpen, setIsAddRetailerModalOpen] = useState(false);
-  
-  const [addRetailerForm, setAddRetailerForm] = useState({
-    shopName: '',
-    ownerName: '',
-    mobileNumber: '',
-    address: '',
-    deliveryLocation: '',
-    creditLimit: '',
-    priceTier: 'standard' as 'standard' | 'premium' | 'discount',
-  });
+  const [addRetailerForm, setAddRetailerForm] = useState<RetailerForm>(BLANK_FORM);
+  const [formErrors, setFormErrors] = useState<Partial<Record<keyof RetailerForm, string>>>();
 
   // Use store data
   const mockRetailers = store.retailers;
@@ -39,33 +51,47 @@ export const RetailersPage: React.FC = () => {
   }, {} as Record<string, { outstanding: number; paid: number; rgbBalance: number }>);
 
   const handleAddRetailer = async () => {
-    if (addRetailerForm.shopName && addRetailerForm.ownerName && addRetailerForm.creditLimit) {
-      try {
-        await retailersService.create({
-          shopName: addRetailerForm.shopName,
-          ownerName: addRetailerForm.ownerName,
-          mobileNumber: addRetailerForm.mobileNumber,
-          address: addRetailerForm.address,
-          deliveryLocation: addRetailerForm.deliveryLocation,
-          creditLimit: parseFloat(addRetailerForm.creditLimit),
-          priceTier: addRetailerForm.priceTier,
-        });
-        store.fetchRetailers();
-        setAddRetailerForm({
-          shopName: '',
-          ownerName: '',
-          mobileNumber: '',
-          address: '',
-          deliveryLocation: '',
-          creditLimit: '',
-          priceTier: 'standard',
-        });
-        setIsAddRetailerModalOpen(false);
-        store.addNotification('success', 'Retailer added successfully');
-      } catch (err: any) {
-        store.addNotification('error', err.response?.data?.message || 'Failed to add retailer');
-      }
+    const errors: Partial<Record<keyof RetailerForm, string>> = {};
+
+    if (!addRetailerForm.shopName.trim()) errors.shopName = 'Shop name is required.';
+    if (!addRetailerForm.ownerName.trim()) errors.ownerName = 'Owner name is required.';
+    if (!addRetailerForm.address.trim()) errors.address = 'Address is required.';
+    if (!addRetailerForm.creditLimit) errors.creditLimit = 'Credit limit is required.';
+    if (addRetailerForm.mobileNumber && !/^\d{11}$/.test(addRetailerForm.mobileNumber)) {
+      errors.mobileNumber = 'Phone number must be exactly 11 digits.';
     }
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return; // Keep modal open, show inline errors
+    }
+    setFormErrors({});
+
+    try {
+      await retailersService.create({
+        shopName: addRetailerForm.shopName,
+        ownerName: addRetailerForm.ownerName,
+        mobileNumber: addRetailerForm.mobileNumber,
+        address: addRetailerForm.address,
+        deliveryLocation: addRetailerForm.deliveryLocation,
+        creditLimit: parseFloat(addRetailerForm.creditLimit),
+        priceTier: addRetailerForm.priceTier,
+      });
+      store.fetchRetailers();
+      setAddRetailerForm(BLANK_FORM);
+      setFormErrors({});
+      setIsAddRetailerModalOpen(false);
+      store.addNotification('success', 'Retailer added successfully');
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Failed to add retailer';
+      setFormErrors({ shopName: msg }); // Show server error inline
+    }
+  };
+
+  const handleCloseModal = () => {
+    setIsAddRetailerModalOpen(false);
+    setFormErrors({});
+    // Do NOT reset form — preserve entered data on close
   };
 
   const getCreditStatusColor = (outstanding: number, limit: number) => {
@@ -76,16 +102,10 @@ export const RetailersPage: React.FC = () => {
     return 'danger';
   };
 
-  const sidebarItems = [
-    { label: 'Dashboard', icon: <BarChart3 size={20} />, path: '/admin/dashboard' },
-    { label: 'Create Sale', icon: <ShoppingCart size={20} />, path: '/worker/sales' },
-    { label: 'Inventory', icon: <Package size={20} />, path: '/admin/inventory' },
-    { label: 'Retailers', icon: <Users size={20} />, path: '/admin/retailers' },
-    { label: 'Reports', icon: <TrendingUp size={20} />, path: '/admin/reports' },
-  ];
+
 
   return (
-    <Layout sidebarItems={sidebarItems}>
+    <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Retailer Management</h1>
@@ -104,13 +124,13 @@ export const RetailersPage: React.FC = () => {
           <Card>
             <p className="text-gray-600 text-sm">Total Outstanding Credit</p>
             <p className="text-2xl font-bold mt-2 text-orange-600">
-              ₨{Object.values(retailerLedger).reduce((sum, l) => sum + l.outstanding, 0).toFixed(0)}
+              ₨{Object.values(retailerLedger).reduce((sum, l) => sum + Number(l.outstanding), 0).toFixed(0)}
             </p>
           </Card>
           <Card>
             <p className="text-gray-600 text-sm">Total Credit Limit</p>
             <p className="text-2xl font-bold mt-2">
-              ₨{mockRetailers.reduce((sum, r) => sum + r.creditLimit, 0).toFixed(0)}
+              ₨{mockRetailers.reduce((sum, r) => sum + Number(r.creditLimit), 0).toFixed(0)}
             </p>
           </Card>
         </div>
@@ -135,8 +155,10 @@ export const RetailersPage: React.FC = () => {
               <tbody>
                 {mockRetailers.map((retailer) => {
                   const ledger = retailerLedger[retailer.id] || { outstanding: 0, paid: 0, rgbBalance: 0 };
-                  const creditStatusColor = getCreditStatusColor(ledger.outstanding, retailer.creditLimit);
-                  const usagePercentage = retailer.creditLimit > 0 ? (ledger.outstanding / retailer.creditLimit) * 100 : 0;
+                  const creditLimit = Number(retailer.creditLimit) || 0;
+                  const outstanding = Number(ledger.outstanding) || 0;
+                  const creditStatusColor = getCreditStatusColor(outstanding, creditLimit);
+                  const usagePercentage = creditLimit > 0 ? (outstanding / creditLimit) * 100 : 0;
                   
                   return (
                     <tr key={retailer.id} className="border-b hover:bg-gray-50">
@@ -148,8 +170,8 @@ export const RetailersPage: React.FC = () => {
                           {retailer.mobileNumber}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-right">₨{retailer.creditLimit.toFixed(0)}</td>
-                      <td className="py-3 px-4 text-right font-semibold">₨{ledger.outstanding.toFixed(0)}</td>
+                      <td className="py-3 px-4 text-right">₨{creditLimit.toFixed(0)}</td>
+                      <td className="py-3 px-4 text-right font-semibold">₨{outstanding.toFixed(0)}</td>
                       <td className="py-3 px-4 text-center">
                         <div className="w-24 h-2 bg-gray-200 rounded-full mx-auto overflow-hidden">
                           <div
@@ -198,70 +220,120 @@ export const RetailersPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Add Retailer Modal */}
-        <Modal
-          isOpen={isAddRetailerModalOpen}
-          title="Add New Retailer"
-          onClose={() => setIsAddRetailerModalOpen(false)}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setIsAddRetailerModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleAddRetailer}>Add Retailer</Button>
-            </>
-          }
-        >
-          <div className="space-y-4">
-            <Input
-              label="Shop Name"
-              value={addRetailerForm.shopName}
-              onChange={(e) => setAddRetailerForm({ ...addRetailerForm, shopName: e.target.value })}
-              placeholder="e.g., Ali Store"
-            />
-            <Input
-              label="Owner Name"
-              value={addRetailerForm.ownerName}
-              onChange={(e) => setAddRetailerForm({ ...addRetailerForm, ownerName: e.target.value })}
-              placeholder="e.g., Ali Khan"
-            />
-            <Input
-              label="Mobile Number"
-              value={addRetailerForm.mobileNumber}
-              onChange={(e) => setAddRetailerForm({ ...addRetailerForm, mobileNumber: e.target.value })}
-              placeholder="03001234567"
-            />
-            <Input
-              label="Address"
-              value={addRetailerForm.address}
-              onChange={(e) => setAddRetailerForm({ ...addRetailerForm, address: e.target.value })}
-              placeholder="City, Province"
-            />
-            <Input
-              label="Delivery Location"
-              value={addRetailerForm.deliveryLocation}
-              onChange={(e) => setAddRetailerForm({ ...addRetailerForm, deliveryLocation: e.target.value })}
-              placeholder="Specific delivery point"
-            />
-            <Input
-              label="Credit Limit (₨)"
-              type="number"
-              value={addRetailerForm.creditLimit}
-              onChange={(e) => setAddRetailerForm({ ...addRetailerForm, creditLimit: e.target.value })}
-              placeholder="100000"
-            />
-            <Select
-              label="Price Tier"
-              value={addRetailerForm.priceTier}
-              onChange={(e) => setAddRetailerForm({ ...addRetailerForm, priceTier: e.target.value as any })}
-              options={[
-                { value: 'standard', label: 'Standard' },
-                { value: 'premium', label: 'Premium (Discount)' },
-                { value: 'discount', label: 'Discount (Special Bulk)' },
-              ]}
-            />
+        {/* Add Retailer Modal — properly sized, inline validation */}
+        {isAddRetailerModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
+                <h2 className="text-lg font-bold text-gray-900">Add New Retailer</h2>
+                <button onClick={handleCloseModal} className="text-gray-400 hover:text-gray-600">
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Body — scrollable */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Shop Name <span className="text-red-500">*</span></label>
+                  <input
+                    className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${
+                      formErrors?.shopName ? 'border-red-500' : 'border-gray-200'
+                    }`}
+                    value={addRetailerForm.shopName}
+                    onChange={(e) => setAddRetailerForm((f) => ({ ...f, shopName: e.target.value }))}
+                    placeholder="e.g., Ali General Store"
+                  />
+                  {formErrors?.shopName && <p className="text-red-500 text-xs mt-1">{formErrors.shopName}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Owner Name <span className="text-red-500">*</span></label>
+                  <input
+                    className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${
+                      formErrors?.ownerName ? 'border-red-500' : 'border-gray-200'
+                    }`}
+                    value={addRetailerForm.ownerName}
+                    onChange={(e) => setAddRetailerForm((f) => ({ ...f, ownerName: e.target.value }))}
+                    placeholder="e.g., Ali Khan"
+                  />
+                  {formErrors?.ownerName && <p className="text-red-500 text-xs mt-1">{formErrors.ownerName}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Mobile Number <span className="text-gray-400 font-normal">(11 digits)</span></label>
+                  <input
+                    className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${
+                      formErrors?.mobileNumber ? 'border-red-500' : 'border-gray-200'
+                    }`}
+                    value={addRetailerForm.mobileNumber}
+                    onChange={(e) => setAddRetailerForm((f) => ({ ...f, mobileNumber: e.target.value }))}
+                    placeholder="03001234567"
+                    maxLength={11}
+                  />
+                  {formErrors?.mobileNumber && <p className="text-red-500 text-xs mt-1">{formErrors.mobileNumber}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Address <span className="text-red-500">*</span></label>
+                  <input
+                    className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${
+                      formErrors?.address ? 'border-red-500' : 'border-gray-200'
+                    }`}
+                    value={addRetailerForm.address}
+                    onChange={(e) => setAddRetailerForm((f) => ({ ...f, address: e.target.value }))}
+                    placeholder="City, Province"
+                  />
+                  {formErrors?.address && <p className="text-red-500 text-xs mt-1">{formErrors.address}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Delivery Location</label>
+                  <input
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400"
+                    value={addRetailerForm.deliveryLocation}
+                    onChange={(e) => setAddRetailerForm((f) => ({ ...f, deliveryLocation: e.target.value }))}
+                    placeholder="Specific delivery point"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Credit Limit (₨) <span className="text-red-500">*</span></label>
+                    <input
+                      type="number"
+                      className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${
+                        formErrors?.creditLimit ? 'border-red-500' : 'border-gray-200'
+                      }`}
+                      value={addRetailerForm.creditLimit}
+                      onChange={(e) => setAddRetailerForm((f) => ({ ...f, creditLimit: e.target.value }))}
+                      placeholder="100000"
+                    />
+                    {formErrors?.creditLimit && <p className="text-red-500 text-xs mt-1">{formErrors.creditLimit}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Price Tier</label>
+                    <select
+                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400"
+                      value={addRetailerForm.priceTier}
+                      onChange={(e) => setAddRetailerForm((f) => ({ ...f, priceTier: e.target.value as any }))}
+                    >
+                      <option value="standard">Standard</option>
+                      <option value="premium">Premium</option>
+                      <option value="discount">Discount</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer — always visible */}
+              <div className="flex gap-2 px-6 py-4 border-t flex-shrink-0">
+                <Button onClick={handleAddRetailer} className="flex-1">Add Retailer</Button>
+                <Button variant="secondary" onClick={handleCloseModal} className="flex-1">Cancel</Button>
+              </div>
+            </div>
           </div>
-        </Modal>
+        )}
       </PageContainer>
     </Layout>
   );

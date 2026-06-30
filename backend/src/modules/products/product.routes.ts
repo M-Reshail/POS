@@ -24,12 +24,12 @@ const router = Router();
 // All product routes require authentication
 router.use(authenticate);
 
-// ── Both Roles ────────────────────────────────────────────────────────────────
+// ── Both Roles (read-only) ────────────────────────────────────────────────────
+router.get('/', listProducts);                       // Workers need product list for sales
 router.get('/in-stock', listProductsInStock);        // Must be before /:id
 router.get('/:id', getProduct);
 
 // ── Admin Only ────────────────────────────────────────────────────────────────
-router.get('/', requireRole('admin'), listProducts);
 router.post('/', requireRole('admin'), createProduct);
 router.put('/:id', requireRole('admin'), updateProduct);
 

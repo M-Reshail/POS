@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store';
+import { authService } from './services/auth';
 import { LoginPage } from './pages/auth/LoginPage';
 import { SalesPage } from './pages/worker/SalesPage';
 import { WorkerRetailersPage } from './pages/worker/WorkerRetailersPage';
@@ -14,50 +15,87 @@ import { AdminBillsPage } from './pages/admin/AdminBillsPage';
 import { X } from 'lucide-react';
 import './index.css';
 
-// Protected Route Component
-const ProtectedRoute: React.FC<{ children: React.ReactNode; requiredRole?: 'admin' | 'worker' }> = ({
-  children,
-  requiredRole,
-}) => {
-  const currentUser = useStore((state) => state.currentUser);
+// ── Auth Persistence ──────────────────────────────────────────────────────────
+// On page refresh Zustand state is empty. We re-validate the stored JWT before
+// rendering protected routes so the user is NOT bounced to /login incorrectly.
 
-  if (!currentUser) {
-    return <Navigate to="/login" replace />;
-  }
+const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const setCurrentUser = useStore((s) => s.setCurrentUser);
+  const [checking, setChecking] = useState(true);
 
-  if (requiredRole && currentUser.role !== requiredRole && currentUser.role !== 'admin') {
-    return <Navigate to="/login" replace />;
+  useEffect(() => {
+    const token = localStorage.getItem('accessToken');
+    if (!token) { setChecking(false); return; }
+
+    authService
+      .getCurrentUser()
+      .then(({ user }) => { setCurrentUser(user); })
+      .catch(() => {
+        localStorage.removeItem('accessToken');
+        setCurrentUser(null);
+      })
+      .finally(() => setChecking(false));
+  }, []);
+
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+          <p className="text-sm text-gray-500">Loading…</p>
+        </div>
+      </div>
+    );
   }
 
   return <>{children}</>;
 };
 
-// Notification Component
+// ── Protected Route ───────────────────────────────────────────────────────────
+const ProtectedRoute: React.FC<{
+  children: React.ReactNode;
+  requiredRole?: 'admin' | 'worker';
+}> = ({ children, requiredRole }) => {
+  const currentUser = useStore((s) => s.currentUser);
+
+  if (!currentUser) return <Navigate to="/login" replace />;
+
+  // Admins can access everything; workers can only access worker routes
+  if (requiredRole === 'admin' && currentUser.role !== 'admin') {
+    return <Navigate to="/worker/sales" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// ── Notifications ─────────────────────────────────────────────────────────────
 const Notifications: React.FC = () => {
-  const notifications = useStore((state) => state.notifications);
-  const removeNotification = useStore((state) => state.removeNotification);
+  const notifications = useStore((s) => s.notifications);
+  const removeNotification = useStore((s) => s.removeNotification);
+
+  useEffect(() => {
+    if (notifications.length === 0) return;
+    const timer = setTimeout(() => {
+      removeNotification(notifications[0].id);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [notifications]);
 
   return (
-    <div className="fixed top-4 right-4 space-y-2 z-50 pointer-events-none">
-      {notifications.map((notif) => (
+    <div className="fixed top-4 right-4 space-y-2 z-[9999] pointer-events-none">
+      {notifications.map((n) => (
         <div
-          key={notif.id}
-          className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-lg text-white font-medium shadow-lg animate-fade-in ${
-            notif.type === 'success'
-              ? 'bg-green-600'
-              : notif.type === 'error'
-              ? 'bg-red-600'
-              : notif.type === 'warning'
-              ? 'bg-yellow-600'
-              : 'bg-blue-600'
+          key={n.id}
+          className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-lg text-white font-medium shadow-lg ${
+            n.type === 'success' ? 'bg-green-600'
+            : n.type === 'error'   ? 'bg-red-600'
+            : n.type === 'warning' ? 'bg-yellow-600'
+            : 'bg-blue-600'
           }`}
         >
-          <span>{notif.message}</span>
-          <button
-            onClick={() => removeNotification(notif.id)}
-            className="hover:opacity-80"
-          >
-            <X size={18} />
+          <span className="text-sm">{n.message}</span>
+          <button onClick={() => removeNotification(n.id)} className="hover:opacity-75 flex-shrink-0">
+            <X size={16} />
           </button>
         </div>
       ))}
@@ -65,62 +103,45 @@ const Notifications: React.FC = () => {
   );
 };
 
+// ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const currentUser = useStore((state) => state.currentUser);
-
-  useEffect(() => {
-    // Auto-remove notifications after 5 seconds
-    const timer = setInterval(() => {
-      const notifications = useStore.getState().notifications;
-      if (notifications.length > 0) {
-        const firstNotif = notifications[0];
-        setTimeout(() => {
-          useStore.getState().removeNotification(firstNotif.id);
-        }, 5000);
-      }
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
+  const currentUser = useStore((s) => s.currentUser);
 
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <Notifications />
-      <Routes>
-        {/* Auth */}
-        <Route path="/login" element={<LoginPage />} />
+      <AuthGate>
+        <Notifications />
+        <Routes>
+          {/* Auth */}
+          <Route path="/login" element={<LoginPage />} />
 
-        {/* Worker Routes */}
-        <Route path="/worker/sales" element={<ProtectedRoute requiredRole="worker"><SalesPage /></ProtectedRoute>} />
-        <Route path="/worker/retailers" element={<ProtectedRoute requiredRole="worker"><WorkerRetailersPage /></ProtectedRoute>} />
+          {/* Worker Routes */}
+          <Route path="/worker/sales"     element={<ProtectedRoute><SalesPage /></ProtectedRoute>} />
+          <Route path="/worker/retailers" element={<ProtectedRoute><WorkerRetailersPage /></ProtectedRoute>} />
 
-        {/* Admin Routes */}
-        <Route path="/admin/dashboard" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
-        <Route path="/admin/inventory" element={<ProtectedRoute requiredRole="admin"><InventoryPage /></ProtectedRoute>} />
-        <Route path="/admin/retailers" element={<ProtectedRoute requiredRole="admin"><RetailersPage /></ProtectedRoute>} />
-        <Route path="/admin/reports" element={<ProtectedRoute requiredRole="admin"><ReportsPage /></ProtectedRoute>} />
-        <Route path="/admin/workers" element={<ProtectedRoute requiredRole="admin"><WorkersPage /></ProtectedRoute>} />
-        <Route path="/admin/expenses" element={<ProtectedRoute requiredRole="admin"><ExpensesPage /></ProtectedRoute>} />
-        <Route path="/admin/bills" element={<ProtectedRoute requiredRole="admin"><AdminBillsPage /></ProtectedRoute>} />
+          {/* Admin Routes */}
+          <Route path="/admin/dashboard" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/inventory" element={<ProtectedRoute requiredRole="admin"><InventoryPage /></ProtectedRoute>} />
+          <Route path="/admin/retailers" element={<ProtectedRoute requiredRole="admin"><RetailersPage /></ProtectedRoute>} />
+          <Route path="/admin/reports"   element={<ProtectedRoute requiredRole="admin"><ReportsPage /></ProtectedRoute>} />
+          <Route path="/admin/workers"   element={<ProtectedRoute requiredRole="admin"><WorkersPage /></ProtectedRoute>} />
+          <Route path="/admin/expenses"  element={<ProtectedRoute requiredRole="admin"><ExpensesPage /></ProtectedRoute>} />
+          <Route path="/admin/bills"     element={<ProtectedRoute requiredRole="admin"><AdminBillsPage /></ProtectedRoute>} />
 
-        {/* Default */}
-        <Route
-          path="/"
-          element={
-            currentUser ? (
-              currentUser.role === 'admin' ? (
-                <Navigate to="/admin/dashboard" replace />
-              ) : (
-                <Navigate to="/worker/sales" replace />
-              )
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          {/* Default redirect */}
+          <Route
+            path="/"
+            element={
+              currentUser
+                ? currentUser.role === 'admin'
+                  ? <Navigate to="/admin/dashboard" replace />
+                  : <Navigate to="/worker/sales" replace />
+                : <Navigate to="/login" replace />
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthGate>
     </Router>
   );
 }

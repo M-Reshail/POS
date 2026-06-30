@@ -25,15 +25,17 @@ import {
 
 const router = Router();
 
+// All authenticated users can read and create retailers
 router.use(authenticate);
-router.use(requireRole('admin'));
 
 router.get('/', listRetailers);
-router.post('/', createRetailer);
 router.get('/:id', getRetailer);
-router.put('/:id', updateRetailer);
-router.get('/:id/ledger', getRetailerLedger);
-router.get('/:id/rgb', getRetailerRGB);
-router.put('/:id/rgb', updateRetailerRGB);
+router.post('/', createRetailer);
+
+// Admin-only mutations
+router.put('/:id', requireRole('admin'), updateRetailer);
+router.get('/:id/ledger', requireRole('admin'), getRetailerLedger);
+router.get('/:id/rgb', requireRole('admin'), getRetailerRGB);
+router.put('/:id/rgb', requireRole('admin'), updateRetailerRGB);
 
 export default router;

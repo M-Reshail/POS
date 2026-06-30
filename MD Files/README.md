@@ -1,4 +1,4 @@
-# Beverage POS System
+# AbdulHaq Beverage POS System
 
 A comprehensive **Wholesale & Retail Beverage Management System** built with a full-stack architecture featuring **React + Tailwind CSS** on the frontend, and **Node.js + Express + TypeScript + PostgreSQL + Prisma ORM** on the backend. Designed specifically for shopkeepers and wholesalers dealing in soft drinks, juices, water, and related FMCG products.
 

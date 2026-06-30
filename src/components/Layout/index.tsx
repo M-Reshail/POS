@@ -40,7 +40,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems }) => {
       >
         {/* Logo */}
         <div className="p-4 flex items-center justify-between">
-          {sidebarOpen && <h1 className="text-xl font-bold">POS System</h1>}
+          {sidebarOpen && <h1 className="text-xl font-bold">AbdulHaq</h1>}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="p-2 hover:bg-gray-800 rounded transition-colors"
@@ -102,7 +102,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems }) => {
       >
         {/* Logo */}
         <div className="p-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold">POS</h1>
+          <h1 className="text-xl font-bold">AbdulHaq</h1>
           <button
             onClick={() => setMobileMenuOpen(false)}
             className="p-2 hover:bg-gray-800 rounded transition-colors"

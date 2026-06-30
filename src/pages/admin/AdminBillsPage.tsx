@@ -3,22 +3,10 @@ import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card } from '../../components/common';
 import { useStore } from '../../store';
 import { billsService } from '../../services/bills';
-import {
-  BarChart3, Users, Package, TrendingUp, ShoppingCart, DollarSign,
-  Search, ChevronDown, ChevronUp, Filter,
-} from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Filter } from 'lucide-react';
 import { Bill } from '../../types';
+import { ADMIN_SIDEBAR } from '../../constants/navigation';
 
-const ADMIN_SIDEBAR = [
-  { label: 'Dashboard', icon: <BarChart3 size={18} />, path: '/admin/dashboard' },
-  { label: 'Create Sale', icon: <ShoppingCart size={18} />, path: '/worker/sales' },
-  { label: 'Inventory', icon: <Package size={18} />, path: '/admin/inventory' },
-  { label: 'Retailers', icon: <Users size={18} />, path: '/admin/retailers' },
-  { label: 'Workers', icon: <Users size={18} />, path: '/admin/workers' },
-  { label: 'Expenses', icon: <DollarSign size={18} />, path: '/admin/expenses' },
-  { label: 'Bills', icon: <ShoppingCart size={18} />, path: '/admin/bills' },
-  { label: 'Reports', icon: <TrendingUp size={18} />, path: '/admin/reports' },
-];
 
 const STATUS_COLORS: Record<string, string> = {
   paid: 'bg-green-100 text-green-700',
@@ -139,64 +127,69 @@ export const AdminBillsPage: React.FC = () => {
             <span className="text-sm font-semibold text-gray-700">Filters</span>
             <button onClick={clearFilters} className="ml-auto text-xs text-blue-600 hover:underline">Clear all</button>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
-            {/* Search */}
-            <div className="relative xl:col-span-2">
-              <Search size={13} className="absolute left-2.5 top-2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search bill# or retailer..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:border-blue-400 focus:outline-none"
-              />
+          <div className="flex flex-col gap-2">
+            {/* Row 1: Search + Retailer + Worker + Status */}
+            <div className="flex flex-wrap gap-2">
+              {/* Search */}
+              <div className="relative flex-1 min-w-[160px]">
+                <Search size={13} className="absolute left-2.5 top-2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search bill# or retailer..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:border-blue-400 focus:outline-none"
+                />
+              </div>
+              {/* Retailer */}
+              <select
+                value={retailerFilter}
+                onChange={(e) => setRetailerFilter(e.target.value)}
+                className="flex-1 min-w-[130px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+              >
+                <option value="">All Retailers</option>
+                {retailers.map((r) => (
+                  <option key={r.id} value={r.id}>{r.shopName}</option>
+                ))}
+              </select>
+              {/* Worker */}
+              <select
+                value={workerFilter}
+                onChange={(e) => setWorkerFilter(e.target.value)}
+                className="flex-1 min-w-[120px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+              >
+                <option value="">All Workers</option>
+                {workers.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+              {/* Status */}
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="flex-1 min-w-[110px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+              >
+                <option value="">All Status</option>
+                <option value="paid">Paid</option>
+                <option value="pending">Pending</option>
+                <option value="partial">Partial</option>
+              </select>
             </div>
-            {/* Retailer */}
-            <select
-              value={retailerFilter}
-              onChange={(e) => setRetailerFilter(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
-            >
-              <option value="">All Retailers</option>
-              {retailers.map((r) => (
-                <option key={r.id} value={r.id}>{r.shopName}</option>
-              ))}
-            </select>
-            {/* Worker */}
-            <select
-              value={workerFilter}
-              onChange={(e) => setWorkerFilter(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
-            >
-              <option value="">All Workers</option>
-              {workers.map((w) => (
-                <option key={w.id} value={w.id}>{w.name}</option>
-              ))}
-            </select>
-            {/* Status */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
-            >
-              <option value="">All Status</option>
-              <option value="paid">Paid</option>
-              <option value="pending">Pending</option>
-              <option value="partial">Partial</option>
-            </select>
-            {/* Date from-to */}
-            <div className="flex gap-1">
+            {/* Row 2: Date Range */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-xs text-gray-500 flex-shrink-0">Date range:</span>
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+                className="flex-1 min-w-[130px] max-w-[180px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
               />
+              <span className="text-xs text-gray-400 flex-shrink-0">to</span>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+                className="flex-1 min-w-[130px] max-w-[180px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
               />
             </div>
           </div>
