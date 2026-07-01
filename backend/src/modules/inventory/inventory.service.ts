@@ -23,7 +23,7 @@ export interface CreateStockBatchInput {
   salePrice: number;
   batchNumber: string;
   expiryDate: string; // ISO date string
-  purchaseDate: string;
+  purchaseDate?: string;
   supplierId?: string;
   supplier?: string;
 }
@@ -102,7 +102,7 @@ export const createStockBatch = async (input: CreateStockBatchInput) => {
     data: {
       ...input,
       expiryDate: new Date(input.expiryDate),
-      purchaseDate: new Date(input.purchaseDate),
+      purchaseDate: input.purchaseDate ? new Date(input.purchaseDate) : new Date(),
       buyPrice: new Prisma.Decimal(input.buyPrice),
       salePrice: new Prisma.Decimal(input.salePrice),
     },

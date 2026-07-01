@@ -17,7 +17,7 @@ const createBatchSchema = z.object({
   salePrice: z.number().positive('Sale price must be positive.'),
   batchNumber: z.string().min(1).trim(),
   expiryDate: z.string().refine((d) => !isNaN(Date.parse(d)), { message: 'Invalid expiry date.' }),
-  purchaseDate: z.string().refine((d) => !isNaN(Date.parse(d)), { message: 'Invalid purchase date.' }),
+  purchaseDate: z.string().refine((d) => !isNaN(Date.parse(d)), { message: 'Invalid purchase date.' }).optional(),
   supplierId: z.string().optional(),
   supplier: z.string().trim().optional(),
 });
