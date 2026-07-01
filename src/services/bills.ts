@@ -12,7 +12,7 @@ export const billsService = {
     // Backend createBill returns: created(res, result)
     // result is the full bill object from the transaction
     const response: any = await api.post('/bills', billData);
-    return response.data;
+    return response.data.bill;
   },
   getById: async (id: string): Promise<Bill> => {
     const response: any = await api.get(`/bills/${id}`);

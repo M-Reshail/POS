@@ -32,7 +32,7 @@ export const InventoryPage: React.FC = () => {
   const [productForm, setProductForm] = useState({
     brand: '',
     variant: '',
-    category: 'soft-drink' as 'soft-drink' | 'juice' | 'water' | 'energy-drink',
+    category: 'soft_drink' as 'soft_drink' | 'juice' | 'water' | 'energy_drink',
     petConversionFactor: '24',
     supportsRgb: false,
     description: '',
@@ -133,7 +133,7 @@ export const InventoryPage: React.FC = () => {
       });
       store.fetchProducts();
       store.addNotification('success', `Product "${productForm.brand} ${productForm.variant}" created`);
-      setProductForm({ brand: '', variant: '', category: 'soft-drink', petConversionFactor: '24', supportsRgb: false, description: '' });
+      setProductForm({ brand: '', variant: '', category: 'soft_drink', petConversionFactor: '24', supportsRgb: false, description: '' });
       setIsAddProductModalOpen(false);
     } catch (err: any) {
       setProductFormErrors({ brand: err.response?.data?.message || 'Failed to create product' });
@@ -536,10 +536,10 @@ export const InventoryPage: React.FC = () => {
                     value={productForm.category}
                     onChange={(e) => setProductForm((f) => ({ ...f, category: e.target.value as any }))}
                   >
-                    <option value="soft-drink">Soft Drink</option>
+                    <option value="soft_drink">Soft Drink</option>
                     <option value="juice">Juice</option>
                     <option value="water">Water</option>
-                    <option value="energy-drink">Energy Drink</option>
+                    <option value="energy_drink">Energy Drink</option>
                   </select>
                 </div>
                 {/* Unit Type / PET Conversion */}

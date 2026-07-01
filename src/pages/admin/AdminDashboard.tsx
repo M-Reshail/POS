@@ -16,14 +16,14 @@ export const AdminDashboard: React.FC = () => {
   }, [fetchInitialData]);
 
   // Calculate metrics
-  const totalSales = bills.reduce((sum, bill) => sum + bill.total, 0);
+  const totalSales = bills.reduce((sum, bill) => sum + Number(bill.total), 0);
   const totalPets = bills.reduce((sum, bill) => 
     sum + bill.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0
   );
 
   const today = new Date().toDateString();
   const todaysSales = bills.filter(b => new Date(b.createdAt).toDateString() === today);
-  const todaysSalesAmount = todaysSales.reduce((sum, bill) => sum + bill.total, 0);
+  const todaysSalesAmount = todaysSales.reduce((sum, bill) => sum + Number(bill.total), 0);
 
   return (
     <Layout sidebarItems={ADMIN_SIDEBAR}>
@@ -139,7 +139,7 @@ export const AdminDashboard: React.FC = () => {
                     <tr key={bill.id} className="border-b hover:bg-gray-50">
                       <td className="py-2 font-mono text-xs">{bill.billNumber}</td>
                       <td className="py-2">{bill.retailerId}</td>
-                      <td className="py-2 text-right font-semibold">{bill.total}</td>
+                      <td className="py-2 text-right font-semibold">₨{Number(bill.total).toFixed(0)}</td>
                       <td className="py-2 text-center">
                         <Badge variant={bill.status === 'paid' ? 'success' : 'warning'}>
                           {bill.status}

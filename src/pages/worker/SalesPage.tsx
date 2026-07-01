@@ -250,8 +250,8 @@ export const SalesPage: React.FC = () => {
     }
 
     const isPaid = paymentMethod === 'cash' && amountReceivedNum >= total;
-    const paidAmt = paymentMethod === 'udhar' || paymentMethod === 'generate-only' ? 0 : amountReceivedNum;
-    const pendingAmt = paymentMethod === 'udhar' || paymentMethod === 'generate-only' ? total : udhariAmount;
+    const paidAmt = paymentMethod === 'udhar' || paymentMethod === 'generate_only' ? 0 : amountReceivedNum;
+    const pendingAmt = paymentMethod === 'udhar' || paymentMethod === 'generate_only' ? total : udhariAmount;
 
     const billPayload = {
       retailerId: selectedRetailer,
@@ -786,7 +786,7 @@ Thank you for your business!
                     <div className="mb-3">
                       <label className="text-xs font-semibold text-gray-600 block mb-1">Payment Method</label>
                       <div className="grid grid-cols-3 gap-1">
-                        {(['cash', 'udhar', 'generate-only'] as PaymentMethod[]).map((m) => (
+                        {(['cash', 'udhar', 'generate_only'] as PaymentMethod[]).map((m) => (
                           <button
                             key={m}
                             onClick={() => setPaymentMethod(m)}
@@ -796,7 +796,7 @@ Thank you for your business!
                                 : 'border-gray-200 text-gray-600 hover:border-blue-300'
                             }`}
                           >
-                            {m === 'generate-only' ? 'Bill Only' : m.charAt(0).toUpperCase() + m.slice(1)}
+                            {m === 'generate_only' ? 'Bill Only' : m.charAt(0).toUpperCase() + m.slice(1)}
                           </button>
                         ))}
                       </div>
