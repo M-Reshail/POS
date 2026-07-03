@@ -56,7 +56,10 @@ export const SalesPage: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [amountReceived, setAmountReceived] = useState('');
   const [manualPendingAmount, setManualPendingAmount] = useState('');
+  const [cartDiscountType, setCartDiscountType] = useState<'percent' | 'fixed'>('fixed');
+  const [cartDiscountValue, setCartDiscountValue] = useState('');
   const [pendingReceiptBill, setPendingReceiptBill] = useState<Bill | null>(null);
+  const [receiptPendingBills, setReceiptPendingBills] = useState<Bill[]>([]);
 
   // History
   const [historySearchTerm, setHistorySearchTerm] = useState('');
@@ -223,15 +226,21 @@ export const SalesPage: React.FC = () => {
 
   // ── Totals ────────────────────────────────────────────────────────────────────
   const subtotal = cartItems.reduce((s, i) => s + i.quantity * i.price, 0);
-  const totalDiscounts = cartItems.reduce((s, i) => s + (i.discountValue || 0), 0);
+  const itemDiscounts = cartItems.reduce((s, i) => s + (i.discountValue || 0), 0);
+  const cartDiscountValueNum = parseFloat(cartDiscountValue) || 0;
+  const cartDiscountAmount = cartDiscountType === 'percent'
+    ? Math.max(0, subtotal - itemDiscounts) * cartDiscountValueNum / 100
+    : cartDiscountValueNum;
+  const totalDiscounts = itemDiscounts + cartDiscountAmount;
   const manualPendingNum = parseFloat(manualPendingAmount) || 0;
   const total = subtotal - totalDiscounts + manualPendingNum;
   const amountReceivedNum = parseFloat(amountReceived) || 0;
   const changeAmount = Math.max(0, amountReceivedNum - total);
   const udhariAmount = Math.max(0, total - amountReceivedNum);
 
-  const existingPendingForRetailer = bills
-    .filter((b) => b.retailerId === selectedRetailer && Number(b.pendingAmount) > 0)
+  const retailerPendingBills = bills
+    .filter((b) => b.retailerId === selectedRetailer && Number(b.pendingAmount) > 0);
+  const existingPendingForRetailer = retailerPendingBills
     .reduce((s, b) => s + Number(b.pendingAmount), 0);
 
   // ── Bill submission ───────────────────────────────────────────────────────────
@@ -288,6 +297,7 @@ export const SalesPage: React.FC = () => {
         updatedAt: new Date(),
       };
       setPendingReceiptBill(billForReceipt);
+      setReceiptPendingBills(retailerPendingBills);
     } catch (err) {
       // Error handled in store
     }
@@ -300,12 +310,15 @@ export const SalesPage: React.FC = () => {
     setAmountReceived('');
     setManualPendingAmount('');
     setPaymentMethod('cash');
+    setCartDiscountType('fixed');
+    setCartDiscountValue('');
     setPendingReceiptBill(null);
+    setReceiptPendingBills([]);
     setShowRGB(false);
     setSelectedProductBrand('');
   };
 
-  const generateAndPrintReceipt = (bill: Bill) => {
+  const generateAndPrintReceipt = (bill: Bill, otherPendingBills: Bill[] = []) => {
     const retailer = retailers.find((r) => r.id === bill.retailerId);
     const itemsText = bill.items
       .map((item) => {
@@ -313,6 +326,20 @@ export const SalesPage: React.FC = () => {
         return `${name} | Qty: ${item.quantity} | Price: ₨${item.price} | Total: ₨${item.total.toFixed(2)}`;
       })
       .join('\n');
+
+    const otherPendingText = otherPendingBills.length > 0
+      ? `────────────────────────────────────────
+OTHER PENDING BILLS
+────────────────────────────────────────
+${otherPendingBills.map((b) => {
+  const billDate = new Date(b.createdAt).toLocaleDateString('en-PK');
+  return `${b.billNumber} | ${billDate} | ₨${Number(b.pendingAmount).toFixed(0)}`;
+}).join('\n')}
+────────────────────────────────────────
+Total Other Pending:  ₨${otherPendingBills.reduce((s, b) => s + Number(b.pendingAmount), 0).toFixed(0)}
+Grand Total Outstanding: ₨${(otherPendingBills.reduce((s, b) => s + Number(b.pendingAmount), 0) + (bill.pendingAmount || 0)).toFixed(0)}
+`
+      : '';
 
     const content = `
 ╔════════════════════════════════════════╗
@@ -336,6 +363,7 @@ ${bill.discount ? `Discount:     ₨${bill.discount.toFixed(2)}\n` : ''}${bill.p
 Paid:         ₨${bill.paidAmount.toFixed(2)}
 ${bill.pendingAmount > 0 ? `Udhari:       ₨${bill.pendingAmount.toFixed(2)}\n` : ''}Status:       ${bill.status.toUpperCase()}
 
+${otherPendingText}
 Thank you for your business!
 ════════════════════════════════════════
     `;
@@ -448,8 +476,34 @@ Thank you for your business!
                   )}
                   <div className="flex justify-between"><span className="text-gray-500">Status</span><span className={`font-semibold capitalize ${pendingReceiptBill.status === 'paid' ? 'text-green-600' : 'text-orange-600'}`}>{pendingReceiptBill.status}</span></div>
                 </div>
+
+                {receiptPendingBills.length > 0 && (
+                  <div className="mt-4 pt-3 border-t border-gray-200">
+                    <p className="text-xs font-semibold text-gray-700 mb-2">Other Pending Bills</p>
+                    <div className="space-y-1 text-xs">
+                      {receiptPendingBills.map((bill) => (
+                        <div key={bill.id} className="flex justify-between text-gray-600">
+                          <span className="font-mono">{bill.billNumber}</span>
+                          <span>{new Date(bill.createdAt).toLocaleDateString()}</span>
+                          <span className="text-orange-600 font-semibold">₨{Number(bill.pendingAmount).toFixed(0)}</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between font-semibold text-gray-700 border-t border-gray-100 pt-1 mt-1">
+                        <span>Total Other Pending</span>
+                        <span className="text-orange-600">₨{receiptPendingBills.reduce((s, b) => s + Number(b.pendingAmount), 0).toFixed(0)}</span>
+                      </div>
+                      {pendingReceiptBill.pendingAmount > 0 && (
+                        <div className="flex justify-between font-bold text-gray-900">
+                          <span>Grand Total Outstanding</span>
+                          <span className="text-orange-600">₨{(receiptPendingBills.reduce((s, b) => s + Number(b.pendingAmount), 0) + pendingReceiptBill.pendingAmount).toFixed(0)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-3 mt-5">
-                  <Button onClick={() => { generateAndPrintReceipt(pendingReceiptBill); resetForm(); }} className="flex-1">
+                  <Button onClick={() => { generateAndPrintReceipt(pendingReceiptBill, receiptPendingBills); resetForm(); }} className="flex-1">
                     🖨 Print & Close
                   </Button>
                   <Button variant="secondary" onClick={resetForm} className="flex-1">
@@ -601,9 +655,29 @@ Thank you for your business!
                 {/* ── Cart Table ── */}
                 {cartItems.length > 0 && (
                   <Card className="mt-3">
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-bold text-gray-800">Cart ({cartItems.length} items)</h3>
                       <button onClick={() => setCartItems([])} className="text-xs text-red-500 hover:text-red-700">Clear all</button>
+                    </div>
+                    {/* Cart Discount Control */}
+                    <div className="mb-3 pb-3 border-b border-gray-100 flex items-center gap-2">
+                      <label className="text-xs font-semibold text-gray-600">Cart Discount:</label>
+                      <select
+                        value={cartDiscountType}
+                        onChange={(e) => setCartDiscountType(e.target.value as 'percent' | 'fixed')}
+                        className="border border-gray-200 rounded text-xs py-1 px-1.5 focus:outline-none focus:border-blue-400 bg-white"
+                      >
+                        <option value="fixed">PKR</option>
+                        <option value="percent">%</option>
+                      </select>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={cartDiscountValue}
+                        onChange={(e) => setCartDiscountValue(e.target.value)}
+                        className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                      />
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
