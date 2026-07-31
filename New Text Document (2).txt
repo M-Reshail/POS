@@ -1,0 +1,2182 @@
+# Frontend-Backend API Integration Guide
+
+This guide details the integration layer between the React frontend (running on `http://localhost:5173`) and the Node.js/Express API server (running on `http://localhost:5000`).
+
+---
+
+## 🔗 Connection Configuration
+
+The frontend uses `axios` to interact with backend endpoints. The API client is configured with interceptors to automatically forward authentication headers and manage token expirations.
+
+### API Base Client (`src/services/api.ts`)
+
+```typescript
+import axios from "axios";
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+export const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
+  withCredentials: true, // Enables sending/receiving HttpOnly cookies (Refresh Token)
+});
+
+// Request Interceptor: Inject JWT token into headers
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem("accessToken");
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Response Interceptor: Automatically handle 401 token refresh requests
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // If token expired, try to transparently refresh it using refresh token cookie
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      try {
+        const res = await axios.post(
+          `${API_BASE_URL}/auth/refresh`,
+          {},
+          { withCredentials: true }
+        );
+        const { token } = res.data;
+        localStorage.setItem("accessToken", token);
+        originalRequest.headers.Authorization = `Bearer ${token}`;
+        return apiClient(originalRequest);
+      } catch (refreshError) {
+        // Refresh token expired too -> redirect to login
+        localStorage.removeItem("accessToken");
+        window.location.href = "/login";
+        return Promise.reject(refreshError);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+```
+
+---
+
+## 🛰️ Implemented Service Modules
+
+The API integrations are structured into services matching the backend controllers:
+
+### 1. Authentication Service (`src/services/auth.ts`)
+Handles logins, user session checking, and logouts.
+- **Endpoint**: `/api/auth`
+
+```typescript
+import { apiClient } from "./api";
+
+export const authService = {
+  login: async (email: string, password: string) => {
+    const response = await apiClient.post("/auth/login", { email, password });
+    const { token, user } = response.data;
+    localStorage.setItem("accessToken", token);
+    return user;
+  },
+
+  logout: async () => {
+    await apiClient.post("/auth/logout");
+    localStorage.removeItem("accessToken");
+  },
+
+  getCurrentUser: async () => {
+    const response = await apiClient.get("/auth/me");
+    return response.data;
+  }
+};
+```
+
+### 2. Products Service (`src/services/products.ts`)
+Retrieves and updates the catalog.
+- **Endpoint**: `/api/products`
+
+```typescript
+import { apiClient } from "./api";
+
+export const productService = {
+  getAll: async () => {
+    const response = await apiClient.get("/");
+    return response.data;
+  },
+  
+  getInStock: async () => {
+    const response = await apiClient.get("/in-stock");
+    return response.data;
+  },
+
+  create: async (productData: any) => {
+    const response = await apiClient.post("/", productData);
+    return response.data;
+  },
+
+  update: async (id: string, productData: any) => {
+    const response = await apiClient.put(`/${id}`, productData);
+    return response.data;
+  }
+};
+```
+
+### 3. Inventory Service (`src/services/inventory.ts`)
+Manages stock batches, low-stock checks, and manual ledger adjustments.
+- **Endpoint**: `/api/inventory`
+
+```typescript
+import { apiClient } from "./api";
+
+export const inventoryService = {
+  getBatches: async () => {
+    const response = await apiClient.get("/");
+    return response.data;
+  },
+
+  addBatch: async (batchData: any) => {
+    const response = await apiClient.post("/", batchData);
+    return response.data;
+  },
+
+  adjustStock: async (batchId: string, adjustment: { quantity: number; reason: string; notes: string }) => {
+    const response = await apiClient.post(`/${batchId}/adjust`, adjustment);
+    return response.data;
+  },
+
+  getLowStock: async () => {
+    const response = await apiClient.get("/low-stock");
+    return response.data;
+  },
+
+  getExpiryRisk: async () => {
+    const response = await apiClient.get("/expiry-risk");
+    return response.data;
+  }
+};
+```
+
+### 4. Retailers & CRM Service (`src/services/retailers.ts`)
+Manages accounts, price tiers, and empty crates (RGB).
+- **Endpoint**: `/api/retailers`
+
+```typescript
+import { apiClient } from "./api";
+
+export const retailerService = {
+  getAll: async () => {
+    const response = await apiClient.get("/");
+    return response.data;
+  },
+
+  getById: async (id: string) => {
+    const response = await apiClient.get(`/${id}`);
+    return response.data;
+  },
+
+  create: async (retailerData: any) => {
+    const response = await apiClient.post("/", retailerData);
+    return response.data;
+  },
+
+  update: async (id: string, retailerData: any) => {
+    const response = await apiClient.put(`/${id}`, retailerData);
+    return response.data;
+  },
+
+  getLedger: async (id: string, page = 1, limit = 10) => {
+    const response = await apiClient.get(`/${id}/ledger`, { params: { page, limit } });
+    return response.data;
+  },
+
+  getRGBBalance: async (id: string) => {
+    const response = await apiClient.get(`/${id}/rgb`);
+    return response.data;
+  }
+};
+```
+
+### 5. Sales & Invoicing Service (`src/services/bills.ts`)
+Coordinates checkout transactions and bill cancellations.
+- **Endpoint**: `/api/bills`
+
+```typescript
+import { apiClient } from "./api";
+
+export const billService = {
+  create: async (billPayload: {
+    retailerId: string;
+    items: Array<{ productId: string; quantity: number; price: number; discount: number }>;
+    discount: number;
+    paidAmount: number;
+    paymentMode: string;
+  }) => {
+    const response = await apiClient.post("/", billPayload);
+    return response.data;
+  },
+
+  list: async () => {
+    const response = await apiClient.get("/");
+    return response.data;
+  },
+
+  getById: async (id: string) => {
+    const response = await apiClient.get(`/${id}`);
+    return response.data;
+  },
+
+  voidBill: async (id: string, reason: string) => {
+    const response = await apiClient.post(`/${id}/void`, { reason });
+    return response.data;
+  }
+};
+```
+
+### 6. Ledger & Payments Service (`src/services/ledger.ts`)
+Records direct debt payments and pulls general ledger statements.
+- **Endpoint**: `/api/ledger`
+
+```typescript
+import { apiClient } from "./api";
+
+export const ledgerService = {
+  getSummary: async () => {
+    const response = await apiClient.get("/");
+    return response.data;
+  },
+
+  recordPayment: async (paymentData: {
+    retailerId: string;
+    amount: number;
+    paymentMode: string;
+    notes?: string;
+  }) => {
+    const response = await apiClient.post("/payment", paymentData);
+    return response.data;
+  }
+};
+```
+
+---
+
+## 🔄 Zustand Store Integration Pattern
+
+To connect these service APIs to the frontend state, the Zustand store (`src/store/index.ts`) uses async/await actions that trigger requests, handle load indicators, and save active records.
+
+### Fetching Data Example
+
+```typescript
+export const useStore = create<StoreState>((set) => ({
+  retailers: [],
+  isLoading: false,
+
+  fetchRetailers: async () => {
+    set({ isLoading: true });
+    try {
+      const data = await retailerService.getAll();
+      set({ retailers: data.retailers });
+    } catch (error) {
+      console.error("Failed to load retailers", error);
+    } finally {
+      set({ isLoading: false });
+    }
+  }
+}));
+```
+
+### Submitting Data Example
+
+```typescript
+export const useStore = create<StoreState>((set) => ({
+  bills: [],
+  
+  checkoutBill: async (billPayload) => {
+    try {
+      const result = await billService.create(billPayload);
+      set((state) => ({
+        bills: [result.bill, ...state.bills]
+      }));
+      return result;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Checkout failed");
+    }
+  }
+}));
+```
+
+---
+
+## 📋 Environment Configuration
+
+To test frontend calls locally, ensure a `.env` file exists at the root of the project:
+
+```env
+# POS/.env
+VITE_API_URL=http://localhost:5000/api
+```
+
+In production build systems, this is replaced by:
+
+```env
+# POS/.env.production
+VITE_API_URL=https://api.yourposdomain.com/api
+```
+# System Architecture & Implementation Guide
+
+## 📋 Table of Contents
+
+1. [System Overview](#system-overview)
+2. [Tech Stack](#tech-stack)
+3. [Database Schema (Implemented via Prisma)](#database-schema-implemented-via-prisma)
+4. [API Endpoints](#api-endpoints)
+5. [Component Architecture](#component-architecture)
+6. [State Management](#state-management)
+7. [Authentication Flow](#authentication-flow)
+8. [Business Logic Enforced Server-side](#business-logic-enforced-server-side)
+9. [Security Measures](#security-measures)
+
+---
+
+## System Overview
+
+### High-Level Architecture
+
+The system follows a full-stack client-server architecture with state management on the client and database persistence on the backend.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Beverage POS System                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │        React Frontend (Vite + TypeScript)             │   │
+│  ├───────────────────┬────────────────────────────────┤   │
+│  │  Admin Module     │      Worker Module              │   │
+│  │  - Dashboard      │  - Sales Billing               │   │
+│  │  - Inventory      │  - Cart Management             │   │
+│  │  - Retailers      │  - Price Override              │   │
+│  │  - Reports        │  - Print Preview               │   │
+│  └───────────────────┴────────────────────────────────┘   │
+│                         │                                   │
+│                    Zustand Store                            │
+│           (API Client Services integration)                 │
+│                         │                                   │
+│                         │ HTTP REST APIs                    │
+├─────────────────────────┼───────────────────────────────────┤
+│                         ▼                                   │
+│         TypeScript Node.js / Express Backend                │
+│  - JWT Auth (Access/Refresh Tokens via httpOnly Cookie)     │
+│  - Business Logic Verification (FIFO, Credit, Price Variance) │
+│  - Controllers, Services, & Routes structure                │
+│                         │                                   │
+│                    Prisma ORM                               │
+├─────────────────────────┼───────────────────────────────────┤
+│                         ▼                                   │
+│                 PostgreSQL Database                         │
+│  - Relational Schema mapping 13 models                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Tech Stack
+
+### Frontend
+
+| Layer      | Technology   | Version | Purpose                |
+| ---------- | ------------ | ------- | ---------------------- |
+| Framework  | React        | 18.2.0  | UI Components & State  |
+| Language   | TypeScript   | 5.3.2   | Type Safety            |
+| Build Tool | Vite         | 5.0.7   | Fast Development/Build |
+| Styling    | Tailwind CSS | 3.3.6   | Utility-First CSS      |
+| State Mgmt | Zustand      | 4.4.2   | Global State Store     |
+| Routing    | React Router | 6.20.0  | Client-Side Navigation |
+| Icons      | Lucide React | 0.344.0 | SVG Icons              |
+| Date Utils | date-fns     | 2.30.0  | Date Manipulation      |
+
+### Backend
+
+| Layer       | Technology   | Version | Purpose                      |
+| ----------- | ------------ | ------- | ---------------------------- |
+| Runtime     | Node.js      | 18+     | JavaScript Execution Runtime |
+| Framework   | Express      | 4.18.2  | REST API Router & Handlers   |
+| Language    | TypeScript   | 5.3.2   | Type Safety                  |
+| Database    | PostgreSQL   | 15+     | Relational Database          |
+| ORM         | Prisma       | 5.7.0   | Database client & migrations |
+| Validation  | Zod          | 3.22.4  | Schema & Env validation      |
+| Cryptography| bcrypt       | 5.1.1   | Password hashing             |
+| Tokens      | JSONWebToken | 9.0.2   | Stateless authentication     |
+
+---
+
+## Database Schema (Implemented via Prisma)
+
+The database schema is defined in `backend/prisma/schema.prisma` and uses PostgreSQL. The model names and field mappings are defined below:
+
+### Enums
+- **`UserRole`**: `admin`, `worker`
+- **`ProductCategory`**: `soft_drink`, `juice`, `water`, `energy_drink`
+- **`AdjustmentReason`**: `damage`, `theft`, `manual_correction`
+- **`PriceTier`**: `standard`, `premium`, `discount`
+- **`LedgerEntryType`**: `sale`, `payment`, `return`, `adjustment`
+- **`LedgerPaymentMode`**: `cash`, `bank_transfer`, `check`
+- **`BillPaymentMode`**: `cash`, `credit`, `udhar`, `generate_only`
+- **`BillStatus`**: `pending`, `paid`, `partial`
+
+### Users (`users`)
+Represents an individual with access to the system.
+- `id` (String/UUID, PK)
+- `name` (String)
+- `email` (String, Unique)
+- `passwordHash` (String)
+- `role` (UserRole)
+- `isActive` (Boolean, default `true`)
+- `createdAt` (DateTime, default `now()`)
+
+### Products (`products`)
+Represents a sellable beverage brand/variant catalog.
+- `id` (String/UUID, PK)
+- `brand` (String) - e.g., 'Pepsi', 'Sprite'
+- `category` (ProductCategory)
+- `variant` (String) - e.g., '1.5L', 'Can'
+- `petConversionFactor` (Int) - Multiplier to convert Variant to Bottle Equivalents (PET)
+- `description` (String, Nullable)
+
+### Stock Batches (`stock_batches`)
+Represents a specific shipment of a Product received into inventory. FIFO queue is resolved across these batches.
+- `id` (String/UUID, PK)
+- `productId` (String/UUID, FK -> `Product.id`)
+- `quantity` (Int) - Remaining inventory count in PET units
+- `buyPrice` (Decimal, 10,2) - Wholesale purchase cost per PET unit
+- `salePrice` (Decimal, 10,2) - Retail price per PET unit
+- `batchNumber` (String, Unique) - Identifier from manufacturer
+- `expiryDate` (DateTime) - Expiry date
+- `purchaseDate` (DateTime) - Purchase date
+- `supplierId` (String, Nullable)
+- `supplier` (String, Nullable)
+- `createdAt` (DateTime, default `now()`)
+
+### Stock Adjustments (`stock_adjustments`)
+Logs manual adjustments made to a specific StockBatch (shrinkage audit trail).
+- `id` (String/UUID, PK)
+- `batchId` (String/UUID, FK -> `StockBatch.id`)
+- `quantity` (Int) - Positive for additions, negative for deductions
+- `reason` (AdjustmentReason)
+- `notes` (String)
+- `adminId` (String/UUID, FK -> `User.id` - Admin responsible)
+- `createdAt` (DateTime, default `now()`)
+
+### Retailers (`retailers`)
+Represents a customer/shop interacting with the wholesale business.
+- `id` (String/UUID, PK)
+- `shopName` (String)
+- `ownerName` (String)
+- `mobileNumber` (String)
+- `address` (String)
+- `deliveryLocation` (String, Nullable)
+- `creditLimit` (Decimal, 12,2) - Ceiling for pending debts
+- `priceTier` (PriceTier, default `standard`)
+- `createdAt` (DateTime, default `now()`)
+
+### Ledger Entries (`ledger_entries`)
+Records transactions affecting a Retailer's credit balance.
+- `id` (String/UUID, PK)
+- `retailerId` (String/UUID, FK -> `Retailer.id`)
+- `billId` (String/UUID, FK -> `Bill.id`, Nullable)
+- `entryType` (LedgerEntryType)
+- `amount` (Decimal, 12,2) - Amount added/subtracted
+- `balance` (Decimal, 12,2) - Retailer's running outstanding balance *after* transaction
+- `paymentMode` (LedgerPaymentMode, Nullable)
+- `notes` (String, Nullable)
+- `createdAt` (DateTime, default `now()`)
+
+### RGB Tracking (`rgb_tracking`)
+Tracks the issue and return of Returnable Glass Bottles (crates) independently of cash balance.
+- `id` (String/UUID, PK)
+- `retailerId` (String/UUID, FK -> `Retailer.id`, Unique)
+- `issuedQuantity` (Int, default `0`)
+- `returnedQuantity` (Int, default `0`)
+- `balance` (Int, default `0`) - `issuedQuantity - returnedQuantity`
+- `lastUpdated` (DateTime, updated automatic)
+
+### Bills (`bills`)
+Represents a finalized sales invoice.
+- `id` (String/UUID, PK)
+- `billNumber` (String, Unique) - Human readable code
+- `retailerId` (String/UUID, FK -> `Retailer.id`)
+- `workerId` (String/UUID, FK -> `User.id`) - Worker who generated bill
+- `subtotal` (Decimal, 12,2)
+- `discount` (Decimal, default `0`)
+- `total` (Decimal, 12,2)
+- `paidAmount` (Decimal, default `0`)
+- `pendingAmount` (Decimal, 12,2) - Added to outstanding balance
+- `paymentMode` (BillPaymentMode, Nullable)
+- `previousPendingAdded` (Decimal, Nullable) - Outstanding balance injected on printed bill
+- `oldPendingPaymentApplied` (Decimal, Nullable) - Payment applied to historical balance during checkout
+- `status` (BillStatus)
+- `createdAt` (DateTime, default `now()`)
+- `updatedAt` (DateTime, updated automatic)
+
+### Bill Items (`bill_items`)
+Line items nested inside a Bill.
+- `id` (String/UUID, PK)
+- `billId` (String/UUID, FK -> `Bill.id` on delete Cascade)
+- `productId` (String/UUID, FK -> `Product.id`)
+- `quantity` (Int) - Count of PET units purchased
+- `price` (Decimal, 10,2) - Price sold at
+- `discount` (Decimal, default `0`)
+- `total` (Decimal, 12,2) - `(quantity * price) - discount`
+
+### Payment Records (`payment_records`)
+Logs historical partial payments applied directly against a specific Bill.
+- `id` (String/UUID, PK)
+- `billId` (String/UUID, FK -> `Bill.id` on delete Cascade)
+- `amount` (Decimal, 12,2)
+- `date` (DateTime, default `now()`)
+- `paymentMode` (BillPaymentMode)
+- `notes` (String, Nullable)
+
+### Price History (`price_history`)
+Logs when an Admin alters a Product variant's baseline selling configuration.
+- `id` (String/UUID, PK)
+- `productId` (String/UUID, FK -> `Product.id`)
+- `oldPrice` (Decimal, 10,2)
+- `newPrice` (Decimal, 10,2)
+- `changedBy` (String/UUID, FK -> `User.id` - Admin responsible)
+- `date` (DateTime, default `now()`)
+
+### Voided Bill Logs (`voided_bill_logs`)
+Maintains an audit trail of soft-deleted invoices.
+- `id` (String/UUID, PK)
+- `billId` (String/UUID, FK -> `Bill.id`, Unique)
+- `workerId` (String/UUID, FK -> `User.id` - Worker who processed it originally)
+- `voidedAt` (DateTime, default `now()`)
+- `billValue` (Decimal, 12,2)
+- `reason` (String) - Explanation required from Admin
+
+---
+
+## API Endpoints
+
+All backend routes are protected under RBAC middleware (with `/api` prefix).
+
+### Authentication (`/api/auth`)
+- `POST /login` - Single login endpoint for Admin and Worker. Decodes credentials and sets short-lived Access Token in response JSON and long-lived Refresh Token in secure, `httpOnly` cookie.
+- `POST /logout` - Clears cookie.
+- `POST /refresh` - Issues new access token based on valid refresh cookie.
+- `GET /me` - Fetches current user profile from JWT request token.
+
+### Products (`/api/products`)
+- `GET /` - List all products (Admin only).
+- `GET /in-stock` - List active products with available inventory (both roles for Sales panel).
+- `GET /:id` - Get product details.
+- `POST /` - Create product (Admin only).
+- `PUT /:id` - Update product catalog entry (Admin only).
+
+### Inventory (`/api/inventory`)
+- `GET /` - List stock batches.
+- `GET /:id` - Get stock batch details.
+- `POST /` - Add stock batch (Admin only).
+- `PUT /:id` - Update batch quantity/prices manually (Admin only).
+- `POST /:id/adjust` - Record manual stock adjustment with reasoning (Admin only).
+- `GET /low-stock` - Fetch variants running below critical threshold.
+- `GET /expiry-risk` - Fetch batches expiring within 30 days.
+
+### Retailers (`/api/retailers`)
+- `GET /` - List all retailers.
+- `GET /:id` - Get retailer info.
+- `POST /` - Create retailer.
+- `PUT /:id` - Update retailer profile.
+- `GET /:id/ledger` - Fetch paginated ledger entries for retailer.
+- `GET /:id/rgb` - Fetch crate tracking balances.
+
+### Bills (`/api/bills`)
+- `POST /` - Creates a bill. Triggers a database transaction: validates limits → depletes FIFO inventory batches → posts ledger entries.
+- `GET /` - List bills (Admin: all, Worker: own only).
+- `GET /:id` - Get bill details.
+- `POST /:id/void` - Soft-deletes bill (cancels transaction), performs inventory reversion, writes ledger reversal, logs audit reason.
+
+### Ledger (`/api/ledger`)
+- `GET /` - Combined list and summary across all retailers.
+- `GET /retailer/:id` - Fetch retailer ledger entries.
+- `POST /payment` - Records direct payment against retailer outstanding balance.
+
+---
+
+## Component Architecture
+
+```
+App.tsx (Vite root router)
+├── LoginPage
+├── Layout (Sidebar + Header shell)
+│   ├── Worker Routes
+│   │   └── SalesPage
+│   │       ├── Product Selector (Brand-first drill-down)
+│   │       ├── CartTable
+│   │       └── BillSummary
+│   └── Admin Routes
+│       ├── AdminDashboard
+│       │   ├── MetricsCards
+│       │   ├── AlertsSection
+│       │   └── RecentBillsTable
+│       ├── InventoryPage
+│       │   ├── StockTable
+│       │   ├── AddStockModal
+│       │   └── AdjustStockModal
+│       ├── RetailersPage
+│       │   ├── RetailersTable
+│       │   ├── AddRetailerModal
+│       │   └── LedgerSummary
+│       └── ReportsPage (Sales, Product performance, Worker accountability, Price variance)
+└── Notifications (Global toast context)
+```
+
+---
+
+## State Management
+
+Zustand (`src/store/index.ts`) is configured to coordinate with backend endpoints. The local store acts as a repository of synced database records:
+
+```typescript
+interface Store {
+  // Sync States
+  currentUser: User | null;
+  retailers: Retailer[];
+  products: Product[];
+  stockBatches: StockBatch[];
+  bills: Bill[];
+  
+  // Actions
+  fetchInventory: () => Promise<void>;
+  fetchRetailers: () => Promise<void>;
+  fetchBills: () => Promise<void>;
+  createBill: (billData: any) => Promise<void>;
+  // ...
+}
+```
+
+---
+
+## Authentication Flow
+
+1. User submits credentials on the single login form.
+2. API endpoint `/api/auth/login` checks credentials.
+3. Server returns Access Token (payload: `id`, `role`, `email`, expires in 15m) and sets Refresh Token in `httpOnly` secure cookie.
+4. Client attaches Access Token in `Authorization: Bearer <token>` request header.
+5. In case of 401 response (expired access token), the client calls `/api/auth/refresh` automatically to re-authenticate using the refresh cookie without logging the user out.
+
+---
+
+## Business Logic Enforced Server-side
+
+All core business calculations are finalized inside backend services (`/backend/src/modules/`):
+
+### 1. FIFO Stock Movement
+When a bill is checkout out:
+- System queries active batches of selected products ordered by `expiryDate` (or `purchaseDate` as secondary).
+- Deducts required quantities sequentially from oldest batches.
+- If total stock is insufficient, the transaction is rolled back.
+
+### 2. Credit limit enforcement
+- `Outstanding Debt = Total Purchases - Total Payments`
+- A transaction raising outstanding debt above `100%` of the retailer's `creditLimit` is blocked.
+- Warning statuses (`70%` and `90%`) are automatically calculated on retailer query.
+
+### 3. Price variance detection
+- If billing price < default retail price configured on active stock batches, the line item is logged with variance tags, auto-flagging it in variance query logic.
+
+---
+
+## Security Measures
+
+- **JWT + httpOnly Cookie**: Prevents XSS-based theft of refresh tokens.
+- **Transactional Consistency**: Relies on Prisma `$transaction` blocks to ensure stock depletion, ledger balance updates, and invoice writes either succeed together or fail together.
+- **RBAC Guards**: Restricts write access and reporting endpoints to accounts carrying the `admin` role.
+- **Input Validation**: Uses `Zod` schemas to validate payload structures and prevent SQL injection or database type errors.
+
+
+# Frontend-Backend API Integration Guide
+
+This guide details the integration layer between the React frontend (running on `http://localhost:5173`) and the Node.js/Express API server (running on `http://localhost:5000`).
+
+---
+
+## 🔗 Connection Configuration
+
+The frontend uses `axios` to interact with backend endpoints. The API client is configured with interceptors to automatically forward authentication headers and manage token expirations.
+
+### API Base Client (`src/services/api.ts`)
+
+```typescript
+import axios from "axios";
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+export const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
+  withCredentials: true, // Enables sending/receiving HttpOnly cookies (Refresh Token)
+});
+
+// Request Interceptor: Inject JWT token into headers
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem("accessToken");
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Response Interceptor: Automatically handle 401 token refresh requests
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // If token expired, try to transparently refresh it using refresh token cookie
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      try {
+        const res = await axios.post(
+          `${API_BASE_URL}/auth/refresh`,
+          {},
+          { withCredentials: true }
+        );
+        const { token } = res.data;
+        localStorage.setItem("accessToken", token);
+        originalRequest.headers.Authorization = `Bearer ${token}`;
+        return apiClient(originalRequest);
+      } catch (refreshError) {
+        // Refresh token expired too -> redirect to login
+        localStorage.removeItem("accessToken");
+        window.location.href = "/login";
+        return Promise.reject(refreshError);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+```
+
+---
+
+## 🛰️ Implemented Service Modules
+
+The API integrations are structured into services matching the backend controllers:
+
+### 1. Authentication Service (`src/services/auth.ts`)
+Handles logins, user session checking, and logouts.
+- **Endpoint**: `/api/auth`
+
+```typescript
+import { apiClient } from "./api";
+
+export const authService = {
+  login: async (email: string, password: string) => {
+    const response = await apiClient.post("/auth/login", { email, password });
+    const { token, user } = response.data;
+    localStorage.setItem("accessToken", token);
+    return user;
+  },
+
+  logout: async () => {
+    await apiClient.post("/auth/logout");
+    localStorage.removeItem("accessToken");
+  },
+
+  getCurrentUser: async () => {
+    const response = await apiClient.get("/auth/me");
+    return response.data;
+  }
+};
+```
+
+### 2. Products Service (`src/services/products.ts`)
+Retrieves and updates the catalog.
+- **Endpoint**: `/api/products`
+
+```typescript
+import { apiClient } from "./api";
+
+export const productService = {
+  getAll: async () => {
+    const response = await apiClient.get("/");
+    return response.data;
+  },
+  
+  getInStock: async () => {
+    const response = await apiClient.get("/in-stock");
+    return response.data;
+  },
+
+  create: async (productData: any) => {
+    const response = await apiClient.post("/", productData);
+    return response.data;
+  },
+
+  update: async (id: string, productData: any) => {
+    const response = await apiClient.put(`/${id}`, productData);
+    return response.data;
+  }
+};
+```
+
+### 3. Inventory Service (`src/services/inventory.ts`)
+Manages stock batches, low-stock checks, and manual ledger adjustments.
+- **Endpoint**: `/api/inventory`
+
+```typescript
+import { apiClient } from "./api";
+
+export const inventoryService = {
+  getBatches: async () => {
+    const response = await apiClient.get("/");
+    return response.data;
+  },
+
+  addBatch: async (batchData: any) => {
+    const response = await apiClient.post("/", batchData);
+    return response.data;
+  },
+
+  adjustStock: async (batchId: string, adjustment: { quantity: number; reason: string; notes: string }) => {
+    const response = await apiClient.post(`/${batchId}/adjust`, adjustment);
+    return response.data;
+  },
+
+  getLowStock: async () => {
+    const response = await apiClient.get("/low-stock");
+    return response.data;
+  },
+
+  getExpiryRisk: async () => {
+    const response = await apiClient.get("/expiry-risk");
+    return response.data;
+  }
+};
+```
+
+### 4. Retailers & CRM Service (`src/services/retailers.ts`)
+Manages accounts, price tiers, and empty crates (RGB).
+- **Endpoint**: `/api/retailers`
+
+```typescript
+import { apiClient } from "./api";
+
+export const retailerService = {
+  getAll: async () => {
+    const response = await apiClient.get("/");
+    return response.data;
+  },
+
+  getById: async (id: string) => {
+    const response = await apiClient.get(`/${id}`);
+    return response.data;
+  },
+
+  create: async (retailerData: any) => {
+    const response = await apiClient.post("/", retailerData);
+    return response.data;
+  },
+
+  update: async (id: string, retailerData: any) => {
+    const response = await apiClient.put(`/${id}`, retailerData);
+    return response.data;
+  },
+
+  getLedger: async (id: string, page = 1, limit = 10) => {
+    const response = await apiClient.get(`/${id}/ledger`, { params: { page, limit } });
+    return response.data;
+  },
+
+  getRGBBalance: async (id: string) => {
+    const response = await apiClient.get(`/${id}/rgb`);
+    return response.data;
+  }
+};
+```
+
+### 5. Sales & Invoicing Service (`src/services/bills.ts`)
+Coordinates checkout transactions and bill cancellations.
+- **Endpoint**: `/api/bills`
+
+```typescript
+import { apiClient } from "./api";
+
+export const billService = {
+  create: async (billPayload: {
+    retailerId: string;
+    items: Array<{ productId: string; quantity: number; price: number; discount: number }>;
+    discount: number;
+    paidAmount: number;
+    paymentMode: string;
+  }) => {
+    const response = await apiClient.post("/", billPayload);
+    return response.data;
+  },
+
+  list: async () => {
+    const response = await apiClient.get("/");
+    return response.data;
+  },
+
+  getById: async (id: string) => {
+    const response = await apiClient.get(`/${id}`);
+    return response.data;
+  },
+
+  voidBill: async (id: string, reason: string) => {
+    const response = await apiClient.post(`/${id}/void`, { reason });
+    return response.data;
+  }
+};
+```
+
+### 6. Ledger & Payments Service (`src/services/ledger.ts`)
+Records direct debt payments and pulls general ledger statements.
+- **Endpoint**: `/api/ledger`
+
+```typescript
+import { apiClient } from "./api";
+
+export const ledgerService = {
+  getSummary: async () => {
+    const response = await apiClient.get("/");
+    return response.data;
+  },
+
+  recordPayment: async (paymentData: {
+    retailerId: string;
+    amount: number;
+    paymentMode: string;
+    notes?: string;
+  }) => {
+    const response = await apiClient.post("/payment", paymentData);
+    return response.data;
+  }
+};
+```
+
+---
+
+## 🔄 Zustand Store Integration Pattern
+
+To connect these service APIs to the frontend state, the Zustand store (`src/store/index.ts`) uses async/await actions that trigger requests, handle load indicators, and save active records.
+
+### Fetching Data Example
+
+```typescript
+export const useStore = create<StoreState>((set) => ({
+  retailers: [],
+  isLoading: false,
+
+  fetchRetailers: async () => {
+    set({ isLoading: true });
+    try {
+      const data = await retailerService.getAll();
+      set({ retailers: data.retailers });
+    } catch (error) {
+      console.error("Failed to load retailers", error);
+    } finally {
+      set({ isLoading: false });
+    }
+  }
+}));
+```
+
+### Submitting Data Example
+
+```typescript
+export const useStore = create<StoreState>((set) => ({
+  bills: [],
+  
+  checkoutBill: async (billPayload) => {
+    try {
+      const result = await billService.create(billPayload);
+      set((state) => ({
+        bills: [result.bill, ...state.bills]
+      }));
+      return result;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Checkout failed");
+    }
+  }
+}));
+```
+
+---
+
+## 📋 Environment Configuration
+
+To test frontend calls locally, ensure a `.env` file exists at the root of the project:
+
+```env
+# POS/.env
+VITE_API_URL=http://localhost:5000/api
+```
+
+In production build systems, this is replaced by:
+
+```env
+# POS/.env.production
+VITE_API_URL=https://api.yourposdomain.com/api
+```
+# Business Rules
+
+This document outlines the core business rules and logic enforced by the Beverage POS System. These rules govern data validation, workflow restrictions, calculations, and automated behaviors, and they are programmatically enforced on both the React frontend and inside the Node.js/Express service layers to guarantee database integrity.
+
+## Table of Contents
+
+- [Stock & Inventory Rules](#stock--inventory-rules)
+- [Sales & Billing Rules](#sales--billing-rules)
+- [Retailer & Credit Rules](#retailer--credit-rules)
+- [Audit & Security Rules](#audit--security-rules)
+
+---
+
+## Stock & Inventory Rules
+
+### 1. PET Unit Standardization
+- **Rule:** All liquid stock quantities must be calculated and displayed in "Bottle Equivalent" (PET) units, regardless of their physical packaging.
+- **Why:** To maintain a unified metric for volume tracking across different package sizes (e.g., cans vs. 1.5L bottles vs. 5L jugs).
+- **Calculation:** `Physical Units = PET Units × petConversionFactor`
+- **Enforcement:** Enforced in both the UI selection screens and the backend database fields.
+
+### 2. Batch-Based Expiry Monitoring
+- **Rule:** Inventory must be tracked in distinct batches with attached purchase and expiry dates. The system must categorize batch statuses into color-coded risks based on their proximity to the expiry date.
+- **Why:** To prevent the sale of expired goods and allow admins to prioritize moving older stock.
+- **Enforcement:** Automatically tracked by the inventory service (`inventory.service.ts`) through SQL queries checking the date offsets.
+
+### 3. Justified Stock Adjustments
+- **Rule:** Any manual deduction of stock outside of a standard sales transaction must be accompanied by an explicit reason code (e.g., `damage`, `theft`, `manual_correction`) and an Admin ID.
+- **Why:** To ensure inventory shrinkage is accurately categorized and accounted for in audit logs.
+- **Enforcement:** The `/api/inventory/:id/adjust` endpoint validates the admin session and payload schema before creating a transaction log.
+
+---
+
+## Sales & Billing Rules
+
+### 1. Price Variance Detection
+- **Rule:** If a worker processes a bill where a product's final selling price is lower than its system-defined default price, the transaction must be flagged automatically in the database (which populates the Price Variance Report).
+- **Why:** To prevent unauthorized discounting and ensure owners have visibility into revenue leakage.
+- **Enforcement:** Computed dynamically in `bill.service.ts` by comparing input prices against active stock batch prices.
+
+### 2. Bill Immutability
+- **Rule:** Once a bill is finalized, its line items and totals cannot be edited or deleted by a Worker. 
+- **Why:** To maintain strict financial compliance and prevent post-transaction tampering.
+- **Enforcement:** The database has no update route for bills; workers have no access to void routes.
+
+### 3. FIFO Sales Depletion
+- **Rule:** When a sale is finalized, stock must be deducted starting from the oldest available stock batch (determined by expiry date, then purchase date) for that specific product until the required quantity is met.
+- **Why:** First-In-First-Out (FIFO) ensures that older inventory is liquidated before newer inventory, reducing spoilage risk.
+- **Enforcement:** Implemented transactionally in the inventory depletion service (`deductStockFIFO()`) when processing checkouts.
+
+---
+
+## Retailer & Credit Rules
+
+### 1. Credit Limit Enforcement
+- **Rule:** Retailers cannot exceed their designated `creditLimit`. The system tracks the outstanding balance across all their bills to calculate their available credit.
+- **Why:** To mitigate financial risk from retailers who fail to pay their Udhari (credit) on time.
+- **Enforcement:** Verified in `bill.service.ts` during checkout. If the checkout raises the retailer's outstanding balance beyond their credit ceiling, the transaction is rejected and rolled back.
+- **Status Automation:**
+  - **Orange Warning:** Outstanding balance exceeds 70% of the credit limit.
+  - **Red Alert:** Outstanding balance exceeds 90% of the credit limit.
+  - **Block:** Outstanding balance exceeds 100% of the credit limit (Blocks sales).
+
+### 2. Ledger Integrity
+- **Rule:** Any payment made by a retailer that is less than the total bill value must automatically generate a `sale` entry and a corresponding pending balance in the retailer's ledger. Subsequent payments must generate `payment` entries that reduce this balance.
+- **Why:** To guarantee that the retailer's outstanding balance always perfectly matches the sum of their unpaid bills and recorded payments.
+- **Enforcement:** Enforced in `bill.service.ts` and `ledger.service.ts` inside atomic database transactions.
+
+### 3. Crate (RGB) Balancing
+- **Rule:** The system must independently track Returnable Glass Bottles (RGB) crates issued versus returned. The RGB balance cannot be cleared simply by paying a monetary bill; it requires physical crate returns to be logged.
+- **Why:** Because crates represent physical assets that must be returned to the manufacturer, independent of the liquid product sold.
+- **Enforcement:** Managed in the retailer module ledger and separate crate records in `rgb_tracking` table.
+
+---
+
+## Audit & Security Rules
+
+### 1. Strict Role Permissions
+- **Rule:** 
+  - **Workers** are strictly confined to the sales billing routes. They cannot view analytical reports, change default product prices, or modify retailer profiles.
+  - **Admins** have global read/write access across all routes and features.
+- **Why:** To protect sensitive financial data and prevent unauthorized pricing alterations.
+- **Enforcement:** Middleware layers (`auth.ts` and `requireRole.ts`) intercept all backend routes to authorize incoming requests.
+
+### 2. Voided Bill Logging
+- **Rule:** If a bill needs to be cancelled (voided), it must not be hard-deleted from the database. Instead, it must be marked as void (soft-delete) and logged in the `voided_bill_logs` table along with the total value of the bill, the worker who processed it, and a required reason.
+- **Why:** To prevent "ghost transactions" where a worker creates a bill, collects cash, and then deletes the bill to pocket the money.
+- **Enforcement:** Enforced inside the `voidBill()` database transaction which reverses stock, reverses ledger balances, and logs details.
+
+### 3. Timestamped Accountability
+- **Rule:** All financial transactions, stock adjustments, and price modifications must be securely timestamped and associated with the ID of the user who performed the action.
+- **Why:** To ensure full traceability and accountability for every system mutation.
+- **Enforcement:** Enforced by PostgreSQL schema defaults (`@default(now())`) and session user ID injections on write controllers.
+
+# Changelog
+
+All notable changes to the Beverage POS System are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to Semantic Versioning.
+
+---
+
+## Table of Contents
+- [[2.1.0] - 2026-06-30](#210---2026-06-30)
+- [[2.0.0] - 2026-06-26](#200---2026-06-26)
+- [[1.1.0] - 2026-06-19](#110---2026-06-19)
+- [[1.0.0] - 2026-02-19](#100---2026-02-19)
+
+---
+
+## [2.1.0] - 2026-06-30
+
+### Added
+- **Branding Personalization**: Rebranded the POS system to "AbdulHaq" across all user-facing headers, layouts, page titles, login page, and text receipt templates.
+- **Inventory Seeding Script**: Created a database seeding script (`seed_products.ts`) to easily populate new products and batches.
+- **Marinda Product Support**: Added `Marinda` (Mirinda) brand with support for image rendering and Returnable Glass Bottles (RGB) quick action logic.
+- **Beverage Catalog Expansion**: Added Coca Cola, Sprite, Marinda, and Dew brands with four standard packaging variants each:
+  - 250ml Glass (24 conversion factor)
+  - 500ml PET (12 conversion factor)
+  - 1.5L PET (6 conversion factor)
+  - 2.25L PET (6 conversion factor)
+- **Initial Inventory Stock**: Automatically seeded initial FIFO stock batches of **100 cases (PET units)** for all 16 new product variant combinations.
+- **Product Assets**: Generated and added high-quality `marinda.png` to static assets (`public/images/`).
+
+---
+
+## [2.0.0] - 2026-06-26
+
+### Added
+- **Full-Stack Architecture Support**: Shifted application from client-only mock data to a fully integrated backend architecture.
+- **Express API Server**: Initialized Node.js, Express, and TypeScript API service layers under `/backend`.
+- **Database Engine (PostgreSQL & Prisma)**: Implemented Prisma ORM version 5, establishing a robust database layer on PostgreSQL with a 13-model schema (`User`, `Product`, `StockBatch`, `StockAdjustment`, `Retailer`, `LedgerEntry`, `RGBTracking`, `Bill`, `BillItem`, `PaymentRecord`, `PriceHistory`, `VoidedBillLog`).
+- **Secure JWT Authentication**: Implemented stateless access token (15-minute lifespan) and refresh token (7-day lifespan via `httpOnly` secure cookies) authentication.
+- **Role-Based Access Control (RBAC)**: Added authentication and role verification middleware (`auth.ts` and `requireRole.ts`) to secure endpoints.
+- **Products API Module**: Created CRUD routes for products, supporting product catalogs and in-stock inventory queries.
+- **Inventory API Module**: Created FIFO stock batch tracking, low-stock notifications, expiry warnings, and manual stock adjustment logging with audit logs.
+- **Retailer & CRM API Module**: Configured database storage for profiles, pricing tiers, and direct ledger mappings.
+- **Empty Crate (RGB) API**: Integrated Returnable Glass Bottle tracking independently of monetary transactions in the backend services.
+- **Atomic Sales Transaction Engine**: Added invoice creation logic. It dynamically verifies credit, deducts inventory via FIFO across batches, checks for price overrides, creates ledger debit records, and commits transactionally (fails or succeeds as a single unit).
+- **Credit Enforcement Engine**: Server-side enforcement of retailer credit ceilings (warning at 70%, block at 100%).
+- **Voided Bill Auditing**: Created soft-delete logic for bills, writing reversing ledger logs and storing audit reasons for security compliance.
+- **Ledger & direct Payments API**: Created routes for posting direct payments and auditing historical retailer ledgers.
+- **Database Seeding**: Created `prisma/seed.ts` script to populate database with default configurations, products, and default `admin@pos.com / admin123` and `worker@pos.com / worker123` credentials.
+
+### Changed
+- **Directory Structure**: Structured project into a monorepo consisting of frontend (`/src`) and backend (`/backend`).
+- **Configuration Templates**: Created `.env.example` configurations containing safe database templates and token expiration defaults.
+
+---
+
+## [1.1.0] - 2026-06-19
+
+### Added
+- **Image-Centric Product Cards**: Integrated brand logos (`pepsi.png`, `dew.png`, `fanta.png`, etc.) into `public/images/` and applied them to the primary product selection screens.
+- **Brand-First Navigation**: Introduced a two-tier drill-down UI for product selection. Workers now select a Brand card first before selecting specific size/packaging variants.
+
+### Changed
+- **Inventory Page UI**: Synchronized the `InventoryPage` product grid to match the new image-centric layout of the `SalesPage`.
+- **Documentation Overhaul**: Extensively updated and corrected `PROJECT_SUMMARY.md`, `ARCHITECTURE.md`, `GETTING_STARTED.md`, and `FILES_LISTING.md` to resolve redundancies and accurately reflect the lack of an existing backend service layer.
+
+### Removed
+- **Duplicate Crate Entries**: Removed redundant "Tray (12 Bottles)" entries from the root Empty Crates (RGB) view. These are now properly nested as sub-variants under their respective parent brands (Pepsi, Coca Cola, Sprite).
+- **Dead Code**: Cleaned up disabled JSX grids in `SalesPage.tsx` that contained TypeScript errors.
+
+---
+
+## [1.0.0] - 2026-02-19
+
+### Added
+- **Initial Release**: Stabilized the core POS functionality.
+- **Worker Module**: Created the primary Sales Billing interface with real-time cart calculations and PET unit standardization.
+- **Admin Dashboard**: Added real-time metric cards, low-stock alerts, and recent bill activity tracking.
+- **Inventory System**: Implemented batch-based stock tracking with expiry monitoring.
+- **Retailer CRM**: Added comprehensive retailer profiles, credit limit monitoring, and automated ledger integration.
+- **Reporting Engine**: Created foundational reports for Sales, Product Performance, Worker Accountability, and Price Variance detection.
+- **State Management**: Implemented Zustand for global state using robust mock data arrays pending API integration.
+- **Core Documentation**: Initialized `README.md`, `ARCHITECTURE.md`, and backend `API_INTEGRATION.md` guides.
+# Database Structure
+
+This document outlines the database schemas and relationships for the Beverage POS System. The database layer is implemented on **PostgreSQL** and managed programmatically via **Prisma ORM**.
+
+The source schema file is located at [schema.prisma](file:///c:/Users/Reshail%20Rajp00000t/Desktop/POS/backend/prisma/schema.prisma).
+
+---
+
+## Entity Relationship Overview
+
+```
+                 ┌──────────────┐
+                 │     User     │
+                 └──────┬───────┘
+                        │
+         ┌──────────────┼──────────────┐
+         │              │              │
+         ▼              ▼              ▼
+ ┌──────────────┐ ┌──────────┐ ┌──────────────┐
+ │StockAdjustm't│ │   Bill   │ │PriceHistory  │
+ └──────┬───────┘ └───┬──┬───┘ └──────┬───────┘
+        │             │  │            │
+        ▼             │  │            ▼
+ ┌──────────────┐     │  └──────┐ ┌───────────┐
+ │  StockBatch  │     │         │ │  Product  │
+ └──────┬───────┘     │         │ └─────┬─────┘
+        │             │         │       │
+        ▼             ▼         ▼       │
+ ┌──────────────┐ ┌──────┐  ┌─────────┐ │
+ │   Retailer   ├─►Ledger│  │BillItem ├─┘
+ └──────┬───────┘ └──────┘  └─────────┘
+        │
+        ▼
+ ┌──────────────┐
+ │ RGBTracking  │
+ └──────────────┘
+```
+
+---
+
+## Schema Documentation
+
+### 1. User (`users`)
+Represents system operators (Admins and Workers).
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `name` | String | | Full name |
+| `email` | String | Unique | Login email |
+| `passwordHash` | String | `@map("password_hash")` | bcrypt hash of user password |
+| `role` | `UserRole` (Enum) | | Privilege tier: `admin` or `worker` |
+| `isActive` | Boolean | Default: `true` | Allows/blocks logins |
+| `createdAt` | DateTime | Default: `now()` | Registration timestamp |
+
+---
+
+### 2. Product (`products`)
+Unified catalog of beverage items and variants.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `brand` | String | | Parent brand (e.g. 'Pepsi', 'Dew') |
+| `category` | `ProductCategory` (Enum) | | Category: `soft_drink`, `juice`, `water`, `energy_drink` |
+| `variant` | String | | Size/Packaging details (e.g. '1.5L', 'Can') |
+| `petConversionFactor` | Int | `@map("pet_conversion_factor")` | Factor to convert variant volume to PET units |
+| `description` | String | Nullable | Optional notes |
+
+---
+
+### 3. StockBatch (`stock_batches`)
+Purchased batches of inventory. Deductions query this table to implement FIFO.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `productId` | String | FK -> `Product.id` | Reference to parent product |
+| `quantity` | Int | | Remaining inventory in PET units |
+| `buyPrice` | Decimal (10,2) | | Purchase cost per PET unit |
+| `salePrice` | Decimal (10,2) | | Target selling price per PET unit |
+| `batchNumber` | String | Unique | Manufacturer batch reference |
+| `expiryDate` | DateTime | | Batch expiration date |
+| `purchaseDate` | DateTime | | Date stock was purchased |
+| `supplierId` | String | Nullable | Optional supplier reference |
+| `supplier` | String | Nullable | Supplier name |
+| `createdAt` | DateTime | Default: `now()` | Insertion timestamp |
+
+---
+
+### 4. StockAdjustment (`stock_adjustments`)
+Audit trail of manual inventory overrides.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `batchId` | String | FK -> `StockBatch.id` | Batch adjusted |
+| `quantity` | Int | | Adjustment count (negative for losses) |
+| `reason` | `AdjustmentReason` (Enum)| | Reason: `damage`, `theft`, `manual_correction` |
+| `notes` | String | | Supporting details |
+| `adminId` | String | FK -> `User.id` | Admin who authorized adjustment |
+| `createdAt` | DateTime | Default: `now()` | Transaction timestamp |
+
+---
+
+### 5. Retailer (`retailers`)
+Customer accounts.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `shopName` | String | | Business shop name |
+| `ownerName` | String | | Primary contact owner name |
+| `mobileNumber` | String | | Phone number |
+| `address` | String | | Delivery address |
+| `deliveryLocation`| String | Nullable | GPS coords or routing notes |
+| `creditLimit` | Decimal (12,2) | | Maximum allowed unpaid debt balance |
+| `priceTier` | `PriceTier` (Enum) | Default: `standard` | Pricing tier: `standard`, `premium`, `discount` |
+| `createdAt` | DateTime | Default: `now()` | Account creation date |
+
+---
+
+### 6. LedgerEntry (`ledger_entries`)
+Double-entry record of retailer credit mutations.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `retailerId` | String | FK -> `Retailer.id` | Retailer reference |
+| `billId` | String | FK -> `Bill.id`, Nullable | Connected invoice (if applicable) |
+| `entryType` | `LedgerEntryType` (Enum) | | Entry type: `sale`, `payment`, `return`, `adjustment` |
+| `amount` | Decimal (12,2) | | Transaction value (positive for sales, negative for payments) |
+| `balance` | Decimal (12,2) | | Retailer's net outstanding debt balance after transaction |
+| `paymentMode` | `LedgerPaymentMode` (Enum) | Nullable | Payment type: `cash`, `bank_transfer`, `check` |
+| `notes` | String | Nullable | Audit logs notes |
+| `createdAt` | DateTime | Default: `now()` | Entry timestamp |
+
+---
+
+### 7. RGBTracking (`rgb_tracking`)
+Crate (Returnable Glass Bottles) asset logs.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `retailerId` | String | FK -> `Retailer.id`, Unique | Retailer reference |
+| `issuedQuantity` | Int | Default: `0` | Crates issued |
+| `returnedQuantity`| Int | Default: `0` | Crates returned |
+| `balance` | Int | Default: `0` | Outstanding crates owed (`issued - returned`) |
+| `lastUpdated` | DateTime | Default: `now()`, Auto | Last transaction timestamp |
+
+---
+
+### 8. Bill (`bills`)
+Finalized sales invoices.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `billNumber` | String | Unique | Standard invoice identifier |
+| `retailerId` | String | FK -> `Retailer.id` | Customer reference |
+| `workerId` | String | FK -> `User.id` | Worker who finalized invoice |
+| `subtotal` | Decimal (12,2) | | Net sum before discounts |
+| `discount` | Decimal (12,2) | Default: `0` | Discount applied to bill |
+| `total` | Decimal (12,2) | | Total bill amount |
+| `paidAmount` | Decimal (12,2) | Default: `0` | Upfront payment paid |
+| `pendingAmount` | Decimal (12,2) | | Balance added to ledger debt |
+| `paymentMode` | `BillPaymentMode` (Enum) | Nullable | Method: `cash`, `credit`, `udhar`, `generate_only` |
+| `previousPendingAdded` | Decimal (12,2) | Nullable | Debt carried forward to invoice printout |
+| `oldPendingPaymentApplied` | Decimal (12,2)| Nullable | Payments applied to past debt during checkout |
+| `status` | `BillStatus` (Enum)| | Status: `pending`, `paid`, `partial` |
+| `createdAt` | DateTime | Default: `now()` | Creation timestamp |
+| `updatedAt` | DateTime | Auto-updated | Modification timestamp |
+
+---
+
+### 9. BillItem (`bill_items`)
+Line items nested in a finalized Bill.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `billId` | String | FK -> `Bill.id` (Cascade) | Parent bill reference |
+| `productId` | String | FK -> `Product.id` | Beverage product reference |
+| `quantity` | Int | | PET units purchased |
+| `price` | Decimal (10,2) | | Unit price charged |
+| `discount` | Decimal (10,2) | Default: `0` | Discount applied to variant |
+| `total` | Decimal (12,2) | | Line total `(quantity * price) - discount` |
+
+---
+
+### 10. PaymentRecord (`payment_records`)
+Tracks partial payments processed against specific bills.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `billId` | String | FK -> `Bill.id` (Cascade) | Parent bill reference |
+| `amount` | Decimal (12,2) | | Payment amount |
+| `date` | DateTime | Default: `now()` | Timestamp of payment |
+| `paymentMode` | `BillPaymentMode` (Enum)| | Payment method |
+| `notes` | String | Nullable | Optional notes |
+
+---
+
+### 11. PriceHistory (`price_history`)
+Audits product default price modifications.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `productId` | String | FK -> `Product.id` | Product variant reference |
+| `oldPrice` | Decimal (10,2) | | Price prior to change |
+| `newPrice` | Decimal (10,2) | | Price set after change |
+| `changedBy` | String | FK -> `User.id` | Admin who changed price |
+| `date` | DateTime | Default: `now()` | Modification timestamp |
+
+---
+
+### 12. VoidedBillLog (`voided_bill_logs`)
+Reconciliation log for cancelled sales transactions.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `billId` | String | FK -> `Bill.id`, Unique | Canceled bill reference |
+| `workerId` | String | FK -> `User.id` | Original bill worker |
+| `voidedAt` | DateTime | Default: `now()` | Void action timestamp |
+| `billValue` | Decimal (12,2) | | Total value of the bill |
+| `reason` | String | | Reason for deletion |
+
+
+# Product Features Matrix
+
+This document provides a comprehensive list of all functional features implemented in the Beverage POS System. Features are organized by module for easy reference.
+
+---
+
+## Authentication & Access Control
+
+### 🔐 JWT-Based Authentication
+- **Secure Token Lifecycle:** Implements dual-token JWT login.
+  - **Access Token:** Short-lived (15 minutes) token returned in JSON response payload.
+  - **Refresh Token:** Long-lived (7 days) token stored in a secure, `httpOnly`, same-site cookie.
+- **Silent Re-Authentication:** The frontend interceptor automatically catches 401 errors, calls the refresh endpoint (`/api/auth/refresh`) using the HTTP cookie, updates the access token, and retries the original request without user interruption.
+- **Safe Session Revocation:** Standard logout endpoint clears the refresh token cookie on the backend.
+
+### 🛡️ Role-Based Access Control (RBAC)
+- **Role Privileges:** User sessions carry one of two roles, validated server-side for every API action:
+  - **Admin Access:** Full permission across inventory adjustments, reports, catalogs, CRM, and void operations.
+  - **Worker Access:** Restricted exclusively to the Sales page. Unauthorized route queries yield 403 Forbidden responses.
+- **UI Route Protection:** Client-side routing automatically redirects workers and admins to their respective views (e.g., workers are blocked from accessing `/admin/*`).
+
+---
+
+## Worker Module (Sales & Billing)
+
+### 🖱️ Brand-First Selection
+- **Brand Cards:** Interactive visual grid displaying parent brands (`Pepsi`, `Dew`, `Fanta`, etc.) using high-contrast logos in `public/images/`.
+- **Variant Drill-Down:** Selecting a brand filters and displays its variants (e.g., `1.5L`, `Can`, `Glass Bottle (RGB)`) in a nested grid for rapid selection.
+
+### 🛒 Cart & Pricing Engine
+- **Calculations:** Real-time calculation of subtotal, applied item/cart discounts, and total values.
+- **Price Overrides:** Workers can manually overwrite unit pricing during checkout. This triggers price variance tracking rules.
+- **Print Preview Invoice:** Displays formatted invoices ready for print margins, appending carryover balances from the retailer's ledger.
+
+---
+
+## Admin Dashboard
+
+### 📈 Real-Time KPIs
+- **Metrics Grid:** Instantly updates metrics from the PostgreSQL database:
+  - **Today's Revenue** (Calculated from completed invoices)
+  - **Active Retailers** (CRM registry count)
+  - **Product Variants** (Catalog list)
+  - **Total Stock in PET Units** (Aggregated inventory)
+
+### 🚨 Live Alerts Engine
+- **Low Stock Thresholds:** Flags products whose remaining batch quantities drop below standard thresholds.
+- **Expiry Risk Indicators:** Warns when batches expire within 30 days, using color-coded urgency styles (Yellow / Red).
+- **Credit Limit Monitor:** Flags retailers whose outstanding debt exceeds credit limits.
+
+---
+
+## Inventory Management
+
+### 📦 Batch-Level Inventory
+- **FIFO Batch Depletion:** System deducts inventory starting from the oldest active stock batch, reducing expiry shrinkage.
+- **Manual Adjustments:** Interface for receiving new batches and recording supplier info, buy/sale prices, and expiry dates.
+- **Deduction Auditing:** Admin-only adjustments require selection of a standardized code (`damage`, `theft`, `manual_correction`) and a mandatory text log.
+
+---
+
+## Retailer CRM
+
+### 👥 Profiles & pricing
+- **Retailer Profile:** Shop name, owner name, contact number, address, and special delivery directions.
+- **Pricing Tiers:** Supports distinct price lists (`standard`, `premium`, `discount`) linked to profiles, serving as default rates during billing.
+
+### 💰 Ledger & Credit Checks
+- **Credit Limits:** Outstanding balances are capped. Attempts to check out invoices that raise total debt past a retailer's credit limit are blocked.
+- **Automatic Double-Entry Ledger:** Bill creations and payment logs automatically write matching debits and credits to the retailer ledger table, ensuring balances balance.
+- **RGB Crate Tracker:** Independently tracks returnable glass crates (`issuedQuantity`, `returnedQuantity`, `balance`) to balance container assets separately from cash transactions.
+
+---
+
+## Reporting & Analytics
+
+### 📊 Audit Reports
+- **Sales Trends:** Renders sales performance aggregated by daily, weekly, monthly, or yearly scales.
+- **Worker Performance:** Tracks bill totals, average order value, and worker accountability metrics.
+- **Price Variance Report:** Lists invoices featuring manually overridden item prices that fall below default catalog list rates, showing worker name, variance amount, and date.
+- **Voided Bills Log:** Displays soft-deleted invoices, preserving the original worker, value, date, and admin void reasoning.
+- **Credit Outstanding Report:** Tabulates all outstanding balances across the retailer network.
+- **CSV Data Exporter:** Integrated endpoints ready to compile query responses for download.
+
+
+# 📂 File Directory & Structure Documentation
+
+This document details all files in the Beverage POS monorepo, organized by directory.
+
+---
+
+## 1. Project Root Directory
+Contains configuration files for the React frontend application and serves as the monorepo root.
+
+- **package.json** - Frontend dependencies (React 18, Zustand, Tailwind, Lucide Icons, React Router v6) and build scripts.
+- **tsconfig.json** - Global TypeScript compiler settings.
+- **tsconfig.node.json** - TypeScript config for Node tools (Vite).
+- **vite.config.ts** - Vite bundling configuration.
+- **tailwind.config.js** - Tailwind CSS utility configurations and custom layout colors.
+- **postcss.config.js** - PostCSS wrapper for Tailwind compile.
+- **index.html** - HTML entry point containing the mounting root `div`.
+- **.gitignore** - Root-level exclusions (`node_modules`, `dist/`, log files).
+
+---
+
+## 2. Public Directory (`public/`)
+Houses static assets loaded directly by the client browser.
+
+- **public/images/** - Brand icons used on the SalesPage cards:
+  - `coca-cola.png`
+  - `dew.png`
+  - `fanta.png`
+  - `marinda.png`
+  - `pepsi.png`
+  - `sprite.png`
+  - `string.png`
+
+---
+
+## 3. Frontend Source Code (`src/`)
+Contains client-side React + TypeScript application source code.
+
+- **src/main.tsx** - DOM rendering entry point.
+- **src/App.tsx** - Frontend routing setup, including layout wrappers and RBAC guards.
+- **src/index.css** - Global Tailwind definitions and custom CSS overrides.
+- **src/types/index.ts** - Unified TypeScript interfaces representing data models.
+- **src/store/index.ts** - Zustand state management store for frontend actions.
+
+### Pages (`src/pages/`)
+- **auth/LoginPage.tsx** - Dual-role login screen.
+- **worker/SalesPage.tsx** - Brand-first drill-down and cart checkout panel for workers.
+- **admin/AdminDashboard.tsx** - Metric summaries, inventory alerts, and real-time transaction logs.
+- **admin/InventoryPage.tsx** - Batch listings, stock receipt forms, and adjustment models.
+- **admin/RetailersPage.tsx** - Retailer database, credit limit bars, ledger summaries, and RGB crate tracking forms.
+- **admin/ReportsPage.tsx** - Analytical reporting views (Sales, Product performance, Worker accountability, Price variance, Credit).
+
+---
+
+## 4. Backend Root Directory (`backend/`)
+Contains the Node.js API server codebase, Prisma ORM setups, and PostgreSQL migration hooks.
+
+- **backend/package.json** - Backend dependencies (Express, Prisma, Zod, bcrypt, jsonwebtoken, ts-node).
+- **backend/tsconfig.json** - Backend TypeScript compilation settings.
+- **backend/.env.example** - Blank configuration template for database URLs and secrets.
+- **backend/.gitignore** - Backend-specific ignores (excluding `.env`, `node_modules`, `dist/`).
+- **backend/run-seed.js** - Helper script to run the database seeder easily.
+
+### Database Setup (`backend/prisma/`)
+- **schema.prisma** - Prisma ORM database models, relations, schemas, and enums.
+- **seed.ts** - Database seeder script which creates default accounts (`admin@gmail.com`, `worker@gmail.com`).
+- **seed_products.ts** - Seeder script for beverage products (Coca Cola, Sprite, Marinda, Dew) and their variants/batches.
+- **check_db.ts** - Script to verify existing products and batches in PostgreSQL.
+
+### API Source Code (`backend/src/`)
+- **index.ts** - Express server entry point. Configures security middlewares, routes, error handlers, and port listeners.
+
+#### Config (`backend/src/config/`)
+- **env.ts** - Environment variable parsing and verification using Zod schemas (fails fast on startup).
+
+#### Utilities (`backend/src/lib/`)
+- **prisma.ts** - Singleton wrapper for PrismaClient to prevent connection leakage.
+- **response.ts** - Express HTTP response formatting helpers.
+
+#### TypeScript Typing (`backend/src/types/`)
+- **express.d.ts** - Extends Express request interface to carry authorized user payloads.
+
+#### Middleware (`backend/src/middleware/`)
+- **auth.ts** - Decodes incoming Bearer JWT headers and validates user sessions.
+- **requireRole.ts** - Middleware factory to block non-admin accounts from restricted endpoints.
+
+#### Business Modules (`backend/src/modules/`)
+Each directory contains service logics, Express routing handlers, and endpoints.
+- **auth/** - User login, logout, profile checks, and token refreshes.
+  - `auth.routes.ts`
+  - `auth.controller.ts`
+  - `auth.service.ts`
+- **products/** - Catalog listings, in-stock checks, and catalog editing.
+  - `product.routes.ts`
+  - `product.controller.ts`
+  - `product.service.ts`
+- **inventory/** - Batch entry, adjustments auditing, low-stock lists, and FIFO depletions.
+  - `inventory.routes.ts`
+  - `inventory.controller.ts`
+  - `inventory.service.ts`
+- **retailers/** - Customer CRUD, ledger audits, and crate tracking.
+  - `retailer.routes.ts`
+  - `retailer.controller.ts`
+  - `retailer.service.ts`
+- **bills/** - Invoice generation, transaction locks, pricing audits, worker logs, and soft deletions (voids).
+  - `bill.routes.ts`
+  - `bill.controller.ts`
+  - `bill.service.ts`
+- **ledger/** - Direct ledger settlements and total debt reports.
+  - `ledger.routes.ts`
+  - `ledger.controller.ts`
+  - `ledger.service.ts`
+
+---
+
+## 5. Documentation Directory (`MD Files/`)
+Technical guides and design documents detailing the POS.
+
+- **README.md** - General overview, tech stack features, and quick-start instructions.
+- **GETTING_STARTED.md** - Step-by-step developer tutorial for starting the frontend and backend.
+- **ARCHITECTURE.md** - Core blueprints, structural diagrams, database maps, and endpoint specifications.
+- **API_INTEGRATION.md** - Axio API definitions, schemas, and integration patterns.
+- **Business_Rules.md** - Business restrictions, calculations, and rules.
+- **Database.md** - Detailed PostgreSQL/Prisma table column tables.
+- **Features.md** - Feature matrices and access control mappings.
+- **FILES_LISTING.md** - This document directory.
+- **UI_Guidelines.md** - Styling grids, tailwind patterns, and common components guide.
+- **CHANGELOG.md** - Detailed version logs.
+- **PROJECT_SUMMARY.md** - Project milestones and next steps checklist.
+
+---
+
+## 📊 File Statistics
+
+```
+Total Files: 65+
+Total Lines of Code: ~6,000+
+TypeScript Files: ~35
+CSS Files: 1
+Config Files: 8
+Documentation Files: 11
+Image Files: 7 (in public/images/)
+```
+# 🚀 GETTING STARTED - Full-Stack POS System Setup
+
+This guide will walk you through setting up and running the full-stack Beverage POS system locally.
+
+---
+
+## 📋 System Requirements
+
+Ensure you have the following installed on your machine:
+1. **Node.js** (v18.x or higher)
+2. **PostgreSQL** (running locally or a cloud-hosted instance, e.g., on Supabase)
+3. **npm** (comes with Node.js)
+
+---
+
+## 🛠️ Step-by-Step Setup
+
+### Step 1: Clone and Prepare Workspace
+Make sure your project directory contains the frontend files at the root level and the `backend/` directory.
+
+### Step 2: Set Up the Backend Server & Database
+Open a terminal window and navigate to the backend directory:
+
+```bash
+# 1. Navigate to the backend directory
+cd POS/backend
+
+# 2. Install backend dependencies
+npm install
+
+# 3. Create the environment configuration file
+cp .env.example .env
+```
+
+Open the newly created `.env` file in your code editor and configure the variables:
+- **`DATABASE_URL`**: Update this with your PostgreSQL credentials. For example:
+  `DATABASE_URL="postgresql://postgres:Reshail50@localhost:5432/beverage_pos?schema=public"`
+- **`JWT_ACCESS_SECRET`** & **`JWT_REFRESH_SECRET`**: Set these to any random secure strings (e.g., at least 32 characters long).
+- **`PORT`**: Default is `5000` (can be changed if needed).
+- **`CORS_ORIGIN`**: Set to `http://localhost:5173` (default Vite port) or `http://localhost:3000`.
+
+Now, push the database schema and seed the initial users:
+
+```bash
+# 4. Push the Prisma database schema (creates tables in PostgreSQL)
+npx prisma db push
+
+# 5. Run the seeder script (creates admin/worker users and initial products)
+npm run db:seed
+
+# 6. Start the backend development server
+npm run dev
+```
+
+You should see logs in the console confirming that the server is running on `http://localhost:5000` and waiting for database queries.
+
+---
+
+### Step 3: Set Up the Frontend Client
+Open a **new terminal window** at the project root directory:
+
+```bash
+# 1. Navigate to the project root
+cd POS
+
+# 2. Install frontend dependencies
+npm install
+
+# 3. Create a frontend environment configuration
+echo "VITE_API_URL=http://localhost:5000/api" > .env
+
+# 4. Start the Vite dev server
+npm run dev
+```
+
+The frontend will start and automatically open in your browser, typically at **`http://localhost:5173`** (or fallback to `3000`).
+
+---
+
+## 🎮 Testing the Application
+
+The database seeder configures two test accounts:
+
+### 1. Test Admin Role (Full Access)
+- **Email**: `admin@gmail.com`
+- **Password**: `admin`
+- **Actions to Try**:
+  - Review the **Admin Dashboard** showing aggregated metrics, inventory alerts, and transaction logs.
+  - Manage **Inventory** by adding a new stock batch or performing manual stock adjustments with reasons.
+  - Explore the **Retailer CRM** to view price tiers, credit progress bars, and ledger transactions.
+  - Inspect **Reports** (Sales metrics, worker orders, price overrides, voided bills).
+
+### 2. Test Worker Role (Billing Screen Only)
+- **Logout** from the Admin account.
+- **Login** using the worker credentials:
+- **Email**: `worker@gmail.com`
+- **Password**: `worker`
+- **Actions to Try**:
+  - The worker is immediately redirected to the **Worker Sales** page.
+  - Click on a brand card (e.g., `Pepsi` or `Sprite`) to open the variants catalog.
+  - Add items to the cart, override the unit prices (triggers warning flag), select a retailer, and check out.
+  - Generate an invoice preview and print.
+
+---
+
+## 📚 Document Navigation
+
+Read the following documentation files for a deeper understanding of the codebase structure:
+1. [README.md](file:///c:/Users/Reshail%20Rajp00000t/Desktop/POS/MD%20Files/README.md) - Main project summary and prerequisites.
+2. [ARCHITECTURE.md](file:///c:/Users/Reshail%20Rajp00000t/Desktop/POS/MD%20Files/ARCHITECTURE.md) - Deep-dive into models, relations, endpoints, and file layers.
+3. [API_INTEGRATION.md](file:///c:/Users/Reshail%20Rajp00000t/Desktop/POS/MD%20Files/API_INTEGRATION.md) - Client axios services and state sync actions.
+4. [Business_Rules.md](file:///c:/Users/Reshail%20Rajp00000t/Desktop/POS/MD%20Files/Business_Rules.md) - Validations, credit thresholds, and FIFO depletion algorithms.
+5. [Database.md](file:///c:/Users/Reshail%20Rajp00000t/Desktop/POS/MD%20Files/Database.md) - Field-by-field database dictionary.
+6. [FILES_LISTING.md](file:///c:/Users/Reshail%20Rajp00000t/Desktop/POS/MD%20Files/FILES_LISTING.md) - Tree diagram of the codebase directories.
+
+---
+
+## 🔧 Useful CLI Commands
+
+### Backend Commands (run in `POS/backend/`)
+- `npm run dev` - Run the API server with hot-reloading.
+- `npx prisma studio` - Open a local database editor interface in your browser.
+- `npm run db:seed` - Populate default users/products.
+- `npx prisma db push` - Push changes in `schema.prisma` directly to PostgreSQL.
+
+### Frontend Commands (run in `POS/`)
+- `npm run dev` - Run the Vite development server.
+- `npm run build` - Compile and optimize the client application for production.
+- `npm run preview` - Test the production build locally.
+
+
+# Project Completion Summary
+
+## ✅ Project Status: FULL-STACK MVP IMPLEMENTED
+
+The full-stack foundation for the AbdulHaq Beverage POS System is complete. The PostgreSQL database is active, and the Express + TypeScript API server is running on `http://localhost:5000`.
+
+---
+
+## 📦 Monorepo Architecture Overview
+
+The codebase is organized as a monorepo containing two key modules:
+
+### 1. React Frontend Client (Root `/`)
+- **Framework**: React 18 + TypeScript.
+- **Styling**: Tailwind CSS 3.
+- **State management**: Zustand global stores.
+- **Build tool**: Vite (3-second hot reloads).
+- **Bundle sizes**: ~75KB JS, ~4.7KB CSS gzipped.
+
+### 2. Node.js Express Backend API Server (`/backend`)
+- **Framework**: Express + TypeScript.
+- **ORM Layer**: Prisma v5 communicating with **PostgreSQL**.
+- **Security**: stateless JWT access tokens, HttpOnly secure cookies for refresh tokens, bcrypt password hashing.
+- **Transactions**: Atomic transaction locks ($transaction) ensuring database consistency.
+- **Seeder**: Configured to seed test users and catalogs.
+
+---
+
+## 🚀 Implemented Modules
+
+### 1. Core Authentication Layer
+- Single endpoint `/api/auth/login` handling credentials for both Admin and Worker roles.
+- Backend RBAC middleware (`auth.ts`, `requireRole.ts`) checking JWT signatures and route privileges.
+- Auto-refresh mechanism on the client.
+
+### 2. Products API
+- CRUD endpoints mapping directly to PostgreSQL `products`.
+- Specialized endpoints querying variants in stock.
+
+### 3. Inventory & FIFO Depletion
+- Batch-level tracking (`quantity`, `buyPrice`, `salePrice`, `expiryDate`).
+- Manual inventory adjustments auditing (shrinkage controls, reason tags, admin reference).
+- FIFO stock depletion service (`deductStockFIFO()`) which checks out inventory from oldest available batches first.
+- Alert filters for low stock and expired batches.
+
+### 4. Retailer CRM & Crate Tracking
+- Profile mapping (`shopName`, `ownerName`, `priceTier`).
+- Dynamic credit calculation checking invoices against credit limits (blocking checkouts when exceeded).
+- Crate management system independent of cash balances (`rgb_tracking` table).
+
+### 5. Sales Invoicing & Ledger
+- Atomic billing logic: validates credit limits → depletes FIFO inventory → generates invoice → posts ledger debits.
+- Direct retailer payments API reducing credit balances.
+- Soft-delete void routes reversing invoice transactions and logging void audit reasons.
+
+---
+
+## 🎓 Completed Milestones
+
+### Phase 1: Database Setup
+- PostgreSQL configuration via Prisma schema.
+- Creation of the 13-table schema (`users`, `products`, `stock_batches`, `stock_adjustments`, `retailers`, `ledger_entries`, `rgb_tracking`, `bills`, `bill_items`, `payment_records`, `price_history`, `voided_bill_logs`).
+
+### Phase 2: Express Server Boilerplate
+- App setup, security CORS configs, env validation (Zod), JWT cookies.
+
+### Phase 3: Auth & Business Endpoints
+- Controllers, services, routes, validations, and database seeds.
+
+---
+
+## 🎯 Next Steps
+
+Now that the backend API foundations are running, future milestones include:
+
+### 1. Frontend Service Layer Integration
+- Replace the mock data arrays in Zustand (`src/store/index.ts`) with async axios service calls (mapped out in `API_INTEGRATION.md`).
+
+### 2. Build and Deployment
+- Set up Docker compose configurations to launch PostgreSQL and Node.js backend.
+- Configure production build pipelines.
+
+### 3. Reporting Enhancements
+- Build database aggregation routes to compute complex analytics (worker sales velocities, profit variance summaries, historical credit reports) rather than computing on client.
+
+---
+
+**Version**: 2.1.0  
+**Status**: ✅ Full-Stack Foundation Ready  
+**Last Updated**: June 30, 2026  
+**License**: Commercial/Educational  
+
+🎉 Enjoy your new full-stack AbdulHaq POS System! 🎉
+
+
+# AbdulHaq Beverage POS System
+
+A comprehensive **Wholesale & Retail Beverage Management System** built with a full-stack architecture featuring **React + Tailwind CSS** on the frontend, and **Node.js + Express + TypeScript + PostgreSQL + Prisma ORM** on the backend. Designed specifically for shopkeepers and wholesalers dealing in soft drinks, juices, water, and related FMCG products.
+
+## 🎯 Purpose
+
+This system prioritizes simplicity for shop workers (PC-based billing) and control/visibility for owners/admins (mobile-ready dashboard). It supports:
+
+- ✅ **Unified Database Backend** — Centralized data persistence via PostgreSQL.
+- ✅ **Inventory Batch Tracking** — FIFO (First-In-First-Out) stock depletion logic.
+- ✅ **Credit (Udhari) Management** — Strict credit limit enforcement and automated ledger logging.
+- ✅ **RGB Crate Tracking** — Independent tracking of Returnable Glass Bottles and plastic crates.
+- ✅ **Worker Accountability** — Roles and detailed audit trails for adjustments, price overrides, and voided bills.
+- ✅ **Automated Billing** — Real-time invoice calculations with print preview functionality.
+- ✅ **Price Variance Flagging** — Automated detection of below-default price sales.
+- ✅ **Role-Based Access Control** — Robust backend protection with JWT tokens (Access/Refresh tokens).
+
+---
+
+## 👥 User Roles
+
+The system uses a single login page for both Admin and Worker accounts. Role-based privileges are verified server-side.
+
+### Admin (Owner/Manager)
+- Full read/write access to all modules and configurations.
+- Access to analytical reports, profit metrics, and sales trends.
+- Controls pricing, catalog CRUD, worker accounts, and stock adjustments.
+- Manages retailer profiles, credit limits, and ledger entries.
+
+### Worker (Shop/Warehouse Staff)
+- Restricted PC-only sales billing screen.
+- Can select products, brands, and variants to create invoices.
+- Can apply manual discounts or overrides (which flags price variance audit logs).
+- **Cannot:** Create/update products, modify stock levels, view reports, or edit past bills.
+
+---
+
+## 🏗️ Project Structure
+
+The project is structured as a monorepo containing the React frontend at the root level and the Node.js API server in the `backend/` directory:
+
+```
+POS/                            ← Monorepo Root
+├── src/                        ← Frontend Source (React + TypeScript)
+│   ├── components/
+│   │   ├── common/             # Reusable UI elements (Button, Input, Modal, etc.)
+│   │   └── Layout/             # Main dashboard navigation container
+│   ├── pages/
+│   │   ├── auth/               # Single login page
+│   │   ├── worker/             # Sales page for staff
+│   │   └── admin/              # Dashboard, Inventory, CRM, and Reports
+│   ├── store/                  # Zustand state management
+│   ├── types/                  # TypeScript interface definitions
+│   └── App.tsx                 # Frontend routing & Protected routes
+├── public/                     ← Static Assets
+│   └── images/                 # Brand logos (pepsi.png, sprite.png, etc.)
+└── backend/                    ← Backend Source (Express + Prisma + PostgreSQL)
+    ├── prisma/
+    │   ├── schema.prisma       # Prisma data model & database schema
+    │   └── seed.ts             # Database seeder (Admin & Worker default users)
+    ├── src/
+    │   ├── config/             # Environment validators
+    │   ├── lib/                # Database singleton, response utilities
+    │   ├── middleware/         # JWT parser, role validation guards
+    │   ├── modules/            # Business modules (Auth, Products, Inventory, CRM, Bills, Ledger)
+    │   └── index.ts            # API Server entry point
+    └── package.json            # Backend scripts & dependency list
+```
+
+---
+
+## 🛠️ Technology Stack
+
+### Frontend
+- **Framework**: React 18
+- **Language**: TypeScript
+- **State Management**: Zustand
+- **Build Tool**: Vite
+- **Styling**: Tailwind CSS 3
+- **Routing**: React Router v6
+- **Date Utilities**: date-fns
+
+### Backend
+- **Runtime**: Node.js (v18+)
+- **Framework**: Express (TypeScript-native)
+- **Database ORM**: Prisma v5
+- **Validation**: Zod
+- **Security**: JSON Web Tokens (Access + Refresh tokens), bcrypt password hashing
+
+### Database
+- **Database Engine**: PostgreSQL
+
+---
+
+## 🚀 Installation & Setup
+
+### Prerequisites
+- Node.js (v18.x or higher)
+- PostgreSQL (running locally or cloud-hosted)
+- npm or yarn
+
+### 1. Backend Setup
+
+First, initialize and configure the database and start the API server:
+
+```bash
+# Navigate to the backend directory
+cd POS/backend
+
+# Install dependencies
+npm install
+
+# Create environment file from template
+cp .env.example .env
+# Open .env and configure:
+# - DATABASE_URL (e.g., postgresql://postgres:password@localhost:5432/beverage_pos?schema=public)
+# - JWT_ACCESS_SECRET & JWT_REFRESH_SECRET (any strong secret strings)
+
+# Push the Prisma schema to create database tables
+npx prisma db push
+
+# Seed default admin and worker users
+npm run db:seed
+
+# Start the backend development server
+npm run dev
+```
+The backend API server will start on `http://localhost:5000`.
+
+### 2. Frontend Setup
+
+In a new terminal window, install frontend dependencies and start the Vite dev server:
+
+```bash
+# Navigate to the monorepo root
+cd POS
+
+# Install dependencies
+npm install
+
+# Start the frontend dev server
+npm run dev
+```
+The application will launch in development mode, typically available at `http://localhost:5173` (with fallback to `3000`).
+
+---
+
+## 📝 Default Credentials
+
+The database seeder initializes the following accounts:
+
+### Admin Account (Full Privileges)
+- **Email**: `admin@pos.com`
+- **Password**: `admin123`
+
+### Worker Account (Sales Only)
+- **Email**: `worker@pos.com`
+- **Password**: `worker123`
+
+---
+
+## 🧮 Core Business Logic Enforced
+
+- **PET Conversion**: Liquid stock volume is calculated internally and displayed in Bottle Equivalents (PET). E.g., `Pepsi 1.5L (Tray of 12)` is standardized as `1 PET = 12 physical bottles`.
+- **FIFO Depletion**: Invoices deduct stock automatically starting from the oldest available stock batch of a product.
+- **Credit (Udhari) Thresholds**: Retailer credit levels are calculated dynamically. Outstanding balance is capped at `100%` of credit limit; warnings are flagged at `70%` (Orange) and `90%` (Red).
+- **Price Override Flags**: Sales processed below a product's standard tier price trigger an entry in the Price Variance Report.
+- **Voided Bill Audit**: Finalized bills cannot be deleted. Admin cancellation triggers a soft-delete and records the reversing transaction in the database audit log.
+
+---
+
+**Last Updated**: June 26, 2026  
+**Version**: 2.0.0  
+**License**: Commercial/Educational  
+
+
+# UI Guidelines & Design System
+
+This document outlines the UI standards, design patterns, and reusable components used throughout the Beverage POS System. The application is built using React and styled exclusively with Tailwind CSS to ensure a consistent, modern, and highly responsive user experience.
+
+---
+
+## Design Principles
+
+1. **Brand-Centric Interface:** Core workflows, such as product selection, are heavily visual, utilizing brand logos (`public/images/`) for rapid recognition by workers.
+2. **High-Contrast Indicators:** Critical business metrics (e.g., credit limits, stock expiry) rely on immediate visual cues (Green, Yellow, Red).
+3. **Mobile-Ready Administration:** Admin views are structurally responsive to allow monitoring via tablets or mobile devices, whereas Worker billing focuses on dense desktop grids.
+4. **Non-Destructive Actions:** Buttons carrying destructive implications (e.g., Cancel Bill) are styled strictly with danger variants to prevent accidental clicks.
+
+---
+
+## Typography & Colors
+
+### Typography
+The application relies on Tailwind's default sans-serif font stack (Inter/System Fonts).
+- **Page Titles:** `text-2xl font-bold text-gray-900`
+- **Card Titles:** `font-semibold text-gray-800`
+- **Data Labels:** `text-sm text-gray-500`
+- **Numeric Values (Prices/Metrics):** Bolded, often paired with brand colors (e.g., `text-blue-600` for revenue).
+
+### Colors
+Tailwind CSS utility colors are used to enforce semantic meaning:
+- **Primary Actions:** `blue-600` (Hover: `blue-700`)
+- **Success / Additions:** `green-600` (Hover: `green-700`)
+- **Warnings / Alerts:** `yellow-500` or `orange-500`
+- **Destructive / Errors:** `red-600`
+- **Backgrounds:** Off-white `bg-gray-50` for application background; pure white `bg-white` for elevated cards.
+
+---
+
+## Reusable Components
+
+All reusable UI components are housed in `src/components/common/index.tsx`.
+
+### Buttons
+The `Button` component accepts a `variant` and `size` prop.
+
+| Variant | Styling | Usage |
+|---|---|---|
+| **Primary** (Default) | Blue background, white text | Standard actions (Save, Submit, Next) |
+| **Secondary** | Gray border, transparent background | Cancel, Back, or low-priority actions |
+| **Danger** | Red background, white text | Deletions, Voiding bills, Logout |
+
+*Sizes:* `sm`, `md` (default), `lg`.
+*Accessibility:* Disabled states apply `opacity-50 cursor-not-allowed`.
+
+### Form Inputs
+The `Input` and `Select` components are controlled React components wrapped with standard labeling and error handling.
+- **Styling:** `border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500`.
+- **Validation State:** If an error prop is passed, the border turns red (`border-red-500`) and a small red helper text appears below the input.
+
+### Cards
+The `Card` component is the primary container for grouping related content (e.g., Dashboard metrics, Product grids).
+- **Styling:** `bg-white rounded-xl shadow-sm border border-gray-200`.
+- **Props:** Accepts an optional `title` which renders a standardized header inside the card.
+
+### Badges
+The `Badge` component is a small, pill-shaped indicator used primarily in tables to denote status.
+
+| Status | Color | Example Usage |
+|---|---|---|
+| **Success** | Green | `Paid` bills, `Active` users |
+| **Warning** | Yellow | `Partial` payments, `Low Stock` |
+| **Danger** | Red | `Voided` bills, `Expired` stock |
+| **Info** | Blue | Standard tags |
+
+### Modals & Dialogs
+The `Modal` component renders a centered overlay dialog with a semi-transparent backdrop (`bg-black/50`).
+- **Structure:** Contains a fixed header (Title + Close X), scrollable body content, and an optional footer for action buttons.
+- **Behavior:** Blocks interaction with the underlying page while open.
+
+---
+
+## Layout & Navigation
+
+### Application Shell (`Layout` component)
+- **Sidebar:** Fixed on the left side (collapses on smaller screens). Contains `Lucide React` icons paired with route names. Active routes are highlighted with a `bg-blue-50 text-blue-700` styling.
+- **Top Header:** Displays the application title and current user context with a prominent Logout button.
+- **Page Container:** Provides standard padding (`p-6`) for all routed page content.
+
+### Dynamic Drill-Down UI
+Implemented specifically in the Sales and Inventory product views:
+1. **Tier 1 (Brands):** Displays large square cards with centered product images (from `public/images/`) and a hover scale effect (`hover:scale-105`).
+2. **Tier 2 (Variants):** Upon clicking a brand, the grid switches to display specific variants with a "← Back to brands" navigation link at the top.
+
+---
+
+## Application States
+
+### Loading States
+As the frontend transitions to integrate with backend APIs, the UI uses standard loading patterns:
+- **Skeleton Loaders:** Renders gray placeholders with pulse animation (`animate-pulse`) while tables fetch data.
+- **Form Disabling:** Buttons display spinner icons and turn `disabled` when saving form contents to prevent double requests.
+
+### Empty States
+When tables or grids have no data (e.g., empty cart, no search results):
+- Rendered as a centered column.
+- Contains a muted gray icon (`text-gray-400`).
+- Includes a short descriptive text: `"No products found matching your filters."`
+
+### Error States & Notifications
+The global `Notifications` component (rendered in `App.tsx`) handles transient feedback.
+- **Behavior:** Toast notifications slide in at the top-right corner.
+- **Auto-dismiss:** Toasts automatically disappear after 5 seconds.
+- **Styling:** Colors map strictly to the notification type (Green = Success, Red = Error, Yellow = Warning).
+
+---
+
+**Last Updated**: June 26, 2026  
+**Version**: 2.0.0  

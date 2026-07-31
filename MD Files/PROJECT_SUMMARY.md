@@ -67,27 +67,33 @@ The codebase is organized as a monorepo containing two key modules:
 ### Phase 3: Auth & Business Endpoints
 - Controllers, services, routes, validations, and database seeds.
 
+### Phase 4: Inventory & RGB Database Migration
+- Generalised categories to free-text strings (no enum lock-in).
+- Removed deprecated `petConversionFactor` logic.
+- Moved RGB crate stock tracking from localStorage to PostgreSQL `rgb_varieties` table.
+- Added multer-based image upload and dynamic frontend image URLs.
+
+### Phase 5: Dialog Modal System Rebuild
+- Replaced custom inline CSS overlays with a shared, accessible React Portal Modal component supporting Escape close, click-outside, focus recovery, and body scroll lock.
+
 ---
 
 ## 🎯 Next Steps
 
-Now that the backend API foundations are running, future milestones include:
+Now that the core full-stack foundations are running, future milestones include:
 
-### 1. Frontend Service Layer Integration
-- Replace the mock data arrays in Zustand (`src/store/index.ts`) with async axios service calls (mapped out in `API_INTEGRATION.md`).
-
-### 2. Build and Deployment
+### 1. Build and Deployment
 - Set up Docker compose configurations to launch PostgreSQL and Node.js backend.
 - Configure production build pipelines.
 
-### 3. Reporting Enhancements
+### 2. Reporting Enhancements
 - Build database aggregation routes to compute complex analytics (worker sales velocities, profit variance summaries, historical credit reports) rather than computing on client.
 
 ---
 
-**Version**: 2.1.0  
+**Version**: 2.2.0  
 **Status**: ✅ Full-Stack Foundation Ready  
-**Last Updated**: June 30, 2026  
+**Last Updated**: July 8, 2026  
 **License**: Commercial/Educational  
 
 🎉 Enjoy your new full-stack AbdulHaq POS System! 🎉

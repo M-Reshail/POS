@@ -13,11 +13,10 @@ This document outlines the core business rules and logic enforced by the Beverag
 
 ## Stock & Inventory Rules
 
-### 1. PET Unit Standardization
-- **Rule:** All liquid stock quantities must be calculated and displayed in "Bottle Equivalent" (PET) units, regardless of their physical packaging.
-- **Why:** To maintain a unified metric for volume tracking across different package sizes (e.g., cans vs. 1.5L bottles vs. 5L jugs).
-- **Calculation:** `Physical Units = PET Units × petConversionFactor`
-- **Enforcement:** Enforced in both the UI selection screens and the backend database fields.
+### 1. Direct Variant Stock Tracking
+- **Rule:** All product quantities are tracked and sold directly by their physical packaging variant unit (e.g., a case of 1.5L PET, a carton of 250ml Glass, a single Can).
+- **Why:** To simplify workflows and eliminate conversion confusion — products are sold as they are packaged.
+- **Enforcement:** Enforced in database stock batches and frontend selection screens.
 
 ### 2. Batch-Based Expiry Monitoring
 - **Rule:** Inventory must be tracked in distinct batches with attached purchase and expiry dates. The system must categorize batch statuses into color-coded risks based on their proximity to the expiry date.

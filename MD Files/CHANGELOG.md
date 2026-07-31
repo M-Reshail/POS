@@ -7,12 +7,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## Table of Contents
+- [[2.3.0] - 2026-07-17](#230---2026-07-17)
+- [[2.2.0] - 2026-07-08](#220---2026-07-08)
 - [[2.1.0] - 2026-06-30](#210---2026-06-30)
 - [[2.0.0] - 2026-06-26](#200---2026-06-26)
 - [[1.1.0] - 2026-06-19](#110---2026-06-19)
 - [[1.0.0] - 2026-02-19](#100---2026-02-19)
 
 ---
+
+## [2.3.0] - 2026-07-17
+
+### Added
+- **Brand Name Normalization on Sales Page**: Grouped and sorted product variants on the worker `SalesPage` brand grid using the database-level brand relation display names (`p.brandRel?.displayName ?? p.brand`). This correctly merges casing discrepancies like "coca cola" and "Coca Cola" or "sprite" and "Sprite" into unified brand buttons, aligning the Create Sale screen with the 4 core brands shown in the Inventory Page.
+- **Unified Brand Image Lookup**: Synced worker `SalesPage` brand buttons and cards to use the brand-scoped image path (`brandRel.imageUrl`) for rendering, with fallbacks to legacy product images.
+
+### Changed
+- **Database Catalog Soft-Delete Alignment**: Successfully soft-deleted duplicate manually created 0-stock products (e.g. lowercase `sprite 500ml`, `sprite 1.5l`, `coca cola 2l`, and `coca cola 1.5l`) in the database. Because these items now correctly return `isActive: false`, they are hidden from all worker sales lists and inventory pages.
+- **Sales Page Stepper and Typos Fix**: Updated local `PaymentMethod` types in `SalesPage.tsx` from `generate_only` to `generate-only` to resolve TypeScript compilation mismatch with the global `Bill` schema type definitions.
+- **Inventory Page Code Cleanup**: Removed the unused state `brandsLoading` and its corresponding setter calls from `InventoryPage.tsx` to keep compilation clean.
+
+## [2.2.0] - 2026-07-08
+
+### Added
+- **Product Image Upload Support**: Integrated `multer` on the backend for saving JPEG, PNG, and WebP product images (up to 2MB) locally to `/uploads/products/` and serving them statically.
+- **Dynamic Images on Frontend**: Implemented dynamic product image displaying on `InventoryPage` and `SalesPage` variants instead of a hardcoded image map.
+- **Database-Backed RGB Tracking**: Added a PostgreSQL model `RGBVariety` for storing and managing returnable glass bottle inventory in the database, replacing the previous unstable localStorage implementation.
+- **React Portal Modal Component**: Rebuilt the common `Modal` component utilizing React Portals (`createPortal`), escape key listeners, click-outside closures, focus trapping/restoration, and body scroll lock for a fully responsive, bug-free UX.
+- **Dynamic Category Selection**: Added a free-text category selection system with dynamic suggestion chips in the Create Product modal.
+
+### Changed
+- **Removed PET Conversion Multipliers**: Completely deleted the `petConversionFactor` logic, schema columns, types, and variables across the frontend and backend. All products are now sold and tracked by their packaging variant unit directly.
+- **Prisma Schema Migration**: Generalised the `category` column to a free-text `String` type and dropped the restrictive `ProductCategory` enum.
+- **Zustand Store Expansion**: Synced the new DB-backed `rgbVarieties` state with the backend via a new frontend `rgbService` client.
 
 ## [2.1.0] - 2026-06-30
 

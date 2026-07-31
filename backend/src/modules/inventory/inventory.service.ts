@@ -55,10 +55,13 @@ const getExpiryRisk = (expiryDate: Date): ExpiryRisk => {
 /** List all stock batches with product info and expiry risk level */
 export const getAllStockBatches = async () => {
   const batches = await prisma.stockBatch.findMany({
+    where: {
+      product: { isActive: true }, // only batches belonging to active (non-deleted) products
+    },
     orderBy: [{ purchaseDate: 'asc' }, { createdAt: 'desc' }],
     include: {
       product: {
-        select: { id: true, brand: true, category: true, variant: true, petConversionFactor: true },
+        select: { id: true, brand: true, category: true, variant: true, imageUrl: true },
       },
       _count: { select: { adjustments: true } },
     },
@@ -69,6 +72,7 @@ export const getAllStockBatches = async () => {
     expiryRisk: getExpiryRisk(b.expiryDate),
   }));
 };
+
 
 /** Get a single stock batch */
 export const getStockBatchById = async (id: string) => {

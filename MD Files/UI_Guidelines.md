@@ -69,9 +69,16 @@ The `Badge` component is a small, pill-shaped indicator used primarily in tables
 | **Info** | Blue | Standard tags |
 
 ### Modals & Dialogs
-The `Modal` component renders a centered overlay dialog with a semi-transparent backdrop (`bg-black/50`).
-- **Structure:** Contains a fixed header (Title + Close X), scrollable body content, and an optional footer for action buttons.
-- **Behavior:** Blocks interaction with the underlying page while open.
+The common `Modal` component (in `src/components/common/index.tsx`) renders a centered overlay dialog.
+- **Portalled Rendering:** Implemented via React Portals (`createPortal`) rendering directly into `document.body` to avoid overflow/stacking issues.
+- **Structure:** Features a fixed header (Title + Close X), scrollable body content (`overflow-y-auto`), and a footer for action buttons.
+- **Advanced UX Behavior:**
+  - **Body Scroll Lock:** Disables body scroll and offsets layout shift when active.
+  - **Escape Close:** Closes automatically on Escape key press.
+  - **Click Outside:** Closes automatically when clicking the backdrop overlay.
+  - **Focus Restoration:** Automatically returns focus to the button that triggered the modal once closed.
+  - **Aria Roles:** Native role attributes (`role="dialog"`, `aria-modal="true"`) for full accessibility compliance.
+- **Size Options:** Accepts a `size` prop (`sm` / `md` / `lg`) to control dialog max width.
 
 ---
 

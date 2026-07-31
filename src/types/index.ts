@@ -4,7 +4,8 @@ export type UserRole = 'admin' | 'worker';
 export interface User {
   id: string;
   name: string;
-  email: string;
+  username: string;
+  email?: string | null;
   role: UserRole;
   isActive: boolean;
   cnic?: string;
@@ -37,14 +38,40 @@ export interface Expense {
   createdAt: Date;
 }
 
+// Brand Types
+export interface Brand {
+  id: string;
+  name: string;           // normalized lowercase key
+  displayName: string;    // shown in UI (title-case)
+  imageUrl?: string | null; // /uploads/brands/abc.jpg
+  createdAt?: Date;
+  updatedAt?: Date;
+  _count?: { products: number };
+}
+
 // Product Types
 export interface Product {
   id: string;
-  brand: string;
-  category: 'soft-drink' | 'juice' | 'water' | 'energy-drink';
+  brandId?: string;
+  brand: string;          // brand name string (from DB column, always present)
+  brandRel?: Brand;       // joined Brand relation (present when fetched via GET /api/products)
+  category: string;
   variant: string;
-  petConversionFactor: number;
   description?: string;
+  imageUrl?: string | null; // legacy field; use brandRel?.imageUrl for display
+  isActive: boolean;
+  totalStock?: number;
+  currentSalePrice?: number | null;
+}
+
+// RGB Variety — DB-backed crate stock (replaces localStorage)
+export interface RGBVariety {
+  id: string;
+  name: string;              // "Pepsi RGB", "Sprite RGB", etc.
+  linkedProductId?: string;
+  stockQuantity: number;
+  lastUpdated: Date | string;
+  linkedProduct?: { id: string; brand: string; variant: string; imageUrl?: string };
 }
 
 // Stock Types

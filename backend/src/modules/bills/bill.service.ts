@@ -154,6 +154,13 @@ export const createBill = async (input: CreateBillInput) => {
     // 6. Create the bill ───────────────────────────────────────────────────────
     const billNumber = await generateBillNumber(tx);
 
+    // RGB items are virtual crate-tracking entries; they have no row in the
+    // products table, so they MUST be excluded from bill_items to avoid the
+    // bill_items_product_id_fkey FK constraint violation.
+    const persistableItems = input.items.filter(
+      (item) => !item.productId.startsWith('rgb-')
+    );
+
     const bill = await tx.bill.create({
       data: {
         billNumber,
@@ -173,7 +180,7 @@ export const createBill = async (input: CreateBillInput) => {
           : null,
         status,
         items: {
-          create: input.items.map((item) => ({
+          create: persistableItems.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
             price: new Prisma.Decimal(item.price),

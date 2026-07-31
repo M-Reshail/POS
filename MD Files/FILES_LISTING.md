@@ -64,7 +64,6 @@ Contains the Node.js API server codebase, Prisma ORM setups, and PostgreSQL migr
 - **schema.prisma** - Prisma ORM database models, relations, schemas, and enums.
 - **seed.ts** - Database seeder script which creates default accounts (`admin@gmail.com`, `worker@gmail.com`).
 - **seed_products.ts** - Seeder script for beverage products (Coca Cola, Sprite, Marinda, Dew) and their variants/batches.
-- **check_db.ts** - Script to verify existing products and batches in PostgreSQL.
 
 ### API Source Code (`backend/src/`)
 - **index.ts** - Express server entry point. Configures security middlewares, routes, error handlers, and port listeners.
@@ -101,6 +100,10 @@ Each directory contains service logics, Express routing handlers, and endpoints.
   - `retailer.routes.ts`
   - `retailer.controller.ts`
   - `retailer.service.ts`
+- **brands/** - Brand management, displayName modifications, and static image uploads.
+  - `brand.routes.ts`
+  - `brand.controller.ts`
+  - `brand.service.ts`
 - **bills/** - Invoice generation, transaction locks, pricing audits, worker logs, and soft deletions (voids).
   - `bill.routes.ts`
   - `bill.controller.ts`
@@ -112,7 +115,26 @@ Each directory contains service logics, Express routing handlers, and endpoints.
 
 ---
 
-## 5. Documentation Directory (`MD Files/`)
+## 5. Frontend Services (`src/services/`)
+Communicates with the backend REST endpoints.
+
+- **src/services/auth.ts** - Worker/Admin sign-in operations.
+- **src/services/brands.ts** - Brand listing, brand creation, and brand image modification.
+- **src/services/products.ts** - Variant CRUD services.
+- **src/services/inventory.ts** - Stock batch additions and adjustments.
+- **src/services/retailers.ts** - Retailer accounts and balance statements.
+- **src/services/bills.ts** - Sales billing processing.
+
+---
+
+## 6. Daily Updates Directory (`Updates/`)
+Holds revision logs and patch histories.
+
+- **Updates/2026-07-17_Updates.md** - Detailed logs for brand normalization, P0 sales page crash fix, and soft-delete DB syncing.
+
+---
+
+## 7. Documentation Directory (`MD Files/`)
 Technical guides and design documents detailing the POS.
 
 - **README.md** - General overview, tech stack features, and quick-start instructions.
@@ -132,11 +154,11 @@ Technical guides and design documents detailing the POS.
 ## 📊 File Statistics
 
 ```
-Total Files: 65+
-Total Lines of Code: ~6,000+
-TypeScript Files: ~35
+Total Files: 72+
+Total Lines of Code: ~6,500+
+TypeScript Files: ~40
 CSS Files: 1
 Config Files: 8
-Documentation Files: 11
+Documentation Files: 12 (including daily updates)
 Image Files: 7 (in public/images/)
 ```

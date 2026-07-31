@@ -30,12 +30,6 @@ enum ExpenseCategory {
   other
 }
 
-enum ProductCategory {
-  soft_drink    @map("soft-drink")
-  juice
-  water
-  energy_drink  @map("energy-drink")
-}
 
 enum AdjustmentReason {
   damage
@@ -75,16 +69,23 @@ enum BillStatus {
   partial
 }
 
+enum RGBTransactionType {
+  ISSUE
+  RETURN
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 // ----------------------------------------------------------------------------
 // User — Represents anyone with system access (Admin or Worker)
-// One login page → role determines dashboard visibility
+// Login is username-based. Admin's username is "admin".
+// Admin assigns usernames to workers when creating their accounts.
 // ----------------------------------------------------------------------------
 model User {
   id           String    @id @default(uuid())
   name         String
-  email        String    @unique
+  username     String?   @unique               // login identifier (lowercase); seeded on all rows
+  email        String?   @unique               // optional, kept for records
   passwordHash String    @map("password_hash")
   role         UserRole
   isActive     Boolean   @default(true) @map("is_active")
@@ -104,23 +105,53 @@ model User {
 }
 
 // ----------------------------------------------------------------------------
-// Product — A sellable beverage item
+// Brand — A product brand (e.g. "pepsi", "coca cola", "sprite")
+// One Brand → many Products (variants). Image is stored at brand level so all
+// variants under the same brand automatically share the same image.
+// name is always lowercase + trimmed. displayName can have original casing.
+// ----------------------------------------------------------------------------
+model Brand {
+  id          String   @id @default(uuid())
+  name        String   @unique              // normalized lowercase key (e.g. "pepsi")
+  displayName String   @map("display_name") // shown in UI (e.g. "Pepsi")
+  imageUrl    String?  @map("image_url")    // /uploads/brands/abc.jpg
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt           @map("updated_at")
+
+  products Product[]
+
+  @@map("brands")
+}
+
+// ----------------------------------------------------------------------------
+// Product — A sellable item (beverage, snack, general grocery, etc.)
+// category is a free-text string — no enum lock-in.
+// Products are always sold by PET unit. No bottle/conversion ratio needed.
+// isActive: false = soft-deleted (hidden from lists, cannot be sold).
+// brand string is kept for backward compat during migration but brandId is the
+// authoritative FK going forward.
+// variant is always lowercase + trimmed. @@unique enforced at DB level.
 // ----------------------------------------------------------------------------
 model Product {
-  id                  String          @id @default(uuid())
-  brand               String
-  category            ProductCategory
-  variant             String
-  petConversionFactor Int             @map("pet_conversion_factor")
-  description         String?
+  id          String   @id @default(uuid())
+  brandId     String   @map("brand_id")     // FK → Brand
+  brand       String                         // kept for backward compat during migration
+  category    String   @default("general")  // free-text: no enum lock-in
+  variant     String                         // e.g. "1.5l pet", "500ml can"
+  description String?
+  imageUrl    String?  @map("image_url")    // kept for data safety; not used going forward
+  isActive    Boolean  @default(true) @map("is_active")
 
   // Relations
+  brandRel     Brand         @relation(fields: [brandId], references: [id])
   stockBatches StockBatch[]
   billItems    BillItem[]
   priceHistory PriceHistory[]
 
+  @@unique([brandId, variant])              // dedup by brandId+variant (replaces old brand string+variant)
   @@map("products")
 }
+
 
 // ----------------------------------------------------------------------------
 // StockBatch — A specific shipment of a Product (FIFO depletion applies)
@@ -184,7 +215,7 @@ model Retailer {
   // Relations
   bills         Bill[]
   ledgerEntries LedgerEntry[]
-  rgbTracking   RGBTracking?
+  rgbBalances   RGBRetailerBalance[]
 
   @@map("retailers")
 }
@@ -211,24 +242,6 @@ model LedgerEntry {
   @@index([retailerId])
   @@index([createdAt])
   @@map("ledger_entries")
-}
-
-// ----------------------------------------------------------------------------
-// RGBTracking — Returnable Glass Bottle (crate) asset tracking per retailer
-// Business rule: crate balance is independent of monetary payment
-// ----------------------------------------------------------------------------
-model RGBTracking {
-  id               String   @id @default(uuid())
-  retailerId       String   @unique @map("retailer_id") // One record per retailer
-  issuedQuantity   Int      @default(0)   @map("issued_quantity")
-  returnedQuantity Int      @default(0)   @map("returned_quantity")
-  balance          Int      @default(0)   // issuedQuantity - returnedQuantity
-  lastUpdated      DateTime @default(now()) @updatedAt @map("last_updated")
-
-  // Relations
-  retailer Retailer @relation(fields: [retailerId], references: [id])
-
-  @@map("rgb_tracking")
 }
 
 // ----------------------------------------------------------------------------
@@ -360,4 +373,65 @@ model Expense {
   @@index([date])
   @@index([category])
   @@map("expenses")
+}
+
+// ----------------------------------------------------------------------------
+// RGBItem — A type of returnable glass bottle crate (e.g. "Coca Cola RGB")
+// Standalone — not linked to the Product catalog.
+// stockQuantity tracks crates physically in the warehouse.
+// ----------------------------------------------------------------------------
+model RGBItem {
+  id            String   @id @default(uuid())
+  name          String   @unique              // e.g. "Coca Cola RGB", "Pepsi RGB"
+  stockQuantity Int      @default(0) @map("stock_quantity")
+  lastUpdated   DateTime @updatedAt           @map("last_updated")
+
+  // Relations
+  retailerBalances RGBRetailerBalance[]
+  transactions     RGBTransaction[]
+
+  @@map("rgb_items")
+}
+
+// ----------------------------------------------------------------------------
+// RGBRetailerBalance — Per-retailer per-item outstanding crate balance
+// balance > 0 means retailer currently owes that many crates back.
+// @@unique enforces one balance record per (retailer, item) pair.
+// ----------------------------------------------------------------------------
+model RGBRetailerBalance {
+  id         String   @id @default(uuid())
+  retailerId String   @map("retailer_id")
+  rgbItemId  String   @map("rgb_item_id")
+  balance    Int      @default(0)
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  retailer Retailer @relation(fields: [retailerId], references: [id])
+  rgbItem  RGBItem  @relation(fields: [rgbItemId], references: [id])
+
+  @@unique([retailerId, rgbItemId])
+  @@map("rgb_retailer_balances")
+}
+
+// ----------------------------------------------------------------------------
+// RGBTransaction — Audit log for every crate issue / return
+// saleId and workerId are loose strings (no FK) so log survives even if
+// the related Sale or User is removed in the future.
+// ----------------------------------------------------------------------------
+model RGBTransaction {
+  id         String             @id @default(uuid())
+  retailerId String             @map("retailer_id")
+  rgbItemId  String             @map("rgb_item_id")
+  type       RGBTransactionType
+  quantity   Int
+  saleId     String?            @map("sale_id")   // loose FK — no cascade needed
+  workerId   String?            @map("worker_id")  // loose FK
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  // Relations
+  rgbItem RGBItem @relation(fields: [rgbItemId], references: [id])
+
+  @@index([retailerId])
+  @@index([rgbItemId])
+  @@map("rgb_transactions")
 }

@@ -55,17 +55,47 @@ Represents system operators (Admins and Workers).
 
 ---
 
-### 2. Product (`products`)
-Unified catalog of beverage items and variants.
+### 1a. Brand (`brands`)
+Represents product brands (e.g. 'Pepsi', 'Coca Cola'). Images are stored at the brand level, allowing all variants under a brand to share it.
 
 | Field | Type | Attributes | Description |
 |---|---|---|---|
 | `id` | String | PK, UUID | Primary Key |
-| `brand` | String | | Parent brand (e.g. 'Pepsi', 'Dew') |
-| `category` | `ProductCategory` (Enum) | | Category: `soft_drink`, `juice`, `water`, `energy_drink` |
+| `name` | String | Unique | Normalized lowercase key (e.g., 'pepsi') |
+| `displayName` | String | `@map("display_name")` | Display casing shown in the UI (e.g., 'Pepsi') |
+| `imageUrl` | String | `@map("image_url")`, Nullable | Brand image served statically |
+| `createdAt` | DateTime | `@map("created_at")`, Default: `now()` | Creation timestamp |
+| `updatedAt` | DateTime | `@map("updated_at")`, Updated automatic | Last modification timestamp |
+
+---
+
+### 2. Product (`products`)
+Unified catalog of products (beverages, snacks, general groceries) linked to a parent brand.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `brandId` | String | `@map("brand_id")`, FK -> `Brand.id` | Link to the brand relation |
+| `brand` | String | | Legacy brand name (kept for backward compat) |
+| `category` | String | Default: `"general"` | Free-text category tag (no enum lock-in) |
 | `variant` | String | | Size/Packaging details (e.g. '1.5L', 'Can') |
-| `petConversionFactor` | Int | `@map("pet_conversion_factor")` | Factor to convert variant volume to PET units |
+| `imageUrl` | String | `@map("image_url")`, Nullable | Legacy product image URL (deprecated) |
 | `description` | String | Nullable | Optional notes |
+| `isActive` | Boolean | `@map("is_active")`, Default: `true` | Soft-deleted filter |
+
+
+---
+
+### 2a. RGBVariety (`rgb_varieties`)
+Standalone Returnable Glass Bottle (crate) stock counts, replacing localStorage.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `name` | String | Unique | Crate variety name (e.g., 'Pepsi RGB') |
+| `linkedProductId` | String | `@map("linked_product_id")`, FK -> `Product.id`, Nullable | Connected product catalog reference |
+| `stockQuantity` | Int | `@map("stock_quantity")`, Default: `0` | Active empty crates count in stock |
+| `lastUpdated` | DateTime | `@map("last_updated")`, Updated automatic | Last stepper adjustment timestamp |
 
 ---
 

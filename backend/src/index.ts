@@ -15,6 +15,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
+import path from 'path';
 
 // Config — must be imported first to validate env vars before anything else
 import { env } from './config/env';
@@ -28,6 +29,8 @@ import billRoutes from './modules/bills/bill.routes';
 import ledgerRoutes from './modules/ledger/ledger.routes';
 import workerRoutes from './modules/workers/worker.routes';
 import expenseRoutes from './modules/expenses/expense.routes';
+import rgbRoutes from './modules/rgb/rgb.routes';
+import brandRoutes from './modules/brands/brand.routes';
 
 
 // Prisma client (imported here to ensure singleton is initialized)
@@ -58,6 +61,11 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(morgan(env.isDevelopment ? 'dev' : 'combined'));
 
+// ── Static File Serving ───────────────────────────────────────────────────────
+// Serve uploaded product images at /uploads/products/{filename}
+// Files are written to backend/uploads/products/ by multer
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
 // ── Health Check ──────────────────────────────────────────────────────────────
 
 app.get('/health', (_req: Request, res: Response) => {
@@ -78,6 +86,8 @@ app.use('/api/bills',     billRoutes);
 app.use('/api/ledger',    ledgerRoutes);
 app.use('/api/workers',   workerRoutes);
 app.use('/api/expenses',  expenseRoutes);
+app.use('/api/rgb',       rgbRoutes);
+app.use('/api/brands',    brandRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 

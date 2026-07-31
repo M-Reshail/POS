@@ -14,9 +14,9 @@ import { env } from '../../config/env';
 // ── Input Schemas (Zod Validation) ────────────────────────────────────────────
 
 const loginSchema = z.object({
-  email: z
-    .string({ required_error: 'Email is required.' })
-    .email('Please enter a valid email address.')
+  username: z
+    .string({ required_error: 'Username is required.' })
+    .min(1, 'Username cannot be empty.')
     .toLowerCase()
     .trim(),
   password: z
@@ -33,7 +33,7 @@ const refreshSchema = z.object({
 const ERROR_MESSAGES: Record<string, { status: number; message: string }> = {
   INVALID_CREDENTIALS: {
     status: 401,
-    message: 'Invalid email or password.',
+    message: 'Incorrect username or password. Please try again.',
   },
   ACCOUNT_INACTIVE: {
     status: 403,

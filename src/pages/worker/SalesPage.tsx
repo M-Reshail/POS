@@ -3,8 +3,8 @@ import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card } from '../../components/common';
 import { useStore } from '../../store';
 import {
-  ShoppingCart, Plus, Trash2, Droplet, Edit2, Check, Search, X,
-  History, UserPlus, ChevronLeft,
+  ShoppingCart, Trash2, Droplet, Edit2, Check, Search, X,
+  History, UserPlus, ChevronLeft, Minus, Plus,
 } from 'lucide-react';
 import { Bill, BillItem } from '../../types';
 import { retailersService } from '../../services/retailers';
@@ -19,27 +19,22 @@ interface CartItem extends BillItem {
   productName?: string;
 }
 
-type PaymentMethod = 'cash' | 'udhar' | 'generate-only';
+// Udhaar removed — only Cash and Bill Only are valid for new sales
+type PaymentMethod = 'cash' | 'credit' | 'udhar' | 'generate-only';
 
-// Brand image map
-const BRAND_IMAGES: Record<string, string> = {
-  'Pepsi': '/images/pepsi.png',
-  'Coca Cola': '/images/coca-cola.png',
-  'Sprite': '/images/sprite.png',
-  'Dew': '/images/dew.png',
-  'String': '/images/string.png',
-  'Fanta': '/images/fanta.png',
-  'Marinda': '/images/marinda.png',
-  'Mirinda': '/images/marinda.png',
+// Resolve a product image URL (server-relative → full URL)
+const getProductImage = (imageUrl?: string): string | null => {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('http')) return imageUrl;
+  const base = (import.meta as any).env?.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+  return `${base}${imageUrl}`;
 };
 
-// RGB brands (one-click: always adds 5 units)
-const RGB_BRANDS = ['Pepsi', 'Coca Cola', 'Sprite', 'Dew', 'String', 'Fanta', 'Marinda', 'Mirinda'];
-const RGB_QTY_PER_CLICK = 5;
+const RGB_QTY_PER_CLICK = 1;
 
 export const SalesPage: React.FC = () => {
   const store = useStore();
-  const { bills, retailers, products, stockBatches } = store;
+  const { bills, retailers, products, stockBatches, rgbVarieties } = store;
 
   // View
   const [viewMode, setViewMode] = useState<'create' | 'history'>('create');
@@ -47,9 +42,9 @@ export const SalesPage: React.FC = () => {
   const [showRGB, setShowRGB] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Cart
+  // Cart — single source of truth for all product quantities
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [productQuantities, setProductQuantities] = useState<{ [key: string]: string }>({});
+  const [itemDiscountInputs, setItemDiscountInputs] = useState<{ [key: string]: string }>({});
 
   // Bill Summary panel
   const [selectedRetailer, setSelectedRetailer] = useState('');
@@ -72,9 +67,13 @@ export const SalesPage: React.FC = () => {
   const [newRetailerForm, setNewRetailerForm] = useState({ shopName: '', ownerName: '', mobileNumber: '', address: '' });
   const [retailerFormErrors, setRetailerFormErrors] = useState<{ shopName?: string; ownerName?: string; mobileNumber?: string; address?: string }>({});
 
+  const currentUser = store.currentUser;
+
   useEffect(() => {
-    store.fetchInitialData();
-  }, []);
+    if (currentUser) {
+      store.fetchInitialData();
+    }
+  }, [currentUser?.id]);
 
   // ── Derived products from inventory ──────────────────────────────────────────
   const inventoryProducts = useMemo(() => {
@@ -91,38 +90,46 @@ export const SalesPage: React.FC = () => {
   }, [products, stockBatches]);
 
   const uniqueBrands = useMemo(
-    () => Array.from(new Set(inventoryProducts.map((p) => p.brand))).sort(),
+    () => Array.from(new Set(inventoryProducts.map((p) => p.brandRel?.displayName ?? p.brand))).sort(),
     [inventoryProducts]
   );
 
   const filteredProducts = useMemo(() => {
     const base = selectedProductBrand
-      ? inventoryProducts.filter((p) => p.brand === selectedProductBrand)
+      ? inventoryProducts.filter((p) => (p.brandRel?.displayName ?? p.brand) === selectedProductBrand)
       : inventoryProducts;
     if (!searchTerm) return base;
     return base.filter(
       (p) =>
-        p.brand.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p.brandRel?.displayName ?? p.brand).toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.variant.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [inventoryProducts, selectedProductBrand, searchTerm]);
 
-  // ── Cart Logic ────────────────────────────────────────────────────────────────
-  const addProductToCart = (product: typeof inventoryProducts[0]) => {
-    const qtyStr = productQuantities[product.id] || '';
-    const qty = parseFloat(qtyStr);
-    if (!qtyStr || isNaN(qty) || qty <= 0) {
-      store.addNotification('error', 'Enter quantity first');
-      return;
+  // ── Cart-derived stock map (real-time, updates on every cart change) ──────────
+  // Maps productId → quantity currently in cart (non-RGB items only)
+  const cartStockMap = useMemo(() => {
+    const map: { [productId: string]: number } = {};
+    for (const item of cartItems) {
+      if (!item.productId.startsWith('rgb-')) {
+        map[item.productId] = (map[item.productId] ?? 0) + item.quantity;
+      }
     }
+    return map;
+  }, [cartItems]);
+
+  // ── Cart Logic ─────────────────────────────────────────────────────────────────
+  // Stepper: +1 to cart — reads from DB stock ceiling, enforces effectiveStock > 0
+  const incrementProduct = (product: typeof inventoryProducts[0]) => {
+    const effectiveStock = product.availableStock - (cartStockMap[product.id] ?? 0);
+    if (effectiveStock <= 0) return; // already at ceiling
 
     setCartItems((prev) => {
-      const existing = prev.findIndex((i) => i.productId === product.id && !i.isEditingPrice);
+      const existing = prev.findIndex((i) => i.productId === product.id);
       if (existing >= 0) {
-        // Merge: add quantity
         const updated = [...prev];
         const item = updated[existing];
-        const newQty = item.quantity + qty;
+        const newQty = item.quantity + 1;
         updated[existing] = {
           ...item,
           quantity: newQty,
@@ -130,26 +137,47 @@ export const SalesPage: React.FC = () => {
         };
         return updated;
       }
-      // New item
+      // First time adding this product
       return [
         ...prev,
         {
-          id: Date.now().toString(),
+          id: `${product.id}-${Date.now()}`,
           productId: product.id,
           productName: `${product.brand} ${product.variant}`,
-          quantity: qty,
+          quantity: 1,
           price: product.defaultPrice,
-          total: qty * product.defaultPrice,
+          total: product.defaultPrice,
           isEditingPrice: false,
           editPrice: product.defaultPrice.toString(),
-          discountType: 'fixed',
+          discountType: 'fixed' as const,
           discountValue: 0,
         },
       ];
     });
+  };
 
-    setProductQuantities((prev) => ({ ...prev, [product.id]: '' }));
-    store.addNotification('success', `${product.brand} ${product.variant} added`);
+  // Stepper: −1 from cart — removes item entirely when quantity hits 0
+  const decrementProduct = (productId: string) => {
+    setCartItems((prev) => {
+      const existing = prev.findIndex((i) => i.productId === productId);
+      if (existing < 0) return prev;
+      const item = prev[existing];
+      if (item.quantity <= 1) {
+        // Remove item from cart entirely
+        const next = prev.filter((_, idx) => idx !== existing);
+        // Also clean up its discount input
+        setItemDiscountInputs((d) => { const n = { ...d }; delete n[item.id]; return n; });
+        return next;
+      }
+      const updated = [...prev];
+      const newQty = item.quantity - 1;
+      updated[existing] = {
+        ...item,
+        quantity: newQty,
+        total: Math.max(0, newQty * item.price - (item.discountValue || 0)),
+      };
+      return updated;
+    });
   };
 
   // RGB one-click: add 5 units of the RGB brand
@@ -173,6 +201,7 @@ export const SalesPage: React.FC = () => {
           quantity: RGB_QTY_PER_CLICK,
           price: 0,
           total: 0,
+          discount: 0,
           discountType: 'fixed',
           discountValue: 0,
         },
@@ -181,8 +210,10 @@ export const SalesPage: React.FC = () => {
     store.addNotification('success', `${brand} RGB ×${RGB_QTY_PER_CLICK} added`);
   };
 
-  const removeFromCart = (itemId: string) =>
+  const removeFromCart = (itemId: string) => {
     setCartItems((prev) => prev.filter((i) => i.id !== itemId));
+    setItemDiscountInputs((prev) => { const next = { ...prev }; delete next[itemId]; return next; });
+  };
 
   const updateItemPrice = (itemId: string, newPriceStr: string) => {
     const price = parseFloat(newPriceStr);
@@ -259,8 +290,8 @@ export const SalesPage: React.FC = () => {
     }
 
     const isPaid = paymentMethod === 'cash' && amountReceivedNum >= total;
-    const paidAmt = paymentMethod === 'udhar' || paymentMethod === 'generate_only' ? 0 : amountReceivedNum;
-    const pendingAmt = paymentMethod === 'udhar' || paymentMethod === 'generate_only' ? total : udhariAmount;
+    const paidAmt = paymentMethod === 'generate-only' ? 0 : amountReceivedNum;
+    const pendingAmt = paymentMethod === 'generate-only' ? total : udhariAmount;
 
     const billPayload = {
       retailerId: selectedRetailer,
@@ -305,7 +336,7 @@ export const SalesPage: React.FC = () => {
 
   const resetForm = () => {
     setCartItems([]);
-    setProductQuantities({});
+    setItemDiscountInputs({});
     setSelectedRetailer('');
     setAmountReceived('');
     setManualPendingAmount('');
@@ -374,7 +405,9 @@ Thank you for your business!
       w.document.write(`<html><head><title>Bill Receipt</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{white-space:pre;}</style></head><body><pre>${content}</pre><script>window.print();window.close();</script></body></html>`);
       w.document.close();
     }
-    store.addNotification('success', 'Receipt generated!');
+    // No notification here — window.print() gives no signal whether the user
+    // printed or cancelled the OS dialog. The accurate 'Bill created successfully'
+    // notification already fires from store.checkoutBill() at DB save time.
   };
 
   const handleAddRetailer = async () => {
@@ -435,7 +468,7 @@ Thank you for your business!
   });
 
   // ── Sidebar ───────────────────────────────────────────────────────────────────
-  const isAdmin = store.currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin';
   const sidebarItems = isAdmin ? ADMIN_SIDEBAR : WORKER_SIDEBAR;
 
   return (
@@ -557,94 +590,177 @@ Thank you for your business!
                     </button>
                   )}
 
-                  {/* RGB view */}
+                  {/* RGB view — driven by DB RGBVarieties */}
                   {showRGB ? (
                     <div>
                       <p className="text-xs text-gray-500 mb-3">
                         Click to add <strong>{RGB_QTY_PER_CLICK} crates</strong> per click (can click multiple times)
                       </p>
-                      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-                        {RGB_BRANDS.map((brand) => (
-                          <button
-                            key={brand}
-                            onClick={() => addRGBToCart(brand)}
-                            className="flex flex-col items-center p-2 border-2 border-red-200 rounded-lg hover:border-red-500 hover:bg-red-50 transition-all duration-150 bg-white"
-                          >
-                            <span className="text-2xl mb-1">📦</span>
-                            <p className="text-xs font-bold text-gray-800 text-center leading-tight">{brand}</p>
-                            <p className="text-xs text-red-600 font-semibold">+{RGB_QTY_PER_CLICK}</p>
-                          </button>
-                        ))}
-                      </div>
+                      {rgbVarieties.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-6">
+                          No RGB varieties configured yet. Add them in <strong>Inventory → RGB Management</strong>.
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                          {rgbVarieties.map((rgb) => {
+                            const imgUrl = rgb.linkedProduct?.imageUrl
+                              ? getProductImage(rgb.linkedProduct.imageUrl)
+                              : null;
+                            return (
+                              <button
+                                key={rgb.id}
+                                onClick={() => addRGBToCart(rgb.name)}
+                                className="flex flex-col items-center p-2 border-2 border-red-200 rounded-lg hover:border-red-500 hover:bg-red-50 transition-all duration-150 bg-white"
+                              >
+                                <div className="w-full aspect-square rounded-md overflow-hidden mb-1 bg-gray-50 flex items-center justify-center">
+                                  {imgUrl ? (
+                                    <img src={imgUrl} alt={rgb.name} className="w-full h-full object-contain" />
+                                  ) : (
+                                    <span className="text-2xl">📦</span>
+                                  )}
+                                </div>
+                                <p className="text-xs font-bold text-gray-800 text-center leading-tight">{rgb.name}</p>
+                                <p className="text-xs text-red-600 font-semibold">+{RGB_QTY_PER_CLICK}</p>
+                                <p className="text-xs text-gray-400">Stock: {rgb.stockQuantity}</p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   ) : !selectedProductBrand && !searchTerm ? (
-                    // Brand grid
-                    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-                      {uniqueBrands.map((brand) => (
-                        <button
-                          key={brand}
-                          onClick={() => setSelectedProductBrand(brand)}
-                          className="group flex flex-col items-center p-2 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:shadow-sm transition-all duration-150 bg-white"
-                        >
-                          <div className="w-full aspect-square rounded-md overflow-hidden mb-1.5 bg-gray-50 flex items-center justify-center">
-                            {BRAND_IMAGES[brand] ? (
-                              <img
-                                src={BRAND_IMAGES[brand]}
-                                alt={brand}
-                                className="w-full h-full object-contain group-hover:scale-105 transition-transform"
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                              />
-                            ) : (
-                              <Droplet size={24} className="text-blue-400" />
+                    // Brand grid — show loading skeletons while data fetches
+                    store.isLoading && uniqueBrands.length === 0 ? (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <div key={i} className="flex flex-col items-center p-2 border-2 border-gray-100 rounded-lg bg-gray-50 animate-pulse">
+                            <div className="w-full aspect-square rounded-md bg-gray-200 mb-1.5" />
+                            <div className="h-3 w-12 bg-gray-200 rounded mb-1" />
+                            <div className="h-2 w-8 bg-gray-200 rounded" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                        {uniqueBrands.map((brand) => {
+                          // Use brand-level image (from brandRel relation)
+                          const brandImgProduct = inventoryProducts.find((p) => (p.brandRel?.displayName ?? p.brand) === brand);
+                          const imgUrl = brandImgProduct?.brandRel?.imageUrl
+                            ? getProductImage(brandImgProduct.brandRel.imageUrl ?? undefined)
+                            : null;
+                          return (
+                            <button
+                              key={brand}
+                              onClick={() => setSelectedProductBrand(brand)}
+                              className="group flex flex-col items-center p-2 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:shadow-sm transition-all duration-150 bg-white"
+                            >
+                              <div className="w-full aspect-square rounded-md overflow-hidden mb-1.5 bg-gray-50 flex items-center justify-center">
+                                {imgUrl ? (
+                                  <img
+                                    src={imgUrl}
+                                    alt={brand}
+                                    className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                  />
+                                ) : (
+                                  <Droplet size={24} className="text-blue-400" />
+                                )}
+                              </div>
+                              <p className="text-xs font-bold text-gray-800">{brand}</p>
+                              <p className="text-xs text-gray-400">
+                                {inventoryProducts.filter((p) => (p.brandRel?.displayName ?? p.brand) === brand).length} variants
+                              </p>
+                            </button>
+                          );
+                        })}
+                        {uniqueBrands.length === 0 && !store.isLoading && (
+                          <p className="col-span-full text-center text-sm text-gray-400 py-8">No products in inventory yet</p>
+                        )}
+                      </div>
+                    )
+                  ) : (
+                    // Product variant grid with real-time stepper controls
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                      {filteredProducts.map((product) => {
+                        const effectiveStock = product.availableStock - (cartStockMap[product.id] ?? 0);
+                        const cartQty = cartStockMap[product.id] ?? 0;
+                        const isFullyOOS = product.availableStock <= 0;
+                        const isAllInCart = !isFullyOOS && effectiveStock <= 0;
+                        // Use brand-level image for variant cards
+                        const imgUrl = product.brandRel?.imageUrl
+                          ? getProductImage(product.brandRel.imageUrl ?? undefined)
+                          : product.imageUrl ? getProductImage(product.imageUrl ?? undefined) : null;
+                        return (
+                          <div
+                            key={product.id}
+                            className={`relative flex flex-col p-2.5 border-2 rounded-lg transition-all duration-150 bg-white ${
+                              isFullyOOS
+                                ? 'border-gray-100 opacity-60'
+                                : isAllInCart
+                                ? 'border-green-400 bg-green-50'
+                                : cartQty > 0
+                                ? 'border-blue-400 bg-blue-50'
+                                : 'border-gray-200 hover:border-blue-400 hover:shadow-sm'
+                            }`}
+                          >
+                            {/* Out of Stock overlay */}
+                            {isFullyOOS && (
+                              <div className="absolute inset-0 flex items-center justify-center rounded-lg z-10 pointer-events-none">
+                                <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full border border-red-200">
+                                  Out of Stock
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Product image */}
+                            {imgUrl && (
+                              <div className="w-full aspect-video rounded-md overflow-hidden mb-1.5 bg-gray-50">
+                                <img
+                                  src={imgUrl}
+                                  alt={`${product.brand} ${product.variant}`}
+                                  className="w-full h-full object-contain"
+                                  onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = 'none'; }}
+                                />
+                              </div>
+                            )}
+
+                            <p className="text-xs font-bold text-gray-800 leading-tight">{product.brand}</p>
+                            <p className="text-xs text-gray-500 leading-tight">{product.variant}</p>
+                            <p className="text-xs font-bold text-blue-600 mt-0.5 mb-1.5">
+                              ₨{product.defaultPrice.toFixed(0)}
+                              <span className="ml-1 text-gray-400 font-normal text-xs">
+                                ({isFullyOOS ? '0' : effectiveStock} left)
+                              </span>
+                            </p>
+
+                            {/* Stepper control: − | qty | + */}
+                            <div className="flex items-center justify-between gap-1 mt-auto">
+                              <button
+                                onClick={() => decrementProduct(product.id)}
+                                disabled={cartQty <= 0}
+                                className="flex-shrink-0 w-8 h-8 bg-red-500 hover:bg-red-600 active:scale-95 disabled:bg-gray-200 disabled:cursor-not-allowed text-white rounded-md font-bold text-base transition-all flex items-center justify-center"
+                              >
+                                <Minus size={13} />
+                              </button>
+                              <span className={`text-sm font-bold min-w-[1.75rem] text-center ${
+                                cartQty > 0 ? 'text-blue-700' : 'text-gray-400'
+                              }`}>
+                                {cartQty}
+                              </span>
+                              <button
+                                onClick={() => incrementProduct(product)}
+                                disabled={isFullyOOS || effectiveStock <= 0}
+                                className="flex-shrink-0 w-8 h-8 bg-green-600 hover:bg-green-700 active:scale-95 disabled:bg-gray-200 disabled:cursor-not-allowed text-white rounded-md font-bold text-base transition-all flex items-center justify-center"
+                              >
+                                <Plus size={13} />
+                              </button>
+                            </div>
+                            {isAllInCart && (
+                              <p className="text-xs text-green-700 font-semibold text-center mt-1">✓ All in cart</p>
                             )}
                           </div>
-                          <p className="text-xs font-bold text-gray-800">{brand}</p>
-                          <p className="text-xs text-gray-400">
-                            {inventoryProducts.filter((p) => p.brand === brand).length} variants
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    // Product variant grid
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                      {filteredProducts.map((product) => (
-                        <div
-                          key={product.id}
-                          className={`flex flex-col p-2.5 border-2 rounded-lg transition-all duration-150 bg-white ${
-                            product.availableStock <= 0
-                              ? 'border-gray-100 opacity-50'
-                              : 'border-gray-200 hover:border-blue-400 hover:shadow-sm'
-                          }`}
-                        >
-                          <p className="text-xs font-bold text-gray-800 leading-tight">{product.brand}</p>
-                          <p className="text-xs text-gray-500 mb-1 leading-tight">{product.variant}</p>
-                          <p className="text-xs font-bold text-blue-600 mb-1.5">
-                            ₨{product.defaultPrice.toFixed(0)}
-                            {product.availableStock <= 0 && <span className="ml-1 text-red-500">(Out)</span>}
-                          </p>
-                          <div className="flex gap-1">
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={productQuantities[product.id] || ''}
-                              onChange={(e) =>
-                                setProductQuantities((prev) => ({ ...prev, [product.id]: e.target.value }))
-                              }
-                              placeholder="Qty"
-                              className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs text-center focus:border-blue-400 focus:outline-none"
-                            />
-                            <button
-                              onClick={() => addProductToCart(product)}
-                              disabled={product.availableStock <= 0}
-                              className="flex-shrink-0 px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white text-xs rounded font-bold transition-colors"
-                            >
-                              <Plus size={12} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       {filteredProducts.length === 0 && (
                         <p className="col-span-full text-center text-sm text-gray-400 py-8">No products found</p>
                       )}
@@ -674,7 +790,7 @@ Thank you for your business!
                         type="number"
                         min="0"
                         placeholder="0"
-                        value={cartDiscountValue}
+                        value={cartDiscountValue ?? ''}
                         onChange={(e) => setCartDiscountValue(e.target.value)}
                         className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
                       />
@@ -698,7 +814,7 @@ Thank you for your business!
                               <td className="py-1 px-1 text-center">
                                 <input
                                   type="number"
-                                  value={item.quantity}
+                                  value={item.quantity ?? 0}
                                   onChange={(e) => updateItemQty(item.id, e.target.value)}
                                   className="w-14 text-center border border-gray-200 rounded px-1 py-0.5 focus:outline-none focus:border-blue-400"
                                 />
@@ -708,7 +824,7 @@ Thank you for your business!
                                   <div className="flex items-center gap-1">
                                     <input
                                       type="number"
-                                      value={item.editPrice}
+                                      value={item.editPrice ?? item.price.toString()}
                                       onChange={(e) =>
                                         setCartItems((prev) =>
                                           prev.map((i) =>
@@ -756,14 +872,16 @@ Thank you for your business!
                                     type="number"
                                     min="0"
                                     placeholder="0"
+                                    value={itemDiscountInputs[item.id] ?? ''}
                                     className="w-14 text-center border border-gray-200 rounded px-1 py-0.5 focus:outline-none focus:border-blue-400"
-                                    onChange={(e) =>
+                                    onChange={(e) => {
+                                      setItemDiscountInputs((prev) => ({ ...prev, [item.id]: e.target.value }));
                                       updateItemDiscount(
                                         item.id,
                                         parseFloat(e.target.value) || 0,
                                         item.discountType || 'fixed'
-                                      )
-                                    }
+                                      );
+                                    }}
                                   />
                                 </div>
                               </td>
@@ -856,21 +974,21 @@ Thank you for your business!
                       />
                     </div>
 
-                    {/* Payment method */}
+                    {/* Payment method — Cash and Bill Only only (Udhaar removed) */}
                     <div className="mb-3">
                       <label className="text-xs font-semibold text-gray-600 block mb-1">Payment Method</label>
-                      <div className="grid grid-cols-3 gap-1">
-                        {(['cash', 'udhar', 'generate_only'] as PaymentMethod[]).map((m) => (
+                      <div className="grid grid-cols-2 gap-1">
+                        {(['cash', 'generate-only'] as const).map((m) => (
                           <button
                             key={m}
-                            onClick={() => setPaymentMethod(m)}
+                            onClick={() => setPaymentMethod(m as PaymentMethod)}
                             className={`py-1.5 text-xs font-semibold rounded-lg border-2 transition-all ${
                               paymentMethod === m
                                 ? 'bg-blue-600 text-white border-blue-600'
                                 : 'border-gray-200 text-gray-600 hover:border-blue-300'
                             }`}
                           >
-                            {m === 'generate_only' ? 'Bill Only' : m.charAt(0).toUpperCase() + m.slice(1)}
+                            {m === 'generate-only' ? 'Bill Only' : 'Cash'}
                           </button>
                         ))}
                       </div>

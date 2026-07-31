@@ -69,36 +69,56 @@ const ProtectedRoute: React.FC<{
 };
 
 // ── Notifications ─────────────────────────────────────────────────────────────
+// Single-toast-at-a-time system. The store's addNotification always replaces
+// the notifications array with exactly one entry, so this component never
+// renders more than one toast. Timer restarts cleanly on every id change.
 const Notifications: React.FC = () => {
   const notifications = useStore((s) => s.notifications);
   const removeNotification = useStore((s) => s.removeNotification);
 
+  // Auto-dismiss in 1.5 s. The id in the dep-array means the timer restarts
+  // fresh on every new toast (rapid +/− clicks each get a clean countdown).
+  const toast = notifications[0] ?? null;
   useEffect(() => {
-    if (notifications.length === 0) return;
-    const timer = setTimeout(() => {
-      removeNotification(notifications[0].id);
-    }, 5000);
+    if (!toast) return;
+    const timer = setTimeout(() => removeNotification(toast.id), 1500);
     return () => clearTimeout(timer);
-  }, [notifications]);
+  }, [toast?.id]);
+
+  if (!toast) return null;
+
+  const bgColor =
+    toast.type === 'success' ? 'bg-green-600'
+    : toast.type === 'error'   ? 'bg-red-600'
+    : toast.type === 'warning' ? 'bg-yellow-500'
+    : 'bg-blue-600';
 
   return (
-    <div className="fixed top-4 right-4 space-y-2 z-[9999] pointer-events-none">
-      {notifications.map((n) => (
-        <div
-          key={n.id}
-          className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-lg text-white font-medium shadow-lg ${
-            n.type === 'success' ? 'bg-green-600'
-            : n.type === 'error'   ? 'bg-red-600'
-            : n.type === 'warning' ? 'bg-yellow-600'
-            : 'bg-blue-600'
-          }`}
-        >
-          <span className="text-sm">{n.message}</span>
-          <button onClick={() => removeNotification(n.id)} className="hover:opacity-75 flex-shrink-0">
-            <X size={16} />
+    // Top-center — clear of the RGB stock ± buttons and cart table
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] pointer-events-none w-72 max-w-[90vw]">
+      <div
+        key={toast.id}
+        className={`pointer-events-auto overflow-hidden rounded-lg shadow-xl text-white ${bgColor}`}
+        style={{ animation: 'toast-in 0.18s ease-out' }}
+      >
+        <div className="flex items-center gap-3 px-4 py-3">
+          <span className="text-sm font-medium flex-1">{toast.message}</span>
+          <button
+            onClick={() => removeNotification(toast.id)}
+            className="hover:opacity-75 flex-shrink-0"
+            aria-label="Dismiss"
+          >
+            <X size={15} />
           </button>
         </div>
-      ))}
+        {/* Progress bar — shrinks from 100 → 0 in 1.5 s */}
+        <div className="h-1 bg-black bg-opacity-20">
+          <div
+            className="h-full bg-white bg-opacity-50 origin-left"
+            style={{ animation: 'toast-shrink 1.5s linear forwards' }}
+          />
+        </div>
+      </div>
     </div>
   );
 };

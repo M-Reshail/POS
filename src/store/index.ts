@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { User, Retailer, Bill, StockBatch, Product, Worker, Expense, ExpenseCategory } from '../types';
+import { User, Retailer, Bill, StockBatch, Product, Worker, Expense, ExpenseCategory, RGBVariety } from '../types';
 import { authService } from '../services/auth';
 import { productsService } from '../services/products';
 import { retailersService } from '../services/retailers';
@@ -7,6 +7,7 @@ import { inventoryService } from '../services/inventory';
 import { billsService } from '../services/bills';
 import { workersService } from '../services/workers';
 import { expensesService } from '../services/expenses';
+import { rgbService } from '../services/rgb';
 
 interface Store {
   // Global State
@@ -39,6 +40,10 @@ interface Store {
   // Workers
   workers: Worker[];
   fetchWorkers: () => Promise<void>;
+
+  // RGB Varieties (DB-backed, replaces localStorage)
+  rgbVarieties: RGBVariety[];
+  fetchRGBVarieties: () => Promise<void>;
 
   // Expenses
   expenses: Expense[];
@@ -131,6 +136,16 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
+  rgbVarieties: [],
+  fetchRGBVarieties: async () => {
+    try {
+      const data = await rgbService.getAll();
+      set({ rgbVarieties: data });
+    } catch (err: any) {
+      get().addNotification('error', 'Failed to load RGB varieties');
+    }
+  },
+
   expenses: [],
   expenseSummary: null,
   fetchExpenses: async (params) => {
@@ -178,24 +193,25 @@ export const useStore = create<Store>((set, get) => ({
 
   notifications: [],
   addNotification: (type, message) =>
-    set((state) => ({
-      notifications: [...state.notifications, { id: Date.now().toString(), type, message }],
-    })),
-  removeNotification: (id) =>
-    set((state) => ({
-      notifications: state.notifications.filter((n) => n.id !== id),
-    })),
+    // REPLACE — not append. Only one toast ever exists at a time.
+    // Rapid clicks (e.g. RGB +/−) will instantly replace the previous toast
+    // instead of stacking. The id change causes the Notifications component
+    // to restart its auto-dismiss timer cleanly.
+    set({ notifications: [{ id: Date.now().toString(), type, message }] }),
+  removeNotification: (_id) =>
+    set({ notifications: [] }),
 
   fetchInitialData: async () => {
     set({ isLoading: true, error: null });
     try {
-      const [retailers, products, stockBatches, bills] = await Promise.all([
+      const [retailers, products, stockBatches, bills, rgbVarieties] = await Promise.all([
         retailersService.getAll(),
         productsService.getAll(),
         inventoryService.getBatches(),
         billsService.list(),
+        rgbService.getAll(),
       ]);
-      set({ retailers, products, stockBatches, bills, isLoading: false });
+      set({ retailers, products, stockBatches, bills, rgbVarieties, isLoading: false });
     } catch (err: any) {
       set({ error: err.message || 'Failed to load initial data', isLoading: false });
       get().addNotification('error', 'Failed to synchronize with server');

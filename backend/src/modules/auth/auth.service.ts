@@ -15,7 +15,7 @@ import { UserRole } from '@prisma/client';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface LoginInput {
-  email: string;
+  username: string;
   password: string;
 }
 
@@ -27,7 +27,8 @@ export interface AuthTokens {
 export interface SafeUser {
   id: string;
   name: string;
-  email: string;
+  username: string;
+  email?: string | null;
   role: UserRole;
   isActive: boolean;
   createdAt: Date;
@@ -45,7 +46,7 @@ const generateAccessToken = (user: SafeUser): string => {
     {
       sub: user.id,
       role: user.role,
-      email: user.email,
+      username: user.username,
     },
     env.JWT_ACCESS_SECRET as jwt.Secret,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,13 +67,15 @@ const generateRefreshToken = (userId: string): string => {
 const toSafeUser = (user: {
   id: string;
   name: string;
-  email: string;
+  username: string | null;
+  email?: string | null;
   role: UserRole;
   isActive: boolean;
   createdAt: Date;
 }): SafeUser => ({
   id: user.id,
   name: user.name,
+  username: user.username ?? '',
   email: user.email,
   role: user.role,
   isActive: user.isActive,
@@ -82,20 +85,19 @@ const toSafeUser = (user: {
 // ── Service Methods ───────────────────────────────────────────────────────────
 
 /**
- * Authenticate user with email + password.
+ * Authenticate user with username + password.
  * Returns JWT tokens and safe user data on success.
  * Throws on invalid credentials or inactive account.
  */
 export const login = async (input: LoginInput): Promise<LoginResult> => {
-  const { email, password } = input;
+  const { username, password } = input;
 
-  // 1. Find user by email
+  // 1. Find user by username (case-insensitive)
   const user = await prisma.user.findUnique({
-    where: { email: email.toLowerCase().trim() },
+    where: { username: username.toLowerCase().trim() },
   });
 
   if (!user) {
-    // Use generic message to prevent email enumeration attacks
     throw new Error('INVALID_CREDENTIALS');
   }
 

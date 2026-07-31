@@ -161,7 +161,7 @@ The database seeder initializes the following accounts:
 
 ## 🧮 Core Business Logic Enforced
 
-- **PET Conversion**: Liquid stock volume is calculated internally and displayed in Bottle Equivalents (PET). E.g., `Pepsi 1.5L (Tray of 12)` is standardized as `1 PET = 12 physical bottles`.
+- **Direct Unit Tracking**: Products are tracked and sold directly by their variant units (e.g. 1.5L PET, 250ml Glass, Can). The deprecated `petConversionFactor` conversion logic has been removed.
 - **FIFO Depletion**: Invoices deduct stock automatically starting from the oldest available stock batch of a product.
 - **Credit (Udhari) Thresholds**: Retailer credit levels are calculated dynamically. Outstanding balance is capped at `100%` of credit limit; warnings are flagged at `70%` (Orange) and `90%` (Red).
 - **Price Override Flags**: Sales processed below a product's standard tier price trigger an entry in the Price Variance Report.
@@ -169,6 +169,6 @@ The database seeder initializes the following accounts:
 
 ---
 
-**Last Updated**: June 26, 2026  
-**Version**: 2.0.0  
+**Last Updated**: July 8, 2026  
+**Version**: 2.2.0  
 **License**: Commercial/Educational  

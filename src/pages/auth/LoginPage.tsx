@@ -7,25 +7,25 @@ import { Input, Button, Card } from '../../components/common';
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const setCurrentUser = useStore((state) => state.setCurrentUser);
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Mock users removed; using API
-
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
+    if (!username.trim()) { setError('Please enter your username.'); return; }
+    if (!password) { setError('Please enter your password.'); return; }
     setLoading(true);
 
     try {
-      const { accessToken, user } = await authService.login(email, password);
+      const { accessToken, user } = await authService.login(username.trim().toLowerCase(), password);
       localStorage.setItem('accessToken', accessToken);
       setCurrentUser(user);
       navigate(user.role === 'admin' ? '/admin/dashboard' : '/worker/sales');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
+      setError(err.response?.data?.message || 'Login failed. Please check your username and password.');
     } finally {
       setLoading(false);
     }
@@ -36,16 +36,17 @@ export const LoginPage: React.FC = () => {
       <Card className="w-full max-w-md shadow-lg">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-center text-gray-900">AbdulHaq</h1>
-          <p className="text-center text-gray-600 mt-2">Wholesale & Retail Management</p>
+          <p className="text-center text-gray-600 mt-2">Wholesale &amp; Retail Management</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
           <Input
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-            placeholder="admin@gmail.com or worker@gmail.com"
+            label="Username"
+            type="text"
+            value={username}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)}
+            placeholder="e.g. admin"
+            autoComplete="username"
             required
           />
 
@@ -55,6 +56,7 @@ export const LoginPage: React.FC = () => {
             value={password}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
             placeholder="••••••••"
+            autoComplete="current-password"
             required
           />
 
@@ -65,9 +67,8 @@ export const LoginPage: React.FC = () => {
           </Button>
 
           <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600">
-            <p className="font-medium mb-2">Demo Credentials:</p>
-            <p>Admin: admin@gmail.com / admin</p>
-            <p>Worker: worker@gmail.com / worker</p>
+            <p className="font-medium mb-1">Admin login:</p>
+            <p>Username: <span className="font-mono font-semibold">admin</span> &nbsp;/&nbsp; Password: <span className="font-mono font-semibold">admin</span></p>
           </div>
         </form>
       </Card>

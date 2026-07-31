@@ -6,7 +6,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import * as billService from './bill.service';
 import { ok, created, badRequest, handleServiceError } from '../../lib/response';
-import { BillPaymentMode, BillStatus } from '@prisma/client';
+import { BillStatus, BillPaymentMode } from '@prisma/client';
 
 // ── Validation Schemas ────────────────────────────────────────────────────────
 
@@ -21,7 +21,12 @@ const createBillSchema = z.object({
   retailerId: z.string().uuid('Invalid retailer ID.'),
   items: z.array(billItemSchema).min(1, 'Bill must have at least one item.'),
   discount: z.number().min(0).optional().default(0),
-  paymentMode: z.nativeEnum(BillPaymentMode).optional(),
+  // 'udhar' is excluded — only cash, credit, generate-only allowed for new sales
+  // (Old bills with udhar in DB are untouched; this only blocks new creation)
+  // Frontend sends 'generate-only' (hyphen); Prisma enum member is 'generate_only' (underscore).
+  // The @map in schema.prisma only affects DB storage — the TS client always uses underscore.
+  paymentMode: z.enum(['cash', 'credit', 'generate-only']).optional()
+    .transform((v) => v === 'generate-only' ? 'generate_only' as const : v),
   paidAmount: z.number().min(0).optional().default(0),
   previousPendingAdded: z.number().min(0).optional(),
   oldPendingPaymentApplied: z.number().min(0).optional(),

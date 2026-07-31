@@ -92,7 +92,6 @@ The database schema is defined in `backend/prisma/schema.prisma` and uses Postgr
 
 ### Enums
 - **`UserRole`**: `admin`, `worker`
-- **`ProductCategory`**: `soft_drink`, `juice`, `water`, `energy_drink`
 - **`AdjustmentReason`**: `damage`, `theft`, `manual_correction`
 - **`PriceTier`**: `standard`, `premium`, `discount`
 - **`LedgerEntryType`**: `sale`, `payment`, `return`, `adjustment`
@@ -111,13 +110,21 @@ Represents an individual with access to the system.
 - `createdAt` (DateTime, default `now()`)
 
 ### Products (`products`)
-Represents a sellable beverage brand/variant catalog.
+Represents a sellable brand/variant catalog (beverages, snacks, general groceries).
 - `id` (String/UUID, PK)
 - `brand` (String) - e.g., 'Pepsi', 'Sprite'
-- `category` (ProductCategory)
+- `category` (String) - Free-text category tag (e.g. 'soft-drink', 'snack')
 - `variant` (String) - e.g., '1.5L', 'Can'
-- `petConversionFactor` (Int) - Multiplier to convert Variant to Bottle Equivalents (PET)
+- `imageUrl` (String, Nullable) - Server-relative path of the uploaded image served statically
 - `description` (String, Nullable)
+
+### RGB Varieties (`rgb_varieties`)
+Tracks empty crate stock for different returnable glass bottle configurations.
+- `id` (String/UUID, PK)
+- `name` (String, Unique) - e.g. 'Pepsi RGB'
+- `linkedProductId` (String/UUID, FK -> `Product.id`, Nullable)
+- `stockQuantity` (Int) - Crates inventory level
+- `lastUpdated` (DateTime)
 
 ### Stock Batches (`stock_batches`)
 Represents a specific shipment of a Product received into inventory. FIFO queue is resolved across these batches.

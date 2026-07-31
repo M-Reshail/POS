@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger';
@@ -129,23 +131,130 @@ interface ModalProps {
   children: React.ReactNode;
   onClose: () => void;
   footer?: React.ReactNode;
+  /** Controls max-width of the dialog panel. Default: 'md' (448px) */
+  size?: 'sm' | 'md' | 'lg';
 }
 
-export const Modal: React.FC<ModalProps> = ({ isOpen, title, children, onClose, footer }) => {
+const SIZE_CLASSES: Record<NonNullable<ModalProps['size']>, string> = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+};
+
+export const Modal: React.FC<ModalProps> = ({
+  isOpen,
+  title,
+  children,
+  onClose,
+  footer,
+  size = 'md',
+}) => {
+  // Ref to the panel so we can exclude it from click-outside detection
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Save the element that opened the modal so focus can be restored on close
+  const triggerRef = useRef<Element | null>(null);
+
+  // ── Body scroll lock ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Record the element that had focus BEFORE the modal opened
+    triggerRef.current = document.activeElement;
+
+    // Compensate scrollbar width to prevent layout shift
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const originalOverflow = document.body.style.overflow;
+    const originalPaddingRight = document.body.style.paddingRight;
+
+    document.body.style.overflow = 'hidden';
+    document.body.style.paddingRight = `${scrollbarWidth}px`;
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.paddingRight = originalPaddingRight;
+
+      // Return focus to the trigger element when modal closes
+      if (triggerRef.current && 'focus' in triggerRef.current) {
+        (triggerRef.current as HTMLElement).focus();
+      }
+    };
+  }, [isOpen]);
+
+  // ── Escape key ────────────────────────────────────────────────────────────
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    },
+    [onClose]
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, handleKeyDown]);
+
+  // ── Click-outside (overlay) ───────────────────────────────────────────────
+  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Only close if the click landed directly on the overlay, not on the panel
+    if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      onClose();
+    }
+  };
+
   if (!isOpen) return null;
-  
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4">
-        <div className="flex justify-between items-center p-6 border-b">
-          <h2 className="text-lg font-semibold">{title}</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+
+  return createPortal(
+    // Overlay — click here to dismiss
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.55)' }}
+      onClick={handleOverlayClick}
+      aria-modal="true"
+      role="dialog"
+      aria-labelledby="modal-title"
+    >
+      {/* Panel — stops propagation so overlay click doesn't fire inside panel */}
+      <div
+        ref={panelRef}
+        className={`
+          relative bg-white rounded-xl shadow-2xl w-full ${SIZE_CLASSES[size]}
+          flex flex-col
+          max-h-[calc(100vh-2rem)]
+          animate-[modalIn_150ms_ease-out]
+        `}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
+          <h2 id="modal-title" className="text-lg font-semibold text-gray-900">
+            {title}
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="Close dialog"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="2" y1="2" x2="14" y2="14" />
+              <line x1="14" y1="2" x2="2" y2="14" />
+            </svg>
+          </button>
         </div>
-        <div className="p-6">
+
+        {/* Body — scrolls internally if content is taller than viewport */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
           {children}
         </div>
-        {footer && <div className="p-6 border-t flex gap-2 justify-end">{footer}</div>}
+
+        {/* Footer */}
+        {footer && (
+          <div className="px-6 py-4 border-t flex gap-2 justify-end flex-shrink-0">
+            {footer}
+          </div>
+        )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
