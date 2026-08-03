@@ -162,7 +162,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems }) => {
         </div>
         
         {/* Content */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto scroll-smooth">
           {children}
         </div>
       </main>
@@ -171,5 +171,5 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems }) => {
 };
 
 export const PageContainer: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="p-3 sm:p-4 md:p-6">{children}</div>
+  <div className="p-3 sm:p-4 md:p-6 animate-page-fade">{children}</div>
 );

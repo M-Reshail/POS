@@ -64,14 +64,35 @@ export interface Product {
   currentSalePrice?: number | null;
 }
 
-// RGB Variety — DB-backed crate stock (replaces localStorage)
-export interface RGBVariety {
+// RGB Item — Standalone crate stock
+export interface RGBItem {
   id: string;
-  name: string;              // "Pepsi RGB", "Sprite RGB", etc.
-  linkedProductId?: string;
+  name: string;              // e.g. "Coca Cola RGB", "Pepsi RGB"
   stockQuantity: number;
   lastUpdated: Date | string;
-  linkedProduct?: { id: string; brand: string; variant: string; imageUrl?: string };
+}
+
+export interface RGBRetailerBalance {
+  id: string;
+  retailerId: string;
+  rgbItemId: string;
+  balance: number;
+  updatedAt: Date | string;
+  rgbItem?: RGBItem;
+  retailer?: Retailer;
+}
+
+export interface RGBTransaction {
+  id: string;
+  retailerId: string;
+  rgbItemId: string;
+  type: 'ISSUE' | 'RETURN';
+  quantity: number;
+  saleId?: string | null;
+  workerId?: string | null;
+  createdAt: Date | string;
+  rgbItem?: RGBItem;
+  retailer?: Retailer;
 }
 
 // Stock Types
@@ -111,6 +132,7 @@ export interface Retailer {
   creditLimit: number;
   priceTier: 'standard' | 'premium' | 'discount';
   createdAt: Date;
+  rgbBalances?: RGBRetailerBalance[];
 }
 
 // Ledger Types
@@ -165,16 +187,6 @@ export interface Bill {
   worker?: { id: string; name: string };
   createdAt: Date;
   updatedAt: Date;
-}
-
-// RGB Tracking
-export interface RGBTracking {
-  id: string;
-  retailerId: string;
-  issuedQuantity: number;
-  returnedQuantity: number;
-  balance: number;
-  lastUpdated: Date;
 }
 
 // Price History

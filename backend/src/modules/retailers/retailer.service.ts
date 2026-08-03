@@ -26,10 +26,6 @@ export interface CreateRetailerInput {
 
 export interface UpdateRetailerInput extends Partial<CreateRetailerInput> {}
 
-export interface RGBUpdateInput {
-  issuedQuantity?: number;
-  returnedQuantity?: number;
-}
 
 export type CreditStatus = 'ok' | 'warning' | 'alert' | 'blocked';
 
@@ -62,7 +58,7 @@ export const getAllRetailers = async () => {
   const retailers = await prisma.retailer.findMany({
     orderBy: { shopName: 'asc' },
     include: {
-      rgbTracking: true,
+      rgbBalances: { include: { rgbItem: true } },
       _count: { select: { bills: true } },
     },
   });
@@ -84,7 +80,7 @@ export const getAllRetailers = async () => {
 export const getRetailerById = async (id: string) => {
   const retailer = await prisma.retailer.findUnique({
     where: { id },
-    include: { rgbTracking: true },
+    include: { rgbBalances: { include: { rgbItem: true } } },
   });
   if (!retailer) throw new Error('RETAILER_NOT_FOUND');
 
@@ -97,22 +93,13 @@ export const getRetailerById = async (id: string) => {
   };
 };
 
-/** Create a new retailer (and initialise their RGB tracking record) */
+/** Create a new retailer */
 export const createRetailer = async (input: CreateRetailerInput) => {
-  return prisma.$transaction(async (tx) => {
-    const retailer = await tx.retailer.create({
-      data: {
-        ...input,
-        creditLimit: new Prisma.Decimal(input.creditLimit),
-      },
-    });
-
-    // Always create an RGB tracking record (starts at 0)
-    await tx.rGBTracking.create({
-      data: { retailerId: retailer.id },
-    });
-
-    return retailer;
+  return prisma.retailer.create({
+    data: {
+      ...input,
+      creditLimit: new Prisma.Decimal(input.creditLimit),
+    },
   });
 };
 
@@ -167,49 +154,3 @@ export const getRetailerLedger = async (
   };
 };
 
-// ── RGB Tracking ──────────────────────────────────────────────────────────────
-
-/** Get RGB tracking for a retailer */
-export const getRetailerRGB = async (retailerId: string) => {
-  const retailer = await prisma.retailer.findUnique({ where: { id: retailerId } });
-  if (!retailer) throw new Error('RETAILER_NOT_FOUND');
-
-  const rgb = await prisma.rGBTracking.findUnique({ where: { retailerId } });
-  return rgb ?? { retailerId, issuedQuantity: 0, returnedQuantity: 0, balance: 0 };
-};
-
-/**
- * Update RGB crate tracking.
- * Business Rule: Crate balance is independent of monetary payments.
- * balance = issuedQuantity - returnedQuantity
- */
-export const updateRetailerRGB = async (
-  retailerId: string,
-  input: RGBUpdateInput
-) => {
-  const retailer = await prisma.retailer.findUnique({ where: { id: retailerId } });
-  if (!retailer) throw new Error('RETAILER_NOT_FOUND');
-
-  const current = await prisma.rGBTracking.findUnique({ where: { retailerId } });
-
-  const issued = input.issuedQuantity ?? (current?.issuedQuantity ?? 0);
-  const returned = input.returnedQuantity ?? (current?.returnedQuantity ?? 0);
-  const balance = issued - returned;
-
-  if (balance < 0) throw new Error('RGB_BALANCE_NEGATIVE');
-
-  return prisma.rGBTracking.upsert({
-    where: { retailerId },
-    create: {
-      retailerId,
-      issuedQuantity: issued,
-      returnedQuantity: returned,
-      balance,
-    },
-    update: {
-      issuedQuantity: issued,
-      returnedQuantity: returned,
-      balance,
-    },
-  });
-};

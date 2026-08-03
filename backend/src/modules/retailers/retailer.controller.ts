@@ -22,11 +22,6 @@ const createRetailerSchema = z.object({
 
 const updateRetailerSchema = createRetailerSchema.partial();
 
-const rgbUpdateSchema = z.object({
-  issuedQuantity: z.number().int().min(0).optional(),
-  returnedQuantity: z.number().int().min(0).optional(),
-});
-
 const ledgerQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -34,7 +29,6 @@ const ledgerQuerySchema = z.object({
 
 const ERROR_MAP = {
   RETAILER_NOT_FOUND: { status: 404, message: 'Retailer not found.' },
-  RGB_BALANCE_NEGATIVE: { status: 422, message: 'Returned quantity cannot exceed issued quantity.' },
 };
 
 // ── Controllers ───────────────────────────────────────────────────────────────
@@ -79,21 +73,5 @@ export const getRetailerLedger = async (req: Request, res: Response): Promise<vo
       req.params.id, query.data.limit, query.data.offset
     );
     ok(res, ledger);
-  } catch (error) { handleServiceError(res, error, ERROR_MAP); }
-};
-
-export const getRetailerRGB = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const rgb = await retailerService.getRetailerRGB(req.params.id);
-    ok(res, { rgb });
-  } catch (error) { handleServiceError(res, error, ERROR_MAP); }
-};
-
-export const updateRetailerRGB = async (req: Request, res: Response): Promise<void> => {
-  const parsed = rgbUpdateSchema.safeParse(req.body);
-  if (!parsed.success) { badRequest(res, 'Validation failed.', parsed.error.flatten().fieldErrors); return; }
-  try {
-    const rgb = await retailerService.updateRetailerRGB(req.params.id, parsed.data);
-    ok(res, { rgb });
   } catch (error) { handleServiceError(res, error, ERROR_MAP); }
 };

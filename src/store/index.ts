@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { User, Retailer, Bill, StockBatch, Product, Worker, Expense, ExpenseCategory, RGBVariety } from '../types';
+import { User, Retailer, Bill, StockBatch, Product, Worker, Expense, ExpenseCategory, RGBItem } from '../types';
 import { authService } from '../services/auth';
 import { productsService } from '../services/products';
 import { retailersService } from '../services/retailers';
@@ -41,9 +41,9 @@ interface Store {
   workers: Worker[];
   fetchWorkers: () => Promise<void>;
 
-  // RGB Varieties (DB-backed, replaces localStorage)
-  rgbVarieties: RGBVariety[];
-  fetchRGBVarieties: () => Promise<void>;
+  // RGB Items (DB-backed crate stock)
+  rgbItems: RGBItem[];
+  fetchRGBItems: () => Promise<void>;
 
   // Expenses
   expenses: Expense[];
@@ -136,13 +136,13 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
-  rgbVarieties: [],
-  fetchRGBVarieties: async () => {
+  rgbItems: [],
+  fetchRGBItems: async () => {
     try {
       const data = await rgbService.getAll();
-      set({ rgbVarieties: data });
+      set({ rgbItems: data });
     } catch (err: any) {
-      get().addNotification('error', 'Failed to load RGB varieties');
+      get().addNotification('error', 'Failed to load RGB items');
     }
   },
 
@@ -204,14 +204,14 @@ export const useStore = create<Store>((set, get) => ({
   fetchInitialData: async () => {
     set({ isLoading: true, error: null });
     try {
-      const [retailers, products, stockBatches, bills, rgbVarieties] = await Promise.all([
+      const [retailers, products, stockBatches, bills, rgbItems] = await Promise.all([
         retailersService.getAll(),
         productsService.getAll(),
         inventoryService.getBatches(),
         billsService.list(),
         rgbService.getAll(),
       ]);
-      set({ retailers, products, stockBatches, bills, rgbVarieties, isLoading: false });
+      set({ retailers, products, stockBatches, bills, rgbItems, isLoading: false });
     } catch (err: any) {
       set({ error: err.message || 'Failed to load initial data', isLoading: false });
       get().addNotification('error', 'Failed to synchronize with server');

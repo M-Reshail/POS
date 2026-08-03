@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card, Input, Select, Modal } from '../../components/common';
 import { useStore } from '../../store';
-import { Package, Plus, Trash2, Upload, X, Pencil, Minus, ImageIcon, ChevronDown, ChevronRight } from 'lucide-react';
-import { StockBatch, RGBVariety, Product, Brand } from '../../types';
+import { Package, Plus, Trash2, Upload, X, Pencil, Minus, ImageIcon, ChevronDown, ChevronRight, Boxes, TrendingUp } from 'lucide-react';
+import { StockBatch, RGBItem, Product, Brand } from '../../types';
 import { inventoryService } from '../../services/inventory';
 import { productsService } from '../../services/products';
 import { brandsService } from '../../services/brands';
@@ -201,12 +201,16 @@ export const InventoryPage: React.FC = () => {
 
   // ── RGB management ────────────────────────────────────────────────────────────
   const [isRgbPanelOpen, setIsRgbPanelOpen] = useState(false);
-  const [rgbVarieties, setRgbVarieties] = useState<RGBVariety[]>([]);
+  const [rgbItems, setRgbItems] = useState<RGBItem[]>([]);
   const [rgbLoading, setRgbLoading] = useState(false);
   const [isAddRgbModalOpen, setIsAddRgbModalOpen] = useState(false);
   const [rgbForm, setRgbForm] = useState({ name: '', stockQuantity: '', linkedProductId: '' });
   const [rgbFormErrors, setRgbFormErrors] = useState<{ name?: string; stockQuantity?: string }>({});
   const [rgbFormLoading, setRgbFormLoading] = useState(false);
+  const [rgbStockInputs, setRgbStockInputs] = useState<Record<string, string>>({});
+  const [deletingRgbItem, setDeletingRgbItem] = useState<RGBItem | null>(null);
+  const [deleteRgbLoading, setDeleteRgbLoading] = useState(false);
+  const [deleteRgbError, setDeleteRgbError] = useState('');
 
   // ── Store data ────────────────────────────────────────────────────────────────
   const products = store.products;
@@ -235,6 +239,37 @@ export const InventoryPage: React.FC = () => {
 
   const totalStockValue = stockBatches.reduce((s, b) => s + b.quantity * b.salePrice, 0);
   const totalBuyValue   = stockBatches.reduce((s, b) => s + b.quantity * b.buyPrice, 0);
+
+  // ── RGB Computed Metrics ─────────────────────────────────────────────────────
+  const totalWarehouseCrates = useMemo(() => {
+    return rgbItems.reduce((acc, item) => acc + (item.stockQuantity || 0), 0);
+  }, [rgbItems]);
+
+  const totalCratesOut = useMemo(() => {
+    return store.retailers.reduce((acc, r) => {
+      const rTotal = r.rgbBalances?.reduce((sum, b) => sum + (b.balance || 0), 0) || 0;
+      return acc + rTotal;
+    }, 0);
+  }, [store.retailers]);
+
+  const retailerBalancesList = useMemo(() => {
+    const list: { retailerName: string; shopName: string; itemName: string; balance: number; updatedAt: Date | string }[] = [];
+    store.retailers.forEach((r) => {
+      r.rgbBalances?.forEach((b) => {
+        if (b.balance > 0) {
+          const item = b.rgbItem || rgbItems.find((i) => i.id === b.rgbItemId);
+          list.push({
+            retailerName: r.ownerName,
+            shopName: r.shopName,
+            itemName: item?.name || 'RGB Crate',
+            balance: b.balance,
+            updatedAt: b.updatedAt,
+          });
+        }
+      });
+    });
+    return list;
+  }, [store.retailers, rgbItems]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
   const getProductLabel = (productId: string) => {
@@ -521,19 +556,22 @@ export const InventoryPage: React.FC = () => {
         setAdjustStockGenericError(err.response?.data?.message || err.message || 'Failed to adjust stock.');
       }
     } finally {
-      setAdjustStockLoading(false);
+    setAdjustStockLoading(false);
     }
   };
 
   // ── RGB Handlers ──────────────────────────────────────────────────────────────
-  const loadRGBVarieties = async () => {
+  const loadRGBItems = async () => {
     setRgbLoading(true);
-    try { setRgbVarieties(await rgbService.getAll()); }
-    catch { store.addNotification('error', 'Failed to load RGB varieties'); }
+    try {
+      setRgbItems(await rgbService.getAll());
+      store.fetchRetailers();
+    }
+    catch { store.addNotification('error', 'Failed to load RGB items'); }
     finally { setRgbLoading(false); }
   };
 
-  const handleCreateRGBVariety = async () => {
+  const handleCreateRGBType = async () => {
     const errs: typeof rgbFormErrors = {};
     if (!rgbForm.name.trim()) errs.name = 'Name is required.';
     const qty = parseInt(rgbForm.stockQuantity || '0');
@@ -545,36 +583,59 @@ export const InventoryPage: React.FC = () => {
       await rgbService.create({
         name: rgbForm.name.trim(),
         stockQuantity: qty,
-        linkedProductId: rgbForm.linkedProductId || undefined,
       });
       store.addNotification('success', `RGB "${rgbForm.name}" created`);
       setRgbForm({ name: '', stockQuantity: '', linkedProductId: '' });
       setIsAddRgbModalOpen(false);
-      loadRGBVarieties();
+      loadRGBItems();
     } catch (err: any) {
-      setRgbFormErrors({ name: err.response?.data?.message || 'Failed to create RGB variety' });
+      setRgbFormErrors({ name: err.response?.data?.message || 'Failed to create RGB item' });
     } finally {
       setRgbFormLoading(false);
     }
   };
 
-  const handleRGBAdjust = async (id: string, delta: number) => {
+  const handleRGBSetAbsolute = async (id: string, valueStr: string) => {
+    const parsed = parseInt(valueStr, 10);
+    const newQty = isNaN(parsed) ? 0 : Math.max(0, parsed);
+    setRgbStockInputs((prev) => ({ ...prev, [id]: String(newQty) }));
     try {
-      const updated = await rgbService.adjustStock(id, delta);
-      setRgbVarieties(prev => prev.map(v => v.id === id ? updated : v));
+      const updated = await rgbService.update(id, { stockQuantity: newQty });
+      setRgbItems((prev) => prev.map((v) => (v.id === id ? updated : v)));
+      setRgbStockInputs((prev) => ({ ...prev, [id]: String(updated.stockQuantity) }));
+    } catch {
+      store.addNotification('error', 'Failed to update RGB stock');
+      setRgbItems((prev) => {
+        const item = prev.find((v) => v.id === id);
+        if (item) setRgbStockInputs((p) => ({ ...p, [id]: String(item.stockQuantity) }));
+        return prev;
+      });
+    }
+  };
+
+  const handleRGBAdjust = async (id: string, currentStock: number, delta: number) => {
+    const newQty = Math.max(0, currentStock + delta);
+    try {
+      const updated = await rgbService.update(id, { stockQuantity: newQty });
+      setRgbItems(prev => prev.map(v => v.id === id ? updated : v));
     } catch {
       store.addNotification('error', 'Failed to adjust RGB stock');
     }
   };
 
-  const handleRGBDelete = async (id: string, name: string) => {
-    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  const handleConfirmDeleteRgb = async () => {
+    if (!deletingRgbItem) return;
+    setDeleteRgbLoading(true);
+    setDeleteRgbError('');
     try {
-      await rgbService.delete(id);
-      setRgbVarieties(prev => prev.filter(v => v.id !== id));
-      store.addNotification('success', `"${name}" removed`);
-    } catch {
-      store.addNotification('error', 'Failed to delete RGB variety');
+      await rgbService.delete(deletingRgbItem.id);
+      setRgbItems(prev => prev.filter(v => v.id !== deletingRgbItem.id));
+      store.addNotification('success', `"${deletingRgbItem.name}" removed`);
+      setDeletingRgbItem(null);
+    } catch (err: any) {
+      setDeleteRgbError(err.response?.data?.message || 'Failed to delete RGB item.');
+    } finally {
+      setDeleteRgbLoading(false);
     }
   };
 
@@ -584,93 +645,181 @@ export const InventoryPage: React.FC = () => {
       <PageContainer>
         {/* Page header */}
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">Inventory Management</h1>
+          <h1 className="text-3xl font-bold">
+            {isRgbPanelOpen ? 'RGB Management' : 'Inventory Management'}
+          </h1>
           <div className="flex gap-2 flex-wrap">
-            <Button onClick={() => { setIsAddProductModalOpen(true); setAddProductBrandMode('existing'); }}>
-              <Plus size={18} className="mr-2" /> New Variant
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                if (products.length === 0) {
-                  store.addNotification('info', 'Create a product first before adding stock');
-                } else {
-                  setIsAddStockModalOpen(true);
-                }
-              }}
-            >
-              <Plus size={18} className="mr-2" /> Add Stock
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => { setIsRgbPanelOpen(!isRgbPanelOpen); if (!isRgbPanelOpen) loadRGBVarieties(); }}
-              className={isRgbPanelOpen ? 'bg-red-100 text-red-700 border-red-300' : ''}
-            >
-              📦 RGB Management
-            </Button>
+            {!isRgbPanelOpen ? (
+              <>
+                <Button onClick={() => { setIsAddProductModalOpen(true); setAddProductBrandMode('existing'); }}>
+                  <Plus size={18} className="mr-2" /> New Variant
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (products.length === 0) {
+                      store.addNotification('info', 'Create a product first before adding stock');
+                    } else {
+                      setIsAddStockModalOpen(true);
+                    }
+                  }}
+                >
+                  <Plus size={18} className="mr-2" /> Add Stock
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => { setIsRgbPanelOpen(true); loadRGBItems(); }}
+                >
+                  📦 RGB Management
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="secondary"
+                onClick={() => setIsRgbPanelOpen(false)}
+              >
+                ← Back to Inventory
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Empty state */}
-        {products.length === 0 && !store.isLoading && (
-          <div className="mb-6 p-8 bg-blue-50 border-2 border-dashed border-blue-200 rounded-xl text-center">
-            <Package size={48} className="text-blue-300 mx-auto mb-3" />
-            <h3 className="text-lg font-bold text-gray-700 mb-1">No Products Yet</h3>
-            <p className="text-sm text-gray-500 mb-4">Create your first brand and product variant to start managing inventory.</p>
-            <Button onClick={() => setIsAddProductModalOpen(true)}>
-              <Plus size={16} className="mr-1" /> Create First Product
-            </Button>
-          </div>
-        )}
+        {isRgbPanelOpen ? (
+          /* ── RGB VIEW ONLY ────────────────────────────────────────────────────────── */
+          <div>
+            {/* RGB Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+              <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Crates in Warehouse</p>
+                  <h3 className="text-2xl font-extrabold text-slate-900 mt-1">{totalWarehouseCrates.toLocaleString()}</h3>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
+                  <Package size={20} />
+                </div>
+              </div>
 
-        {/* ── RGB Management Panel ──────────────────────────────────────────── */}
-        {isRgbPanelOpen && (
-          <Card title="📦 RGB (Empty Crates) — Stock Management" className="mb-6">
-            <div className="flex justify-between items-center mb-4">
-              <p className="text-sm text-gray-500">
-                Track returnable glass bottle (crate) stock per variety. Data is stored in the database.
-              </p>
-              <Button size="sm" onClick={() => setIsAddRgbModalOpen(true)}>
-                <Plus size={14} className="mr-1" /> Add Variety
-              </Button>
+              <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Crates Out with Retailers</p>
+                  <h3 className="text-2xl font-extrabold text-amber-600 mt-1">{totalCratesOut.toLocaleString()}</h3>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
+                  <Boxes size={20} />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">RGB Bottle Types</p>
+                  <h3 className="text-2xl font-extrabold text-slate-900 mt-1">{rgbItems.length}</h3>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-500 to-pink-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20">
+                  <TrendingUp size={20} />
+                </div>
+              </div>
             </div>
-            {rgbLoading ? (
-              <div className="py-8 text-center text-sm text-gray-400">Loading RGB stock…</div>
-            ) : rgbVarieties.length === 0 ? (
-              <div className="py-8 text-center">
-                <p className="text-sm text-gray-500 mb-3">No RGB varieties yet.</p>
+
+            {/* RGB Stock Management Panel */}
+            <Card title="📦 RGB (Empty Crates) — Stock Management" className="mb-6">
+              <div className="flex justify-between items-center mb-4">
+                <p className="text-sm text-gray-500">
+                  Track returnable glass bottle (crate) stock per type. Data is stored in the database.
+                </p>
                 <Button size="sm" onClick={() => setIsAddRgbModalOpen(true)}>
-                  <Plus size={14} className="mr-1" /> Add First Variety
+                  <Plus size={14} className="mr-1" /> Add Type
                 </Button>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {rgbVarieties.map((variety) => {
-                  const img = variety.linkedProduct?.imageUrl
-                    ? resolveImageUrl(variety.linkedProduct.imageUrl)
-                    : null;
-                  return (
-                    <div key={variety.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl p-3 hover:border-red-300 transition-all">
-                      <div className="w-10 h-10 rounded-lg bg-white border border-gray-200 flex-shrink-0 flex items-center justify-center overflow-hidden">
-                        {img ? <img src={img} alt={variety.name} className="w-full h-full object-cover" /> : <span className="text-lg">📦</span>}
+              {rgbLoading ? (
+                <div className="py-8 text-center text-sm text-gray-400">Loading RGB stock…</div>
+              ) : rgbItems.length === 0 ? (
+                <div className="py-8 text-center">
+                  <p className="text-sm text-gray-500 mb-3">No RGB types yet.</p>
+                  <Button size="sm" onClick={() => setIsAddRgbModalOpen(true)}>
+                    <Plus size={14} className="mr-1" /> Add First Type
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {rgbItems.map((item) => {
+                    return (
+                      <div key={item.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl p-3 hover:border-red-300 transition-all">
+                        <div className="w-10 h-10 rounded-lg bg-white border border-gray-200 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                          <span className="text-lg">📦</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-gray-800 text-sm truncate">{item.name}</p>
+                          <p className="text-xs text-gray-500">Updated: {new Date(item.lastUpdated).toLocaleDateString()}</p>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button onClick={() => handleRGBAdjust(item.id, item.stockQuantity, -1)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-100 hover:bg-red-200 text-red-700 font-bold transition-colors"><Minus size={13} /></button>
+                          <input
+                            type="number"
+                            min="0"
+                            value={rgbStockInputs[item.id] ?? String(item.stockQuantity)}
+                            onFocus={(e) => {
+                              setRgbStockInputs((prev) => ({ ...prev, [item.id]: String(item.stockQuantity) }));
+                              e.target.select();
+                            }}
+                            onChange={(e) =>
+                              setRgbStockInputs((prev) => ({ ...prev, [item.id]: e.target.value }))
+                            }
+                            onBlur={(e) => handleRGBSetAbsolute(item.id, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                            }}
+                            className="w-12 text-center font-bold text-blue-700 text-sm border border-gray-200 rounded-md focus:border-blue-400 focus:outline-none bg-white py-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <button onClick={() => handleRGBAdjust(item.id, item.stockQuantity, 1)} className="w-7 h-7 flex items-center justify-center rounded-md bg-green-100 hover:bg-green-200 text-green-700 font-bold transition-colors"><Plus size={13} /></button>
+                          <button onClick={() => { setDeletingRgbItem(item); setDeleteRgbError(''); }} className="w-7 h-7 flex items-center justify-center rounded-md bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors ml-1" title="Delete"><Trash2 size={12} /></button>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-800 text-sm truncate">{variety.name}</p>
-                        <p className="text-xs text-gray-500">Updated: {new Date(variety.lastUpdated).toLocaleDateString()}</p>
-                      </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button onClick={() => handleRGBAdjust(variety.id, -1)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-100 hover:bg-red-200 text-red-700 font-bold transition-colors"><Minus size={13} /></button>
-                        <span className="w-10 text-center font-bold text-blue-700 text-base">{variety.stockQuantity}</span>
-                        <button onClick={() => handleRGBAdjust(variety.id, 1)} className="w-7 h-7 flex items-center justify-center rounded-md bg-green-100 hover:bg-green-200 text-green-700 font-bold transition-colors"><Plus size={13} /></button>
-                        <button onClick={() => handleRGBDelete(variety.id, variety.name)} className="w-7 h-7 flex items-center justify-center rounded-md bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors ml-1" title="Delete"><Trash2 size={12} /></button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-        )}
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+
+            {/* Retailer Balances Table */}
+            <Card title="Retailer RGB Balances">
+              {retailerBalancesList.length === 0 ? (
+                <div className="py-8 text-center text-sm text-gray-500">
+                  No outstanding RGB crate balances with any retailer.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-gray-50 text-gray-600">
+                        <th className="text-left py-3 px-4">Retailer</th>
+                        <th className="text-left py-3 px-4">RGB Type</th>
+                        <th className="text-right py-3 px-4">Quantity Owed</th>
+                        <th className="text-right py-3 px-4">Last Transaction</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {retailerBalancesList.map((row, idx) => (
+                        <tr key={idx} className="border-b hover:bg-gray-50">
+                          <td className="py-3 px-4">
+                            <span className="font-semibold text-gray-900 block">{row.shopName}</span>
+                            <span className="text-xs text-gray-500">{row.retailerName}</span>
+                          </td>
+                          <td className="py-3 px-4 font-medium text-gray-700">{row.itemName}</td>
+                          <td className="py-3 px-4 text-right font-bold text-amber-600">{row.balance} crates</td>
+                          <td className="py-3 px-4 text-right text-xs text-gray-500">
+                            {row.updatedAt ? new Date(row.updatedAt).toLocaleDateString() : 'N/A'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
+        ) : (
+          /* ── NORMAL INVENTORY VIEW ─────────────────────────────────────────────────── */
+          <div>
 
         {/* ── Stats ─────────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -904,14 +1053,16 @@ export const InventoryPage: React.FC = () => {
                             })}
                           </tbody>
                         </table>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
             </div>
           )}
         </Card>
+      </div>
+    )}
 
 
         {/* ── Post-Create Stock Prompt ───────────────────────────────────────── */}
@@ -1439,7 +1590,7 @@ export const InventoryPage: React.FC = () => {
         </Modal>
 
         {/* ── Add RGB Variety Modal ──────────────────────────────────────────── */}
-        <Modal isOpen={isAddRgbModalOpen} title="Add RGB Variety" size="sm"
+        <Modal isOpen={isAddRgbModalOpen} title="Add RGB Type" size="sm"
           onClose={() => { setIsAddRgbModalOpen(false); setRgbFormErrors({}); }}
           footer={
             <>
@@ -1447,9 +1598,9 @@ export const InventoryPage: React.FC = () => {
                 className="flex-1 border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-semibold rounded-lg py-2 transition-colors">
                 Cancel
               </button>
-              <button onClick={handleCreateRGBVariety} disabled={rgbFormLoading}
+              <button onClick={handleCreateRGBType} disabled={rgbFormLoading}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg py-2 transition-colors">
-                {rgbFormLoading ? 'Creating…' : 'Add Variety'}
+                {rgbFormLoading ? 'Creating…' : 'Add Type'}
               </button>
             </>
           }
@@ -1482,6 +1633,47 @@ export const InventoryPage: React.FC = () => {
               </select>
             </div>
           </div>
+        </Modal>
+
+        {/* ── Confirm Delete RGB Modal ─────────────────────────────────────── */}
+        <Modal
+          isOpen={!!deletingRgbItem}
+          title="Delete RGB Item"
+          onClose={() => setDeletingRgbItem(null)}
+          size="sm"
+          footer={
+            <>
+              <button
+                onClick={() => setDeletingRgbItem(null)}
+                className="flex-1 border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-semibold rounded-lg py-2 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDeleteRgb}
+                disabled={deleteRgbLoading}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white text-sm font-semibold rounded-lg py-2 transition-colors flex items-center justify-center gap-2"
+              >
+                {deleteRgbLoading ? 'Deleting…' : 'Delete'}
+              </button>
+            </>
+          }
+        >
+          {deletingRgbItem && (
+            <div className="space-y-3">
+              {deleteRgbError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">
+                  {deleteRgbError}
+                </div>
+              )}
+              <p className="text-sm text-gray-600">
+                Are you sure you want to delete <strong className="text-gray-900">"{deletingRgbItem.name}"</strong>?
+              </p>
+              <p className="text-xs text-gray-500">
+                This item will be permanently removed. (Blocked if any retailer has active balances).
+              </p>
+            </div>
+          )}
         </Modal>
 
       </PageContainer>

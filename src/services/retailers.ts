@@ -1,5 +1,5 @@
 import { api } from './api';
-import { Retailer, LedgerEntry, RGBTracking } from '../types';
+import { Retailer, LedgerEntry } from '../types';
 
 export const retailersService = {
   getAll: async (): Promise<Retailer[]> => {
@@ -20,8 +20,5 @@ export const retailersService = {
     const response: any = await api.get(`/retailers/${id}/ledger`);
     return response.data;
   },
-  getRGBBalance: async (id: string): Promise<RGBTracking[]> => {
-    const response: any = await api.get(`/retailers/${id}/rgb`);
-    return response.data.rgb;
-  }
 };
+

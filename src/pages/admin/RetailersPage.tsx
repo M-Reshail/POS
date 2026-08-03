@@ -29,6 +29,7 @@ const BLANK_FORM: RetailerForm = {
 export const RetailersPage: React.FC = () => {
   const store = useStore();
   const [isAddRetailerModalOpen, setIsAddRetailerModalOpen] = useState(false);
+  const [isCratesPanelOpen, setIsCratesPanelOpen] = useState(false);
   const [addRetailerForm, setAddRetailerForm] = useState<RetailerForm>(BLANK_FORM);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof RetailerForm, string>>>();
 
@@ -45,7 +46,7 @@ export const RetailersPage: React.FC = () => {
     acc[retailer.id] = {
       outstanding: retailerBills.reduce((sum, b) => sum + b.pendingAmount, 0),
       paid: retailerBills.reduce((sum, b) => sum + b.paidAmount, 0),
-      rgbBalance: 0, // Would need dedicated RGB tracking API to populate this
+      rgbBalance: 0,
     };
     return acc;
   }, {} as Record<string, { outstanding: number; paid: number; rgbBalance: number }>);
@@ -102,18 +103,87 @@ export const RetailersPage: React.FC = () => {
     return 'danger';
   };
 
-
-
   return (
     <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Retailer Management</h1>
-          <Button onClick={() => setIsAddRetailerModalOpen(true)}>
-            <Plus size={18} className="mr-2" />
-            Add Retailer
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="secondary" onClick={() => setIsCratesPanelOpen(!isCratesPanelOpen)}>
+              📦 View Crates with Retailers
+            </Button>
+            <Button onClick={() => setIsAddRetailerModalOpen(true)}>
+              <Plus size={18} className="mr-2" />
+              Add Retailer
+            </Button>
+          </div>
         </div>
+
+        {/* Inline Expandable Crates with Retailers Section */}
+        {isCratesPanelOpen && (
+          <Card title="📦 Crates Out with Retailers" className="mb-6 border-amber-200 bg-amber-50/20">
+            <div className="flex justify-between items-center mb-4">
+              <p className="text-sm text-gray-600">
+                Retailers currently holding returnable glass bottle (crate) balances.
+              </p>
+              <button
+                onClick={() => setIsCratesPanelOpen(false)}
+                className="text-xs text-gray-500 hover:text-gray-700 font-semibold"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            {(() => {
+              const retailersWithCrates = mockRetailers.filter((r) => {
+                const pending = r.rgbBalances?.reduce((sum, b) => sum + (b.balance || 0), 0) || 0;
+                return pending > 0;
+              });
+
+              if (retailersWithCrates.length === 0) {
+                return (
+                  <div className="py-8 text-center text-sm text-gray-500 bg-white rounded-xl border border-gray-200">
+                    No retailers currently owe RGB crates.
+                  </div>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {retailersWithCrates.map((r) => {
+                    const activeBalances = r.rgbBalances?.filter((b) => b.balance > 0) || [];
+                    const totalPending = activeBalances.reduce((sum, b) => sum + b.balance, 0);
+
+                    return (
+                      <div key={r.id} className="bg-white p-4 rounded-xl border border-amber-200 shadow-xs flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <h4 className="font-bold text-gray-900 text-sm">{r.shopName}</h4>
+                              <p className="text-xs text-gray-500">{r.ownerName} · {r.mobileNumber}</p>
+                            </div>
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+                              {totalPending} total crates
+                            </span>
+                          </div>
+
+                          <div className="border-t border-gray-100 pt-2 mt-2 space-y-1">
+                            {activeBalances.map((b) => (
+                              <div key={b.id} className="flex justify-between text-xs text-gray-700">
+                                <span>{b.rgbItem?.name || 'RGB Crate'}</span>
+                                <span className="font-semibold text-amber-700">{b.balance} crates</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </Card>
+        )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -147,7 +217,7 @@ export const RetailersPage: React.FC = () => {
                   <th className="text-right py-3 px-4">Credit Limit</th>
                   <th className="text-right py-3 px-4">Outstanding</th>
                   <th className="text-center py-3 px-4">Credit Status</th>
-                  <th className="text-center py-3 px-4">RGB</th>
+                  <th className="text-center py-3 px-4">RGB Crates</th>
                   <th className="text-center py-3 px-4">Tier</th>
                   <th className="text-center py-3 px-4">Actions</th>
                 </tr>
@@ -159,7 +229,8 @@ export const RetailersPage: React.FC = () => {
                   const outstanding = Number(ledger.outstanding) || 0;
                   const creditStatusColor = getCreditStatusColor(outstanding, creditLimit);
                   const usagePercentage = creditLimit > 0 ? (outstanding / creditLimit) * 100 : 0;
-                  
+                  const totalCratesPending = retailer.rgbBalances?.reduce((sum, b) => sum + (b.balance || 0), 0) || 0;
+
                   return (
                     <tr key={retailer.id} className="border-b hover:bg-gray-50">
                       <td className="py-3 px-4 font-medium">{retailer.shopName}</td>
@@ -190,7 +261,13 @@ export const RetailersPage: React.FC = () => {
                         <p className="text-xs mt-1">{usagePercentage.toFixed(0)}% used</p>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <Badge variant="info">{ledger.rgbBalance} units</Badge>
+                        {totalCratesPending > 0 ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+                            {totalCratesPending} crates pending
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">—</span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <Badge

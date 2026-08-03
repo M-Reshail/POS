@@ -30,11 +30,9 @@ const getProductImage = (imageUrl?: string): string | null => {
   return `${base}${imageUrl}`;
 };
 
-const RGB_QTY_PER_CLICK = 1;
-
 export const SalesPage: React.FC = () => {
   const store = useStore();
-  const { bills, retailers, products, stockBatches, rgbVarieties } = store;
+  const { bills, retailers, products, stockBatches, rgbItems } = store;
 
   // View
   const [viewMode, setViewMode] = useState<'create' | 'history'>('create');
@@ -118,6 +116,7 @@ export const SalesPage: React.FC = () => {
     return map;
   }, [cartItems]);
 
+
   // ── Cart Logic ─────────────────────────────────────────────────────────────────
   // Stepper: +1 to cart — reads from DB stock ceiling, enforces effectiveStock > 0
   const incrementProduct = (product: typeof inventoryProducts[0]) => {
@@ -180,35 +179,48 @@ export const SalesPage: React.FC = () => {
     });
   };
 
-  // RGB one-click: add 5 units of the RGB brand
-  const addRGBToCart = (brand: string) => {
-    const rgbProductId = `rgb-${brand.toLowerCase().replace(/\s+/g, '-')}`;
+  // Stepper: Set absolute quantity for a product (enforces stock ceiling)
+  const setProductQuantity = (product: typeof inventoryProducts[0], qty: number) => {
+    const targetQty = Math.min(product.availableStock, Math.max(0, qty));
     setCartItems((prev) => {
-      const existing = prev.findIndex((i) => i.productId === rgbProductId);
+      const existing = prev.findIndex((i) => i.productId === product.id);
+      if (targetQty <= 0) {
+        if (existing < 0) return prev;
+        const next = prev.filter((_, idx) => idx !== existing);
+        const item = prev[existing];
+        setItemDiscountInputs((d) => { const n = { ...d }; delete n[item.id]; return n; });
+        return next;
+      }
+
       if (existing >= 0) {
         const updated = [...prev];
         const item = updated[existing];
-        const newQty = item.quantity + RGB_QTY_PER_CLICK;
-        updated[existing] = { ...item, quantity: newQty, total: newQty * item.price };
+        updated[existing] = {
+          ...item,
+          quantity: targetQty,
+          total: targetQty * item.price - (item.discountValue || 0),
+        };
         return updated;
       }
+      // First time adding this product
       return [
         ...prev,
         {
-          id: `rgb-${Date.now()}`,
-          productId: rgbProductId,
-          productName: `${brand} RGB (Crates)`,
-          quantity: RGB_QTY_PER_CLICK,
-          price: 0,
-          total: 0,
-          discount: 0,
-          discountType: 'fixed',
+          id: `${product.id}-${Date.now()}`,
+          productId: product.id,
+          productName: `${product.brand} ${product.variant}`,
+          quantity: targetQty,
+          price: product.defaultPrice,
+          total: targetQty * product.defaultPrice,
+          isEditingPrice: false,
+          editPrice: product.defaultPrice.toString(),
+          discountType: 'fixed' as const,
           discountValue: 0,
         },
       ];
     });
-    store.addNotification('success', `${brand} RGB ×${RGB_QTY_PER_CLICK} added`);
   };
+
 
   const removeFromCart = (itemId: string) => {
     setCartItems((prev) => prev.filter((i) => i.id !== itemId));
@@ -590,41 +602,32 @@ Thank you for your business!
                     </button>
                   )}
 
-                  {/* RGB view — driven by DB RGBVarieties */}
+                  {/* RGB view — read-only reference (interactive controls deferred to Prompt 10) */}
                   {showRGB ? (
                     <div>
                       <p className="text-xs text-gray-500 mb-3">
-                        Click to add <strong>{RGB_QTY_PER_CLICK} crates</strong> per click (can click multiple times)
+                        Current RGB (empty crate) stock levels — for reference only.
                       </p>
-                      {rgbVarieties.length === 0 ? (
+                      {rgbItems.length === 0 ? (
                         <p className="text-sm text-gray-400 text-center py-6">
-                          No RGB varieties configured yet. Add them in <strong>Inventory → RGB Management</strong>.
+                          No RGB types configured yet. Add them in <strong>Inventory → RGB Management</strong>.
                         </p>
                       ) : (
                         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-                          {rgbVarieties.map((rgb) => {
-                            const imgUrl = rgb.linkedProduct?.imageUrl
-                              ? getProductImage(rgb.linkedProduct.imageUrl)
-                              : null;
-                            return (
-                              <button
-                                key={rgb.id}
-                                onClick={() => addRGBToCart(rgb.name)}
-                                className="flex flex-col items-center p-2 border-2 border-red-200 rounded-lg hover:border-red-500 hover:bg-red-50 transition-all duration-150 bg-white"
-                              >
-                                <div className="w-full aspect-square rounded-md overflow-hidden mb-1 bg-gray-50 flex items-center justify-center">
-                                  {imgUrl ? (
-                                    <img src={imgUrl} alt={rgb.name} className="w-full h-full object-contain" />
-                                  ) : (
-                                    <span className="text-2xl">📦</span>
-                                  )}
-                                </div>
-                                <p className="text-xs font-bold text-gray-800 text-center leading-tight">{rgb.name}</p>
-                                <p className="text-xs text-red-600 font-semibold">+{RGB_QTY_PER_CLICK}</p>
-                                <p className="text-xs text-gray-400">Stock: {rgb.stockQuantity}</p>
-                              </button>
-                            );
-                          })}
+                          {rgbItems.map((rgb) => (
+                            <div
+                              key={rgb.id}
+                              className="flex flex-col items-center p-2.5 border-2 border-gray-200 rounded-lg bg-white"
+                            >
+                              <div className="w-full aspect-square rounded-md overflow-hidden mb-1 bg-gray-50 flex items-center justify-center">
+                                <span className="text-2xl">📦</span>
+                              </div>
+                              <p className="font-bold text-gray-800 text-xs text-center leading-tight truncate w-full">{rgb.name}</p>
+                              <p className="text-[10px] text-gray-500 text-center mt-1">
+                                Stock: <span className="font-semibold text-gray-700">{rgb.stockQuantity}</span>
+                              </p>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -659,7 +662,7 @@ Thank you for your business!
                                   <img
                                     src={imgUrl}
                                     alt={brand}
-                                    className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                   />
                                 ) : (
@@ -718,7 +721,7 @@ Thank you for your business!
                                 <img
                                   src={imgUrl}
                                   alt={`${product.brand} ${product.variant}`}
-                                  className="w-full h-full object-contain"
+                                  className="w-full h-full object-cover"
                                   onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = 'none'; }}
                                 />
                               </div>
@@ -733,24 +736,44 @@ Thank you for your business!
                               </span>
                             </p>
 
-                            {/* Stepper control: − | qty | + */}
-                            <div className="flex items-center justify-between gap-1 mt-auto">
+                            {/* Stepper control: combined pill with integrated − | qty input | + */}
+                            <div className={`flex items-center justify-between mt-auto border rounded-lg overflow-hidden transition-all ${
+                              cartQty > 0
+                                ? 'border-blue-400 bg-white shadow-xs'
+                                : 'border-gray-200 bg-gray-50'
+                            }`}>
                               <button
                                 onClick={() => decrementProduct(product.id)}
                                 disabled={cartQty <= 0}
-                                className="flex-shrink-0 w-8 h-8 bg-red-500 hover:bg-red-600 active:scale-95 disabled:bg-gray-200 disabled:cursor-not-allowed text-white rounded-md font-bold text-base transition-all flex items-center justify-center"
+                                className="w-8 h-8 flex-shrink-0 bg-red-500 hover:bg-red-600 active:scale-95 disabled:bg-gray-100 disabled:text-gray-300 text-white font-bold transition-all flex items-center justify-center"
                               >
                                 <Minus size={13} />
                               </button>
-                              <span className={`text-sm font-bold min-w-[1.75rem] text-center ${
-                                cartQty > 0 ? 'text-blue-700' : 'text-gray-400'
-                              }`}>
-                                {cartQty}
-                              </span>
+                              <input
+                                type="number"
+                                min="0"
+                                max={product.availableStock}
+                                value={cartQty === 0 ? '' : cartQty}
+                                placeholder="0"
+                                disabled={isFullyOOS}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '') {
+                                    setProductQuantity(product, 0);
+                                  } else {
+                                    const parsed = parseInt(val, 10);
+                                    if (!isNaN(parsed)) setProductQuantity(product, parsed);
+                                  }
+                                }}
+                                className={`w-12 text-center text-sm font-bold bg-transparent border-0 focus:outline-none focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                                  cartQty > 0 ? 'text-blue-700' : 'text-gray-400'
+                                }`}
+                              />
                               <button
                                 onClick={() => incrementProduct(product)}
                                 disabled={isFullyOOS || effectiveStock <= 0}
-                                className="flex-shrink-0 w-8 h-8 bg-green-600 hover:bg-green-700 active:scale-95 disabled:bg-gray-200 disabled:cursor-not-allowed text-white rounded-md font-bold text-base transition-all flex items-center justify-center"
+                                className="w-8 h-8 flex-shrink-0 bg-green-600 hover:bg-green-700 active:scale-95 disabled:bg-gray-100 disabled:text-gray-300 text-white font-bold transition-all flex items-center justify-center"
                               >
                                 <Plus size={13} />
                               </button>
