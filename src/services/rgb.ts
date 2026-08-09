@@ -1,5 +1,5 @@
 import { api } from './api';
-import { RGBItem } from '../types';
+import { RGBItem, RGBRetailerBalance } from '../types';
 
 export const rgbService = {
   /** Get all RGB items */
@@ -30,5 +30,18 @@ export const rgbService = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/rgb/${id}`);
   },
-};
 
+  /** Get per-item RGB crate balances for a specific retailer */
+  getRetailerBalances: async (retailerId: string): Promise<RGBRetailerBalance[]> => {
+    const response: any = await api.get(`/rgb/retailer/${retailerId}`);
+    return response.data.balances;
+  },
+
+  /** Standalone crate return (outside a sale — e.g. driver collects crates) */
+  returnStandalone: async (
+    rgbItemId: string,
+    body: { retailerId: string; quantity: number }
+  ): Promise<void> => {
+    await api.post(`/rgb/${rgbItemId}/return`, body);
+  },
+};

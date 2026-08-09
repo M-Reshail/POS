@@ -17,6 +17,7 @@
 import { prisma } from '../../lib/prisma';
 import { BillPaymentMode, BillStatus, LedgerEntryType, Prisma } from '@prisma/client';
 import { deductStockFIFO, getProductCurrentSalePrice } from '../inventory/inventory.service';
+import { issueRGB, returnRGB } from '../rgb/rgb.service';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,12 @@ export interface CreateBillItemInput {
   quantity: number;     // In PET units
   price: number;        // Per-unit price charged
   discount?: number;    // Line-item discount
+}
+
+export interface RGBExchangeInput {
+  rgbItemId: string;
+  cratesGiven: number;    // crates issued to retailer (warehouse stock decreases)
+  cratesReturned: number; // crates collected from retailer (warehouse stock increases)
 }
 
 export interface CreateBillInput {
@@ -37,6 +44,7 @@ export interface CreateBillInput {
   previousPendingAdded?: number;
   oldPendingPaymentApplied?: number;
   notes?: string;
+  rgbExchanges?: RGBExchangeInput[]; // Standalone crate exchanges for this sale
 }
 
 export interface AddPaymentInput {
@@ -202,6 +210,31 @@ export const createBill = async (input: CreateBillInput) => {
     for (const item of input.items) {
       if (item.productId.startsWith('rgb-')) continue;
       await deductStockFIFO(tx, item.productId, item.quantity);
+    }
+
+    // 7b. RGB crate exchange processing ──────────────────────────────────────
+    // Runs inside the same tx — any INSUFFICIENT_RGB_STOCK error from issueRGB
+    // automatically rolls back the entire sale (stock, bill, ledger, everything).
+    if (input.rgbExchanges && input.rgbExchanges.length > 0) {
+      for (const exchange of input.rgbExchanges) {
+        if (exchange.cratesGiven > 0) {
+          await issueRGB(tx, {
+            retailerId: input.retailerId,
+            rgbItemId: exchange.rgbItemId,
+            quantity: exchange.cratesGiven,
+            saleId: bill.id,
+            workerId: input.workerId,
+          });
+        }
+        if (exchange.cratesReturned > 0) {
+          await returnRGB(tx, {
+            retailerId: input.retailerId,
+            rgbItemId: exchange.rgbItemId,
+            quantity: exchange.cratesReturned,
+            workerId: input.workerId,
+          });
+        }
+      }
     }
 
     // 8. Record upfront payment ───────────────────────────────────────────────

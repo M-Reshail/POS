@@ -6,9 +6,10 @@ import {
   ShoppingCart, Trash2, Droplet, Edit2, Check, Search, X,
   History, UserPlus, ChevronLeft, Minus, Plus,
 } from 'lucide-react';
-import { Bill, BillItem } from '../../types';
+import { Bill, BillItem, RGBRetailerBalance } from '../../types';
 import { retailersService } from '../../services/retailers';
 import { billsService } from '../../services/bills';
+import { rgbService } from '../../services/rgb';
 import { ADMIN_SIDEBAR, WORKER_SIDEBAR } from '../../constants/navigation';
 
 interface CartItem extends BillItem {
@@ -54,6 +55,11 @@ export const SalesPage: React.FC = () => {
   const [pendingReceiptBill, setPendingReceiptBill] = useState<Bill | null>(null);
   const [receiptPendingBills, setReceiptPendingBills] = useState<Bill[]>([]);
 
+  // RGB exchanges for this sale
+  // key = rgbItemId, value = { cratesGiven, cratesReturned }
+  const [rgbExchanges, setRgbExchanges] = useState<Record<string, { cratesGiven: number; cratesReturned: number }>>({});
+  const [retailerRGBBalances, setRetailerRGBBalances] = useState<RGBRetailerBalance[]>([]);
+
   // History
   const [historySearchTerm, setHistorySearchTerm] = useState('');
   const [historyDateFilter, setHistoryDateFilter] = useState('');
@@ -72,6 +78,17 @@ export const SalesPage: React.FC = () => {
       store.fetchInitialData();
     }
   }, [currentUser?.id]);
+
+  // Fetch retailer's RGB balances whenever the selected retailer changes
+  useEffect(() => {
+    if (!selectedRetailer) {
+      setRetailerRGBBalances([]);
+      return;
+    }
+    rgbService.getRetailerBalances(selectedRetailer)
+      .then(setRetailerRGBBalances)
+      .catch(() => setRetailerRGBBalances([]));
+  }, [selectedRetailer]);
 
   // ── Derived products from inventory ──────────────────────────────────────────
   const inventoryProducts = useMemo(() => {
@@ -305,6 +322,15 @@ export const SalesPage: React.FC = () => {
     const paidAmt = paymentMethod === 'generate-only' ? 0 : amountReceivedNum;
     const pendingAmt = paymentMethod === 'generate-only' ? total : udhariAmount;
 
+    // Build rgbExchanges array (only entries with at least one non-zero value)
+    const rgbExchangesPayload = Object.entries(rgbExchanges)
+      .filter(([, v]) => v.cratesGiven > 0 || v.cratesReturned > 0)
+      .map(([rgbItemId, v]) => ({
+        rgbItemId,
+        cratesGiven: v.cratesGiven,
+        cratesReturned: v.cratesReturned,
+      }));
+
     const billPayload = {
       retailerId: selectedRetailer,
       items: cartItems.map((item) => ({
@@ -317,6 +343,7 @@ export const SalesPage: React.FC = () => {
       paymentMode: paymentMethod,
       paidAmount: paidAmt,
       previousPendingAdded: manualPendingNum || undefined,
+      rgbExchanges: rgbExchangesPayload,
     };
 
     try {
@@ -359,6 +386,8 @@ export const SalesPage: React.FC = () => {
     setReceiptPendingBills([]);
     setShowRGB(false);
     setSelectedProductBrand('');
+    setRgbExchanges({});
+    setRetailerRGBBalances([]);
   };
 
   const generateAndPrintReceipt = (bill: Bill, otherPendingBills: Bill[] = []) => {
@@ -602,32 +631,68 @@ Thank you for your business!
                     </button>
                   )}
 
-                  {/* RGB view — read-only reference (interactive controls deferred to Prompt 10) */}
+                  {/* RGB Exchange Section — interactive crate issue/return per sale */}
                   {showRGB ? (
                     <div>
-                      <p className="text-xs text-gray-500 mb-3">
-                        Current RGB (empty crate) stock levels — for reference only.
-                      </p>
-                      {rgbItems.length === 0 ? (
+                      {!selectedRetailer ? (
+                        <div className="text-center py-6">
+                          <span className="text-3xl">📦</span>
+                          <p className="text-sm text-gray-500 mt-2">Select a retailer in <strong>Bill Summary</strong> to record crate exchanges.</p>
+                        </div>
+                      ) : rgbItems.length === 0 ? (
                         <p className="text-sm text-gray-400 text-center py-6">
                           No RGB types configured yet. Add them in <strong>Inventory → RGB Management</strong>.
                         </p>
                       ) : (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-                          {rgbItems.map((rgb) => (
-                            <div
-                              key={rgb.id}
-                              className="flex flex-col items-center p-2.5 border-2 border-gray-200 rounded-lg bg-white"
-                            >
-                              <div className="w-full aspect-square rounded-md overflow-hidden mb-1 bg-gray-50 flex items-center justify-center">
-                                <span className="text-2xl">📦</span>
+                        <div className="space-y-2">
+                          <p className="text-xs text-gray-500 mb-2">Record crate exchanges for this sale. Leave at 0 to skip.</p>
+                          <div className="grid grid-cols-[1fr_80px_80px_70px] gap-1 text-xs font-semibold text-gray-500 pb-1 border-b border-gray-100">
+                            <span>RGB Type</span>
+                            <span className="text-center">Whse Stock</span>
+                            <span className="text-center">Given ↓</span>
+                            <span className="text-center">Returned ↑</span>
+                          </div>
+                          {rgbItems.map((rgb) => {
+                            const exchange = rgbExchanges[rgb.id] ?? { cratesGiven: 0, cratesReturned: 0 };
+                            const balance = retailerRGBBalances.find(b => b.rgbItemId === rgb.id)?.balance ?? 0;
+                            return (
+                              <div key={rgb.id} className="grid grid-cols-[1fr_80px_80px_70px] gap-1 items-center py-1.5 border-b border-gray-50">
+                                <div>
+                                  <p className="text-xs font-semibold text-gray-800">{rgb.name}</p>
+                                  {balance > 0 && (
+                                    <p className="text-[10px] text-orange-500">Owes: {balance} crates</p>
+                                  )}
+                                </div>
+                                <p className="text-xs text-center text-gray-500">{rgb.stockQuantity}</p>
+                                {/* Crates Given */}
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={exchange.cratesGiven === 0 ? '' : exchange.cratesGiven}
+                                  placeholder="0"
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    const val = Math.max(0, parseInt(e.target.value) || 0);
+                                    setRgbExchanges(prev => ({ ...prev, [rgb.id]: { ...exchange, cratesGiven: val } }));
+                                  }}
+                                  className="w-full text-center text-xs border border-orange-200 rounded px-1 py-1 focus:outline-none focus:border-orange-400 bg-orange-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                                {/* Crates Returned */}
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={exchange.cratesReturned === 0 ? '' : exchange.cratesReturned}
+                                  placeholder="0"
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    const val = Math.max(0, parseInt(e.target.value) || 0);
+                                    setRgbExchanges(prev => ({ ...prev, [rgb.id]: { ...exchange, cratesReturned: val } }));
+                                  }}
+                                  className="w-full text-center text-xs border border-green-200 rounded px-1 py-1 focus:outline-none focus:border-green-400 bg-green-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
                               </div>
-                              <p className="font-bold text-gray-800 text-xs text-center leading-tight truncate w-full">{rgb.name}</p>
-                              <p className="text-[10px] text-gray-500 text-center mt-1">
-                                Stock: <span className="font-semibold text-gray-700">{rgb.stockQuantity}</span>
-                              </p>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -957,6 +1022,18 @@ Thank you for your business!
                         <p className="mt-1 text-xs text-orange-600">
                           ⚠ Existing udhari: ₨{existingPendingForRetailer.toFixed(0)}
                         </p>
+                      )}
+                      {/* RGB crates owed by this retailer */}
+                      {selectedRetailer && retailerRGBBalances.filter(b => b.balance > 0).length > 0 && (
+                        <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                          <p className="text-xs font-semibold text-amber-700 mb-1">📦 RGB Crates Owed</p>
+                          {retailerRGBBalances.filter(b => b.balance > 0).map(b => (
+                            <div key={b.id} className="flex justify-between text-xs text-amber-700">
+                              <span>{b.rgbItem?.name ?? b.rgbItemId}</span>
+                              <span className="font-bold">{b.balance}</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
 

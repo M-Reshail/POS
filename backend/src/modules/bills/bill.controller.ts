@@ -31,6 +31,11 @@ const createBillSchema = z.object({
   previousPendingAdded: z.number().min(0).optional(),
   oldPendingPaymentApplied: z.number().min(0).optional(),
   notes: z.string().trim().optional(),
+  rgbExchanges: z.array(z.object({
+    rgbItemId:      z.string().uuid('Invalid RGB item ID.'),
+    cratesGiven:    z.number().int().min(0).default(0),
+    cratesReturned: z.number().int().min(0).default(0),
+  })).optional().default([]),
 });
 
 const listBillsSchema = z.object({
@@ -60,6 +65,7 @@ const ERROR_MAP = {
   BILL_VOIDED: { status: 409, message: 'Cannot add payment to a voided bill.' },
   BILL_ACCESS_DENIED: { status: 403, message: 'You can only view your own bills.' },
   PAYMENT_EXCEEDS_PENDING: { status: 422, message: 'Payment amount exceeds pending balance.' },
+  INSUFFICIENT_RGB_STOCK: { status: 422, message: 'Insufficient warehouse crate stock. The entire sale has been rolled back.' },
 };
 
 // ── Controllers ───────────────────────────────────────────────────────────────

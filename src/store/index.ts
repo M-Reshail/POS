@@ -181,9 +181,10 @@ export const useStore = create<Store>((set, get) => ({
       }));
       get().addNotification('success', 'Bill created successfully');
 
-      // Re-fetch updated data
+      // Re-fetch updated data (inventory, retailers, and RGB stock all may have changed)
       get().fetchInventory();
       get().fetchRetailers();
+      get().fetchRGBItems();
     } catch (err: any) {
       set({ error: err.response?.data?.message || err.message || 'Failed to create bill', isLoading: false });
       get().addNotification('error', err.response?.data?.message || 'Failed to create bill');
