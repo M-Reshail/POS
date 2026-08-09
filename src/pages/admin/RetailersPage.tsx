@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card, Badge } from '../../components/common';
 import { useStore } from '../../store';
-import { Plus, Phone, X } from 'lucide-react';
+import { Plus, Minus, Phone, X, RotateCcw } from 'lucide-react';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import { retailersService } from '../../services/retailers';
+import { rgbService } from '../../services/rgb';
 
 interface RetailerForm {
   shopName: string;
@@ -36,9 +37,36 @@ export const RetailersPage: React.FC = () => {
   // Use store data
   const mockRetailers = store.retailers;
 
+  // Inline Standalone RGB Return state
+  const [openReturnRetailerId, setOpenReturnRetailerId] = useState<string | null>(null);
+  const [returnFormValues, setReturnFormValues] = useState<Record<string, number>>({});
+  const [submittingReturn, setSubmittingReturn] = useState(false);
+
   useEffect(() => {
     store.fetchInitialData();
   }, [store.fetchInitialData]);
+
+  const handleStandaloneReturnSubmit = async (retailerId: string) => {
+    setSubmittingReturn(true);
+    try {
+      const promises = Object.entries(returnFormValues)
+        .filter(([, qty]) => qty > 0)
+        .map(([rgbItemId, quantity]) =>
+          rgbService.returnStandalone(rgbItemId, { retailerId, quantity })
+        );
+      if (promises.length === 0) return;
+      await Promise.all(promises);
+      store.fetchRetailers();
+      store.fetchRGBItems();
+      store.addNotification('success', 'Crates return recorded successfully');
+      setOpenReturnRetailerId(null);
+      setReturnFormValues({});
+    } catch (err: any) {
+      store.addNotification('error', err.response?.data?.message || 'Failed to record crate return');
+    } finally {
+      setSubmittingReturn(false);
+    }
+  };
 
   // Compute ledger dynamically from bills
   const retailerLedger = mockRetailers.reduce((acc, retailer) => {
@@ -153,6 +181,7 @@ export const RetailersPage: React.FC = () => {
                   {retailersWithCrates.map((r) => {
                     const activeBalances = r.rgbBalances?.filter((b) => b.balance > 0) || [];
                     const totalPending = activeBalances.reduce((sum, b) => sum + b.balance, 0);
+                    const isOpen = openReturnRetailerId === r.id;
 
                     return (
                       <div key={r.id} className="bg-white p-4 rounded-xl border border-amber-200 shadow-xs flex flex-col justify-between">
@@ -175,6 +204,105 @@ export const RetailersPage: React.FC = () => {
                               </div>
                             ))}
                           </div>
+                        </div>
+
+                        {/* RGB Return Button */}
+                        <div className="mt-3 pt-2 border-t border-gray-100">
+                          <button
+                            onClick={() => {
+                              if (isOpen) {
+                                setOpenReturnRetailerId(null);
+                                setReturnFormValues({});
+                              } else {
+                                setOpenReturnRetailerId(r.id);
+                                const initial: Record<string, number> = {};
+                                activeBalances.forEach((b) => { initial[b.rgbItemId] = 0; });
+                                setReturnFormValues(initial);
+                              }
+                            }}
+                            className="w-full py-1.5 px-3 text-xs font-bold rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors flex items-center justify-center gap-1.5"
+                          >
+                            <RotateCcw size={12} />
+                            {isOpen ? 'Cancel Return' : 'RGB Return'}
+                          </button>
+
+                          {/* Inline Return Form inside card */}
+                          {isOpen && (
+                            <div className="mt-2 p-3 bg-amber-50/60 rounded-lg border border-amber-200 space-y-2">
+                              <p className="text-[11px] font-semibold text-gray-700 mb-1">Enter returned crate quantities:</p>
+                              {activeBalances.map((b) => {
+                                const itemName = b.rgbItem?.name || 'RGB Crate';
+                                const returnQty = returnFormValues[b.rgbItemId] ?? 0;
+                                return (
+                                  <div key={b.id} className="flex items-center justify-between text-xs bg-white p-2 rounded border border-amber-100">
+                                    <div className="truncate max-w-[130px]">
+                                      <p className="font-semibold text-gray-800 truncate">{itemName}</p>
+                                      <p className="text-[10px] text-amber-700">Owes: {b.balance}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <div className="flex items-center border border-green-200 bg-green-50 rounded overflow-hidden h-7">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const val = Math.max(0, returnQty - 1);
+                                            setReturnFormValues(prev => ({ ...prev, [b.rgbItemId]: val }));
+                                          }}
+                                          disabled={returnQty <= 0}
+                                          className="w-6 h-full bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold flex items-center justify-center"
+                                        >
+                                          <Minus size={11} />
+                                        </button>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max={b.balance}
+                                          value={returnQty === 0 ? '' : returnQty}
+                                          placeholder="0"
+                                          onFocus={(e) => e.target.select()}
+                                          onChange={(e) => {
+                                            const parsed = parseInt(e.target.value) || 0;
+                                            const val = Math.min(b.balance, Math.max(0, parsed));
+                                            setReturnFormValues(prev => ({ ...prev, [b.rgbItemId]: val }));
+                                          }}
+                                          className="w-8 text-center text-xs font-bold bg-transparent border-0 focus:outline-none p-0 text-green-900 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const val = Math.min(b.balance, returnQty + 1);
+                                            setReturnFormValues(prev => ({ ...prev, [b.rgbItemId]: val }));
+                                          }}
+                                          disabled={returnQty >= b.balance}
+                                          className="w-6 h-full bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold flex items-center justify-center"
+                                        >
+                                          <Plus size={11} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              <div className="flex justify-end gap-2 pt-1">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => { setOpenReturnRetailerId(null); setReturnFormValues({}); }}
+                                  className="text-xs py-1"
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  loading={submittingReturn}
+                                  onClick={() => handleStandaloneReturnSubmit(r.id)}
+                                  disabled={!Object.values(returnFormValues).some(v => v > 0)}
+                                  className="text-xs py-1"
+                                >
+                                  Confirm Return
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );

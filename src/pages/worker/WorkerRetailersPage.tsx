@@ -3,7 +3,8 @@ import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card } from '../../components/common';
 import { useStore } from '../../store';
 import { retailersService } from '../../services/retailers';
-import { ShoppingCart, Users, Search, Plus, X, Phone, MapPin } from 'lucide-react';
+import { rgbService } from '../../services/rgb';
+import { ShoppingCart, Users, Search, Plus, Minus, X, Phone, MapPin, RotateCcw } from 'lucide-react';
 import { Retailer } from '../../types';
 
 const WORKER_SIDEBAR = [
@@ -21,6 +22,33 @@ export const WorkerRetailersPage: React.FC = () => {
     shopName: '', ownerName: '', mobileNumber: '', address: '', deliveryLocation: '',
   });
   const [addError, setAddError] = useState('');
+
+  // Standalone RGB Return state
+  const [openReturnRetailerId, setOpenReturnRetailerId] = useState<string | null>(null);
+  const [returnFormValues, setReturnFormValues] = useState<Record<string, number>>({});
+  const [submittingReturn, setSubmittingReturn] = useState(false);
+
+  const handleStandaloneReturnSubmit = async (retailerId: string) => {
+    setSubmittingReturn(true);
+    try {
+      const promises = Object.entries(returnFormValues)
+        .filter(([, qty]) => qty > 0)
+        .map(([rgbItemId, quantity]) =>
+          rgbService.returnStandalone(rgbItemId, { retailerId, quantity })
+        );
+      if (promises.length === 0) return;
+      await Promise.all(promises);
+      store.fetchRGBItems();
+      store.addNotification('success', 'Crates return recorded successfully');
+      setOpenReturnRetailerId(null);
+      setReturnFormValues({});
+      loadRetailers();
+    } catch (err: any) {
+      store.addNotification('error', err.response?.data?.message || 'Failed to record crate return');
+    } finally {
+      setSubmittingReturn(false);
+    }
+  };
 
   const loadRetailers = async () => {
     setLoading(true);
@@ -131,6 +159,10 @@ export const WorkerRetailersPage: React.FC = () => {
           <div className="space-y-2">
             {filteredRetailers.map((retailer) => {
               const outstanding = outstandingMap[retailer.id] || 0;
+              const activeBalances = retailer.rgbBalances?.filter(b => b.balance > 0) || [];
+              const totalCratesPending = activeBalances.reduce((s, b) => s + b.balance, 0);
+              const isOpen = openReturnRetailerId === retailer.id;
+
               return (
                 <div key={retailer.id} className="bg-white border border-gray-200 rounded-xl p-4 hover:border-blue-300 transition-colors">
                   <div className="flex items-start justify-between">
@@ -138,24 +170,133 @@ export const WorkerRetailersPage: React.FC = () => {
                       <p className="font-bold text-gray-900">{retailer.shopName}</p>
                       <p className="text-sm text-gray-500">{retailer.ownerName}</p>
                     </div>
-                    {outstanding > 0 && (
-                      <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-semibold rounded-full">
-                        Udhari: ₨{outstanding.toFixed(0)}
-                      </span>
+                    <div className="flex flex-col items-end gap-1">
+                      {outstanding > 0 && (
+                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-semibold rounded-full">
+                          Udhari: ₨{outstanding.toFixed(0)}
+                        </span>
+                      )}
+                      {totalCratesPending > 0 && (
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-xs font-semibold rounded-full">
+                          📦 {totalCratesPending} crates owed
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500">
+                    <div className="flex gap-4">
+                      {retailer.mobileNumber && (
+                        <div className="flex items-center gap-1">
+                          <Phone size={11} /> {retailer.mobileNumber}
+                        </div>
+                      )}
+                      {retailer.address && (
+                        <div className="flex items-center gap-1">
+                          <MapPin size={11} /> {retailer.address}
+                        </div>
+                      )}
+                    </div>
+                    {totalCratesPending > 0 && (
+                      <button
+                        onClick={() => {
+                          if (isOpen) {
+                            setOpenReturnRetailerId(null);
+                            setReturnFormValues({});
+                          } else {
+                            setOpenReturnRetailerId(retailer.id);
+                            const initial: Record<string, number> = {};
+                            activeBalances.forEach((b) => { initial[b.rgbItemId] = 0; });
+                            setReturnFormValues(initial);
+                          }
+                        }}
+                        className="px-2 py-1 text-xs font-semibold rounded bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors flex items-center gap-1"
+                      >
+                        <RotateCcw size={12} />
+                        {isOpen ? 'Cancel Return' : 'RGB Return'}
+                      </button>
                     )}
                   </div>
-                  <div className="flex gap-4 mt-2 text-xs text-gray-500">
-                    {retailer.mobileNumber && (
-                      <div className="flex items-center gap-1">
-                        <Phone size={11} /> {retailer.mobileNumber}
+
+                  {/* Inline Standalone Return Panel */}
+                  {isOpen && (
+                    <div className="mt-3 pt-3 border-t border-amber-200 bg-amber-50/50 p-3 rounded-lg">
+                      <p className="text-xs font-bold text-gray-800 mb-2 flex items-center gap-1">
+                        📦 Record Crate Return — {retailer.shopName}
+                      </p>
+                      <div className="space-y-2 mb-3">
+                        {activeBalances.map((b) => {
+                          const itemName = b.rgbItem?.name || 'RGB Crate';
+                          const returnQty = returnFormValues[b.rgbItemId] ?? 0;
+                          return (
+                            <div key={b.id} className="flex items-center justify-between text-xs bg-white p-2 rounded border border-amber-100">
+                              <div>
+                                <span className="font-semibold text-gray-800">{itemName}</span>
+                                <span className="ml-2 text-amber-700 font-medium">(Owes: {b.balance})</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-gray-500 text-[11px]">Return:</span>
+                                <div className="flex items-center justify-between border border-green-200 bg-green-50 rounded overflow-hidden h-6">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const val = Math.max(0, returnQty - 1);
+                                      setReturnFormValues(prev => ({ ...prev, [b.rgbItemId]: val }));
+                                    }}
+                                    disabled={returnQty <= 0}
+                                    className="w-5 h-full bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold flex items-center justify-center"
+                                  >
+                                    <Minus size={10} />
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={b.balance}
+                                    value={returnQty === 0 ? '' : returnQty}
+                                    placeholder="0"
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => {
+                                      const parsed = parseInt(e.target.value) || 0;
+                                      const val = Math.min(b.balance, Math.max(0, parsed));
+                                      setReturnFormValues(prev => ({ ...prev, [b.rgbItemId]: val }));
+                                    }}
+                                    className="w-8 text-center text-xs font-bold bg-transparent border-0 focus:outline-none p-0 text-green-900 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const val = Math.min(b.balance, returnQty + 1);
+                                      setReturnFormValues(prev => ({ ...prev, [b.rgbItemId]: val }));
+                                    }}
+                                    disabled={returnQty >= b.balance}
+                                    className="w-5 h-full bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold flex items-center justify-center"
+                                  >
+                                    <Plus size={10} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    )}
-                    {retailer.address && (
-                      <div className="flex items-center gap-1">
-                        <MapPin size={11} /> {retailer.address}
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => { setOpenReturnRetailerId(null); setReturnFormValues({}); }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          loading={submittingReturn}
+                          onClick={() => handleStandaloneReturnSubmit(retailer.id)}
+                          disabled={!Object.values(returnFormValues).some(v => v > 0)}
+                        >
+                          Confirm Return
+                        </Button>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card, Input, Select, Modal } from '../../components/common';
 import { useStore } from '../../store';
-import { Package, Plus, Trash2, Upload, X, Pencil, Minus, ImageIcon, ChevronDown, ChevronRight, Boxes, TrendingUp } from 'lucide-react';
+import { Package, Plus, Trash2, Upload, X, Pencil, Minus, ImageIcon, ChevronDown, ChevronRight, Boxes, TrendingUp, RotateCcw } from 'lucide-react';
 import { StockBatch, RGBItem, Product, Brand } from '../../types';
 import { inventoryService } from '../../services/inventory';
 import { productsService } from '../../services/products';
@@ -212,6 +212,11 @@ export const InventoryPage: React.FC = () => {
   const [deleteRgbLoading, setDeleteRgbLoading] = useState(false);
   const [deleteRgbError, setDeleteRgbError] = useState('');
 
+  // Standalone RGB Return state for Inventory page
+  const [returnRowKey, setReturnRowKey] = useState<string | null>(null);
+  const [returnQtyInput, setReturnQtyInput] = useState<number>(0);
+  const [submittingInventoryReturn, setSubmittingInventoryReturn] = useState(false);
+
   // ── Store data ────────────────────────────────────────────────────────────────
   const products = store.products;
   const stockBatches = store.stockBatches;
@@ -253,12 +258,14 @@ export const InventoryPage: React.FC = () => {
   }, [store.retailers]);
 
   const retailerBalancesList = useMemo(() => {
-    const list: { retailerName: string; shopName: string; itemName: string; balance: number; updatedAt: Date | string }[] = [];
+    const list: { retailerId: string; rgbItemId: string; retailerName: string; shopName: string; itemName: string; balance: number; updatedAt: Date | string }[] = [];
     store.retailers.forEach((r) => {
       r.rgbBalances?.forEach((b) => {
         if (b.balance > 0) {
           const item = b.rgbItem || rgbItems.find((i) => i.id === b.rgbItemId);
           list.push({
+            retailerId: r.id,
+            rgbItemId: b.rgbItemId,
             retailerName: r.ownerName,
             shopName: r.shopName,
             itemName: item?.name || 'RGB Crate',
@@ -740,38 +747,73 @@ export const InventoryPage: React.FC = () => {
                   </Button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                   {rgbItems.map((item) => {
                     return (
-                      <div key={item.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl p-3 hover:border-red-300 transition-all">
-                        <div className="w-10 h-10 rounded-lg bg-white border border-gray-200 flex-shrink-0 flex items-center justify-center overflow-hidden">
-                          <span className="text-lg">📦</span>
+                      <div
+                        key={item.id}
+                        className="bg-white border-2 border-slate-100 hover:border-amber-300 rounded-2xl p-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center font-bold text-xl shadow-sm">
+                              📦
+                            </div>
+                            <div>
+                              <h4 className="font-extrabold text-slate-800 text-sm leading-tight">{item.name}</h4>
+                              <p className="text-[11px] text-slate-400 mt-0.5">
+                                Updated {new Date(item.lastUpdated).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => { setDeletingRgbItem(item); setDeleteRgbError(''); }}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-50 hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"
+                            title="Delete RGB Item"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-800 text-sm truncate">{item.name}</p>
-                          <p className="text-xs text-gray-500">Updated: {new Date(item.lastUpdated).toLocaleDateString()}</p>
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button onClick={() => handleRGBAdjust(item.id, item.stockQuantity, -1)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-100 hover:bg-red-200 text-red-700 font-bold transition-colors"><Minus size={13} /></button>
-                          <input
-                            type="number"
-                            min="0"
-                            value={rgbStockInputs[item.id] ?? String(item.stockQuantity)}
-                            onFocus={(e) => {
-                              setRgbStockInputs((prev) => ({ ...prev, [item.id]: String(item.stockQuantity) }));
-                              e.target.select();
-                            }}
-                            onChange={(e) =>
-                              setRgbStockInputs((prev) => ({ ...prev, [item.id]: e.target.value }))
-                            }
-                            onBlur={(e) => handleRGBSetAbsolute(item.id, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                            }}
-                            className="w-12 text-center font-bold text-blue-700 text-sm border border-gray-200 rounded-md focus:border-blue-400 focus:outline-none bg-white py-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          />
-                          <button onClick={() => handleRGBAdjust(item.id, item.stockQuantity, 1)} className="w-7 h-7 flex items-center justify-center rounded-md bg-green-100 hover:bg-green-200 text-green-700 font-bold transition-colors"><Plus size={13} /></button>
-                          <button onClick={() => { setDeletingRgbItem(item); setDeleteRgbError(''); }} className="w-7 h-7 flex items-center justify-center rounded-md bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors ml-1" title="Delete"><Trash2 size={12} /></button>
+
+                        <div className="bg-slate-50/80 border border-slate-200/60 rounded-xl p-2.5 flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Warehouse Stock</span>
+                            <span className="text-lg font-black text-slate-800">{item.stockQuantity} <span className="text-xs font-normal text-slate-500">crates</span></span>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleRGBAdjust(item.id, item.stockQuantity, -1)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500 hover:bg-red-600 active:scale-95 text-white font-bold transition-all shadow-2xs"
+                              title="Decrease 1"
+                            >
+                              <Minus size={13} />
+                            </button>
+                            <input
+                              type="number"
+                              min="0"
+                              value={rgbStockInputs[item.id] ?? String(item.stockQuantity)}
+                              onFocus={(e) => {
+                                setRgbStockInputs((prev) => ({ ...prev, [item.id]: String(item.stockQuantity) }));
+                                e.target.select();
+                              }}
+                              onChange={(e) =>
+                                setRgbStockInputs((prev) => ({ ...prev, [item.id]: e.target.value }))
+                              }
+                              onBlur={(e) => handleRGBSetAbsolute(item.id, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                              }}
+                              className="w-11 text-center font-extrabold text-slate-900 text-sm border border-slate-300 rounded-lg focus:border-amber-500 focus:outline-none bg-white py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <button
+                              onClick={() => handleRGBAdjust(item.id, item.stockQuantity, 1)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg bg-green-600 hover:bg-green-700 active:scale-95 text-white font-bold transition-all shadow-2xs"
+                              title="Increase 1"
+                            >
+                              <Plus size={13} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -795,22 +837,104 @@ export const InventoryPage: React.FC = () => {
                         <th className="text-left py-3 px-4">RGB Type</th>
                         <th className="text-right py-3 px-4">Quantity Owed</th>
                         <th className="text-right py-3 px-4">Last Transaction</th>
+                        <th className="text-center py-3 px-4">Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {retailerBalancesList.map((row, idx) => (
-                        <tr key={idx} className="border-b hover:bg-gray-50">
-                          <td className="py-3 px-4">
-                            <span className="font-semibold text-gray-900 block">{row.shopName}</span>
-                            <span className="text-xs text-gray-500">{row.retailerName}</span>
-                          </td>
-                          <td className="py-3 px-4 font-medium text-gray-700">{row.itemName}</td>
-                          <td className="py-3 px-4 text-right font-bold text-amber-600">{row.balance} crates</td>
-                          <td className="py-3 px-4 text-right text-xs text-gray-500">
-                            {row.updatedAt ? new Date(row.updatedAt).toLocaleDateString() : 'N/A'}
-                          </td>
-                        </tr>
-                      ))}
+                      {retailerBalancesList.map((row, idx) => {
+                        const key = `${row.retailerId}_${row.rgbItemId}`;
+                        const isOpen = returnRowKey === key;
+
+                        return (
+                          <tr key={idx} className="border-b hover:bg-gray-50">
+                            <td className="py-3 px-4">
+                              <span className="font-semibold text-gray-900 block">{row.shopName}</span>
+                              <span className="text-xs text-gray-500">{row.retailerName}</span>
+                            </td>
+                            <td className="py-3 px-4 font-medium text-gray-700">{row.itemName}</td>
+                            <td className="py-3 px-4 text-right font-bold text-amber-600">{row.balance} crates</td>
+                            <td className="py-3 px-4 text-right text-xs text-gray-500">
+                              {row.updatedAt ? new Date(row.updatedAt).toLocaleDateString() : 'N/A'}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              {isOpen ? (
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <div className="flex items-center border border-green-200 bg-green-50 rounded-lg overflow-hidden h-7">
+                                    <button
+                                      type="button"
+                                      onClick={() => setReturnQtyInput(prev => Math.max(0, prev - 1))}
+                                      disabled={returnQtyInput <= 0}
+                                      className="w-6 h-full bg-green-600 hover:bg-green-700 disabled:bg-gray-200 text-white font-bold flex items-center justify-center transition-colors"
+                                    >
+                                      <Minus size={11} />
+                                    </button>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={row.balance}
+                                      value={returnQtyInput === 0 ? '' : returnQtyInput}
+                                      placeholder="0"
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) => {
+                                        const parsed = parseInt(e.target.value) || 0;
+                                        setReturnQtyInput(Math.min(row.balance, Math.max(0, parsed)));
+                                      }}
+                                      className="w-10 text-center text-xs font-bold bg-transparent border-0 focus:outline-none p-0 text-green-900 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => setReturnQtyInput(prev => Math.min(row.balance, prev + 1))}
+                                      disabled={returnQtyInput >= row.balance}
+                                      className="w-6 h-full bg-green-600 hover:bg-green-700 disabled:bg-gray-200 text-white font-bold flex items-center justify-center transition-colors"
+                                    >
+                                      <Plus size={11} />
+                                    </button>
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    loading={submittingInventoryReturn}
+                                    disabled={returnQtyInput <= 0}
+                                    onClick={async () => {
+                                      setSubmittingInventoryReturn(true);
+                                      try {
+                                        await rgbService.returnStandalone(row.rgbItemId, { retailerId: row.retailerId, quantity: returnQtyInput });
+                                        store.addNotification('success', 'Crates return recorded');
+                                        setReturnRowKey(null);
+                                        setReturnQtyInput(0);
+                                        loadRGBItems();
+                                        store.fetchRetailers();
+                                      } catch (err: any) {
+                                        store.addNotification('error', err.response?.data?.message || 'Failed to record return');
+                                      } finally {
+                                        setSubmittingInventoryReturn(false);
+                                      }
+                                    }}
+                                  >
+                                    Confirm
+                                  </Button>
+                                  <button
+                                    onClick={() => setReturnRowKey(null)}
+                                    className="text-xs font-semibold text-gray-400 hover:text-gray-600 px-1"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setReturnRowKey(key);
+                                    setReturnQtyInput(1);
+                                  }}
+                                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors inline-flex items-center gap-1"
+                                >
+                                  <RotateCcw size={11} />
+                                  RGB Return
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
