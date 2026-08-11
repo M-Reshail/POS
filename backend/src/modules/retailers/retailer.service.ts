@@ -1,16 +1,12 @@
 /**
  * Retailers Service
  *
- * Manages retail shop accounts (credit customers).
- * Includes credit balance computation and RGB crate tracking.
- *
- * Business Rules enforced:
- *  - Credit limit alerts at 70% (orange), 90% (red), 100% (block)
- *  - RGB crate balance is tracked independently of monetary payments
+ * Manages retail shop accounts.
+ * Includes outstanding balance computation and RGB crate tracking.
  */
 
 import { prisma } from '../../lib/prisma';
-import { PriceTier, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,25 +16,9 @@ export interface CreateRetailerInput {
   mobileNumber: string;
   address: string;
   deliveryLocation?: string;
-  creditLimit: number;
-  priceTier?: PriceTier;
 }
 
 export interface UpdateRetailerInput extends Partial<CreateRetailerInput> {}
-
-
-export type CreditStatus = 'ok' | 'warning' | 'alert' | 'blocked';
-
-// ── Credit Status Helper ──────────────────────────────────────────────────────
-
-const computeCreditStatus = (outstanding: number, creditLimit: number): CreditStatus => {
-  if (creditLimit <= 0) return 'ok';
-  const ratio = outstanding / creditLimit;
-  if (ratio >= 1.0) return 'blocked';
-  if (ratio >= 0.9) return 'alert';
-  if (ratio >= 0.7) return 'warning';
-  return 'ok';
-};
 
 // ── Retailer Outstanding Balance ──────────────────────────────────────────────
 
@@ -53,7 +33,7 @@ const getRetailerOutstanding = async (retailerId: string): Promise<number> => {
 
 // ── Service Methods ───────────────────────────────────────────────────────────
 
-/** List all retailers with outstanding balance and credit status */
+/** List all retailers with outstanding balance */
 export const getAllRetailers = async () => {
   const retailers = await prisma.retailer.findMany({
     orderBy: { shopName: 'asc' },
@@ -69,8 +49,6 @@ export const getAllRetailers = async () => {
       return {
         ...r,
         outstanding,
-        creditAvailable: Math.max(0, Number(r.creditLimit) - outstanding),
-        creditStatus: computeCreditStatus(outstanding, Number(r.creditLimit)),
       };
     })
   );
@@ -88,18 +66,13 @@ export const getRetailerById = async (id: string) => {
   return {
     ...retailer,
     outstanding,
-    creditAvailable: Math.max(0, Number(retailer.creditLimit) - outstanding),
-    creditStatus: computeCreditStatus(outstanding, Number(retailer.creditLimit)),
   };
 };
 
 /** Create a new retailer */
 export const createRetailer = async (input: CreateRetailerInput) => {
   return prisma.retailer.create({
-    data: {
-      ...input,
-      creditLimit: new Prisma.Decimal(input.creditLimit),
-    },
+    data: { ...input },
   });
 };
 
@@ -109,9 +82,6 @@ export const updateRetailer = async (id: string, input: UpdateRetailerInput) => 
   if (!exists) throw new Error('RETAILER_NOT_FOUND');
 
   const data: Prisma.RetailerUpdateInput = { ...input };
-  if (input.creditLimit !== undefined) {
-    data.creditLimit = new Prisma.Decimal(input.creditLimit);
-  }
 
   return prisma.retailer.update({ where: { id }, data });
 };
@@ -145,12 +115,9 @@ export const getRetailerLedger = async (
       id: retailer.id,
       shopName: retailer.shopName,
       ownerName: retailer.ownerName,
-      creditLimit: Number(retailer.creditLimit),
     },
     outstanding,
-    creditStatus: computeCreditStatus(outstanding, Number(retailer.creditLimit)),
     entries,
     pagination: { total, limit, offset },
   };
 };
-

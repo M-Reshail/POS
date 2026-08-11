@@ -22,14 +22,13 @@ export interface DirectPaymentInput {
 
 // ── Service Methods ───────────────────────────────────────────────────────────
 
-/** Get the credit summary across all retailers (for admin overview) */
+/** Get the outstanding balance summary across all retailers (for admin overview) */
 export const getLedgerSummary = async () => {
   const retailers = await prisma.retailer.findMany({
     select: {
       id: true,
       shopName: true,
       ownerName: true,
-      creditLimit: true,
       ledgerEntries: {
         orderBy: { createdAt: 'desc' },
         take: 1,
@@ -41,19 +40,11 @@ export const getLedgerSummary = async () => {
 
   return retailers.map((r) => {
     const outstanding = r.ledgerEntries[0] ? Number(r.ledgerEntries[0].balance) : 0;
-    const creditLimit = Number(r.creditLimit);
-    const ratio = creditLimit > 0 ? outstanding / creditLimit : 0;
     return {
       retailerId: r.id,
       shopName: r.shopName,
       ownerName: r.ownerName,
-      creditLimit,
       outstanding,
-      creditAvailable: Math.max(0, creditLimit - outstanding),
-      creditStatus:
-        ratio >= 1.0 ? 'blocked' :
-        ratio >= 0.9 ? 'alert' :
-        ratio >= 0.7 ? 'warning' : 'ok',
     };
   });
 };
@@ -125,7 +116,6 @@ export const getRetailerLedgerEntries = async (
     retailer: {
       id: retailer.id,
       shopName: retailer.shopName,
-      creditLimit: Number(retailer.creditLimit),
     },
     outstanding,
     entries,

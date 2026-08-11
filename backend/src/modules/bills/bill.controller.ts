@@ -19,7 +19,8 @@ const billItemSchema = z.object({
 
 const createBillSchema = z.object({
   retailerId: z.string().uuid('Invalid retailer ID.'),
-  items: z.array(billItemSchema).min(1, 'Bill must have at least one item.'),
+  // items may now be empty — an RGB-only bill (e.g. crate return visit) is valid
+  items: z.array(billItemSchema).min(0).default([]),
   discount: z.number().min(0).optional().default(0),
   // 'udhar' is excluded — only cash, credit, generate-only allowed for new sales
   // (Old bills with udhar in DB are untouched; this only blocks new creation)
@@ -36,6 +37,19 @@ const createBillSchema = z.object({
     cratesGiven:    z.number().int().min(0).default(0),
     cratesReturned: z.number().int().min(0).default(0),
   })).optional().default([]),
+}).superRefine((data, ctx) => {
+  // A bill must have at least one product item OR at least one non-zero RGB exchange.
+  const hasProducts = data.items.length > 0;
+  const hasRgb = (data.rgbExchanges ?? []).some(
+    (e) => e.cratesGiven > 0 || e.cratesReturned > 0
+  );
+  if (!hasProducts && !hasRgb) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'A bill must contain at least one product or a non-zero RGB crate exchange.',
+      path: ['items'],
+    });
+  }
 });
 
 const listBillsSchema = z.object({
@@ -59,13 +73,13 @@ const ERROR_MAP = {
   RETAILER_NOT_FOUND: { status: 404, message: 'Retailer not found.' },
   WORKER_NOT_FOUND: { status: 404, message: 'Worker account not found or inactive.' },
   BILL_NOT_FOUND: { status: 404, message: 'Bill not found.' },
-  CREDIT_LIMIT_EXCEEDED: { status: 422, message: 'Retailer has reached their credit limit. Payment required before new sale.' },
   BILL_ALREADY_PAID: { status: 409, message: 'This bill is already fully paid.' },
   BILL_ALREADY_VOIDED: { status: 409, message: 'This bill has already been voided.' },
   BILL_VOIDED: { status: 409, message: 'Cannot add payment to a voided bill.' },
   BILL_ACCESS_DENIED: { status: 403, message: 'You can only view your own bills.' },
   PAYMENT_EXCEEDS_PENDING: { status: 422, message: 'Payment amount exceeds pending balance.' },
   INSUFFICIENT_RGB_STOCK: { status: 422, message: 'Insufficient warehouse crate stock. The entire sale has been rolled back.' },
+  EMPTY_BILL: { status: 422, message: 'A bill must contain at least one product or a non-zero RGB crate exchange.' },
 };
 
 // ── Controllers ───────────────────────────────────────────────────────────────

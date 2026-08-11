@@ -12,6 +12,8 @@
  *  5. Voided Bill Logging — cancelled bills are soft-deleted with audit trail
  *  6. Ledger Integrity — every bill creates a ledger entry with running balance
  *  7. Timestamped Accountability — every mutation tied to a user ID
+ *  8. RGB-Only Bills Allowed — empty product cart is valid if rgbExchanges has at
+ *     least one non-zero entry (e.g. a retailer dropping off crates with no purchase)
  */
 
 import { prisma } from '../../lib/prisma';
@@ -92,18 +94,58 @@ interface PriceVarianceFlag {
  * Atomic transaction: stock deduction + bill creation + ledger entry.
  */
 export const createBill = async (input: CreateBillInput) => {
+  const hasProducts = input.items.length > 0;
+  const hasRgb = (input.rgbExchanges ?? []).some(
+    (e) => e.cratesGiven > 0 || e.cratesReturned > 0
+  );
+
+  // 0. Guard: bill must have at least one product OR one non-zero RGB exchange
+  if (!hasProducts && !hasRgb) throw new Error('EMPTY_BILL');
+
+  // RGB-Only Exchange: No products in cart → process RGB activity directly with no Bill record
+  if (!hasProducts && hasRgb) {
+    return prisma.$transaction(async (tx) => {
+      const retailer = await tx.retailer.findUnique({ where: { id: input.retailerId } });
+      if (!retailer) throw new Error('RETAILER_NOT_FOUND');
+
+      const worker = await tx.user.findUnique({ where: { id: input.workerId } });
+      if (!worker || !worker.isActive) throw new Error('WORKER_NOT_FOUND');
+
+      for (const exchange of input.rgbExchanges!) {
+        if (exchange.cratesGiven > 0) {
+          await issueRGB(tx, {
+            retailerId: input.retailerId,
+            rgbItemId: exchange.rgbItemId,
+            quantity: exchange.cratesGiven,
+            saleId: undefined, // left null — no Bill record linked
+            workerId: input.workerId,
+          });
+        }
+        if (exchange.cratesReturned > 0) {
+          await returnRGB(tx, {
+            retailerId: input.retailerId,
+            rgbItemId: exchange.rgbItemId,
+            quantity: exchange.cratesReturned,
+            workerId: input.workerId,
+          });
+        }
+      }
+
+      return {
+        isRgbOnly: true,
+        message: 'Crate exchange recorded successfully.',
+        bill: null,
+        priceVariances: [],
+      };
+    });
+  }
+
   return prisma.$transaction(async (tx) => {
-    // 1. Validate retailer and check credit limit ──────────────────────────────
+    // 1. Validate retailer ────────────────────────────────────────────────────
     const retailer = await tx.retailer.findUnique({ where: { id: input.retailerId } });
     if (!retailer) throw new Error('RETAILER_NOT_FOUND');
 
     const currentBalance = await getLastLedgerBalance(tx, input.retailerId);
-    const creditLimit = Number(retailer.creditLimit);
-
-    // Block if already at or over credit limit
-    if (creditLimit > 0 && currentBalance >= creditLimit) {
-      throw new Error('CREDIT_LIMIT_EXCEEDED');
-    }
 
     // 2. Validate worker ───────────────────────────────────────────────────────
     const worker = await tx.user.findUnique({ where: { id: input.workerId } });
@@ -298,8 +340,41 @@ export const getBills = async (options: {
     prisma.bill.count({ where }),
   ]);
 
-  return { bills, total, limit: options.limit ?? 50, offset: options.offset ?? 0 };
+  // Attach RGB exchange data — one batch query, then group by saleId.
+  // RGBTransaction.saleId is a loose string FK to Bill.id.
+  const billIds = bills.map((b) => b.id);
+  const rgbTxns = billIds.length > 0
+    ? await prisma.rGBTransaction.findMany({
+        where: { saleId: { in: billIds } },
+        include: { rgbItem: { select: { name: true } } },
+        orderBy: { createdAt: 'asc' },
+      })
+    : [];
+
+  // Group by saleId
+  const rgbBySaleId = new Map<string, typeof rgbTxns>();
+  for (const t of rgbTxns) {
+    if (!t.saleId) continue;
+    if (!rgbBySaleId.has(t.saleId)) rgbBySaleId.set(t.saleId, []);
+    rgbBySaleId.get(t.saleId)!.push(t);
+  }
+
+  // Merge into bills
+  const billsWithRGB = bills.map((b) => ({
+    ...b,
+    rgbExchanges: (rgbBySaleId.get(b.id) ?? []).map((t) => ({
+      id:        t.id,
+      type:      t.type.toLowerCase() as 'issue' | 'return',
+      quantity:  t.quantity,
+      rgbItemId: t.rgbItemId,
+      itemName:  t.rgbItem.name,
+      createdAt: t.createdAt,
+    })),
+  }));
+
+  return { bills: billsWithRGB, total, limit: options.limit ?? 50, offset: options.offset ?? 0 };
 };
+
 
 /** Get a single bill with full detail */
 export const getBillById = async (id: string, requestingUserId?: string, isAdmin = false) => {
@@ -321,8 +396,26 @@ export const getBillById = async (id: string, requestingUserId?: string, isAdmin
     throw new Error('BILL_ACCESS_DENIED');
   }
 
-  return bill;
+  // Attach RGB exchange transactions for this bill
+  const rgbTxns = await prisma.rGBTransaction.findMany({
+    where: { saleId: id },
+    include: { rgbItem: { select: { name: true } } },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  return {
+    ...bill,
+    rgbExchanges: rgbTxns.map((t) => ({
+      id:        t.id,
+      type:      t.type.toLowerCase() as 'issue' | 'return',
+      quantity:  t.quantity,
+      rgbItemId: t.rgbItemId,
+      itemName:  t.rgbItem.name,
+      createdAt: t.createdAt,
+    })),
+  };
 };
+
 
 /**
  * Add a payment to a bill.

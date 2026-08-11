@@ -81,7 +81,7 @@ export const WorkerRetailersPage: React.FC = () => {
       return;
     }
     try {
-      await retailersService.create({ ...addForm, creditLimit: 0, priceTier: 'standard' });
+      await retailersService.create({ ...addForm });
       store.addNotification('success', 'Retailer added');
       setShowAddModal(false);
       setAddForm({ shopName: '', ownerName: '', mobileNumber: '', address: '', deliveryLocation: '' });

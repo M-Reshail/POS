@@ -37,11 +37,6 @@ enum AdjustmentReason {
   manual_correction @map("manual-correction")
 }
 
-enum PriceTier {
-  standard
-  premium
-  discount
-}
 
 enum LedgerEntryType {
   sale
@@ -208,9 +203,7 @@ model Retailer {
   mobileNumber     String    @map("mobile_number")
   address          String
   deliveryLocation String?   @map("delivery_location")
-  creditLimit      Decimal   @map("credit_limit") @db.Decimal(12, 2)
-  priceTier        PriceTier @default(standard)   @map("price_tier")
-  createdAt        DateTime  @default(now())       @map("created_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
 
   // Relations
   bills         Bill[]

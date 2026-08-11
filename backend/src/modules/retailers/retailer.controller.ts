@@ -6,7 +6,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import * as retailerService from './retailer.service';
 import { ok, created, badRequest, handleServiceError } from '../../lib/response';
-import { PriceTier } from '@prisma/client';
+
 
 // ── Validation Schemas ────────────────────────────────────────────────────────
 
@@ -16,8 +16,6 @@ const createRetailerSchema = z.object({
   mobileNumber: z.string().min(7, 'Invalid mobile number.').trim(),
   address: z.string().min(1, 'Address is required.').trim(),
   deliveryLocation: z.string().trim().optional(),
-  creditLimit: z.number().min(0, 'Credit limit cannot be negative.'),
-  priceTier: z.nativeEnum(PriceTier).default(PriceTier.standard),
 });
 
 const updateRetailerSchema = createRetailerSchema.partial();

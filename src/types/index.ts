@@ -129,8 +129,6 @@ export interface Retailer {
   mobileNumber: string;
   address: string;
   deliveryLocation?: string;
-  creditLimit: number;
-  priceTier: 'standard' | 'premium' | 'discount';
   createdAt: Date;
   rgbBalances?: RGBRetailerBalance[];
 }
@@ -159,6 +157,32 @@ export interface BillItem {
   product?: { brand: string; variant: string };
 }
 
+/** A single RGB crate transaction attached to a bill (issue or return) */
+export interface RGBExchangeEntry {
+  id: string;
+  type: 'issue' | 'return';
+  quantity: number;
+  rgbItemId: string;
+  itemName: string;   // e.g. "Coke"
+  createdAt: Date;
+}
+
+/** Full RGB transaction audit log record */
+export interface RGBTransactionRecord {
+  id: string;
+  retailerId: string;
+  retailerName: string;
+  retailerOwner?: string;
+  rgbItemId: string;
+  itemName: string;
+  type: 'issue' | 'return';
+  quantity: number;
+  saleId?: string | null;
+  workerId?: string | null;
+  workerName?: string;
+  createdAt: string | Date;
+}
+
 export interface PaymentRecord {
   id: string;
   amount: number;
@@ -185,6 +209,8 @@ export interface Bill {
   status: 'pending' | 'paid' | 'partial';
   retailer?: { id: string; shopName: string; ownerName: string; mobileNumber?: string };
   worker?: { id: string; name: string };
+  /** Crate exchange transactions linked to this bill (populated from rgb_transactions by saleId) */
+  rgbExchanges?: RGBExchangeEntry[];
   createdAt: Date;
   updatedAt: Date;
 }

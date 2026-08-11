@@ -4,9 +4,9 @@ import { Button, Card } from '../../components/common';
 import { useStore } from '../../store';
 import {
   ShoppingCart, Trash2, Droplet, Edit2, Check, Search, X,
-  History, UserPlus, ChevronLeft, Minus, Plus,
+  History, UserPlus, ChevronLeft, Minus, Plus, RotateCcw,
 } from 'lucide-react';
-import { Bill, BillItem, RGBRetailerBalance } from '../../types';
+import { Bill, BillItem, RGBRetailerBalance, RGBTransactionRecord } from '../../types';
 import { retailersService } from '../../services/retailers';
 import { billsService } from '../../services/bills';
 import { rgbService } from '../../services/rgb';
@@ -33,10 +33,12 @@ const getProductImage = (imageUrl?: string): string | null => {
 
 export const SalesPage: React.FC = () => {
   const store = useStore();
-  const { bills, retailers, products, stockBatches, rgbItems } = store;
+  const retailers = store.retailers;
+  const products = store.products;
+  const { bills, stockBatches, rgbItems } = store;
 
-  // View
-  const [viewMode, setViewMode] = useState<'create' | 'history'>('create');
+  // View switch: 'create' | 'history' | 'rgbHistory'
+  const [viewMode, setViewMode] = useState<'create' | 'history' | 'rgbHistory'>('create');
   const [selectedProductBrand, setSelectedProductBrand] = useState('');
   const [showRGB, setShowRGB] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -65,6 +67,10 @@ export const SalesPage: React.FC = () => {
   const [historyDateFilter, setHistoryDateFilter] = useState('');
   const [selectedBillForDetails, setSelectedBillForDetails] = useState<string | null>(null);
   const [additionalPaymentAmount, setAdditionalPaymentAmount] = useState('');
+
+  // RGB History tab
+  const [rgbHistory, setRgbHistory] = useState<RGBTransactionRecord[]>([]);
+  const [rgbHistoryLoading, setRgbHistoryLoading] = useState(false);
 
   // Add Retailer Modal
   const [showAddRetailerModal, setShowAddRetailerModal] = useState(false);
@@ -310,8 +316,12 @@ export const SalesPage: React.FC = () => {
       store.addNotification('error', 'Select a retailer in Bill Summary');
       return;
     }
-    if (cartItems.length === 0) {
-      store.addNotification('error', 'Add at least one product');
+    // Allow RGB-only bill: empty cart is valid if there's at least one non-zero RGB exchange
+    const hasRgbActivity = Object.values(rgbExchanges).some(
+      (v) => v.cratesGiven > 0 || v.cratesReturned > 0
+    );
+    if (cartItems.length === 0 && !hasRgbActivity) {
+      store.addNotification('error', 'Add at least one product or record a crate exchange');
       return;
     }
     if (paymentMethod === 'cash' && amountReceivedNum === 0) {
@@ -349,28 +359,45 @@ export const SalesPage: React.FC = () => {
 
     try {
       await store.checkoutBill(billPayload);
-      const billForReceipt: Bill = {
-        id: Date.now().toString(),
-        billNumber: `BILL-${Date.now()}`,
-        retailerId: selectedRetailer,
-        workerId: store.currentUser?.id || '',
-        items: cartItems,
-        subtotal,
-        discount: totalDiscounts,
-        total,
-        paidAmount: paidAmt,
-        pendingAmount: pendingAmt,
-        paymentMode: paymentMethod,
-        previousPendingAdded: manualPendingNum,
-        paymentHistory: [],
-        status: isPaid ? 'paid' : paymentMethod === 'cash' && amountReceivedNum > 0 ? 'partial' : 'pending',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      setPendingReceiptBill(billForReceipt);
-      setReceiptPendingBills(retailerPendingBills);
+      if (cartItems.length > 0) {
+        const billForReceipt: Bill = {
+          id: Date.now().toString(),
+          billNumber: `BILL-${Date.now()}`,
+          retailerId: selectedRetailer,
+          workerId: store.currentUser?.id || '',
+          items: cartItems,
+          subtotal,
+          discount: totalDiscounts,
+          total,
+          paidAmount: paidAmt,
+          pendingAmount: pendingAmt,
+          paymentMode: paymentMethod,
+          previousPendingAdded: manualPendingNum,
+          paymentHistory: [],
+          status: isPaid ? 'paid' : paymentMethod === 'cash' && amountReceivedNum > 0 ? 'partial' : 'pending',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        setPendingReceiptBill(billForReceipt);
+        setReceiptPendingBills(retailerPendingBills);
+      } else {
+        // RGB-only exchange: no product receipt needed, reset form fields cleanly
+        resetForm();
+      }
     } catch (err) {
       // Error handled in store
+    }
+  };
+
+  const loadRgbHistory = async () => {
+    setRgbHistoryLoading(true);
+    try {
+      const data = await rgbService.getTransactions();
+      setRgbHistory(data.transactions || []);
+    } catch {
+      store.addNotification('error', 'Failed to load RGB history');
+    } finally {
+      setRgbHistoryLoading(false);
     }
   };
 
@@ -469,7 +496,7 @@ Thank you for your business!
     setRetailerFormErrors({});
 
     try {
-      const r = await retailersService.create({ ...newRetailerForm, creditLimit: 0, priceTier: 'standard' });
+      const r = await retailersService.create({ ...newRetailerForm });
       store.fetchRetailers();
       setSelectedRetailer(r.id);
       store.addNotification('success', 'Retailer added');
@@ -516,24 +543,94 @@ Thank you for your business!
   return (
     <Layout sidebarItems={sidebarItems}>
       <PageContainer>
-        {/* Tabs */}
-        <div className="mb-4 flex gap-1 border-b border-gray-200">
-          <button
-            onClick={() => setViewMode('create')}
-            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-              viewMode === 'create' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            <ShoppingCart size={14} className="inline mr-1" /> Create Sale
-          </button>
-          <button
-            onClick={() => { setViewMode('history'); store.fetchBills(); }}
-            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-              viewMode === 'history' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            <History size={14} className="inline mr-1" /> Bill History
-          </button>
+        {/* Sticky Header Container: Tabs + Search & Filter Controls */}
+        <div className="sticky top-0 z-30 bg-gray-50/95 backdrop-blur-md -mt-3 sm:-mt-4 md:-mt-6 -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6 pt-3 pb-3 mb-4 border-b border-gray-200/80 shadow-xs transition-all">
+          {/* Tabs */}
+          <div className="flex gap-1 overflow-x-auto whitespace-nowrap scrollbar-none">
+            <button
+              onClick={() => setViewMode('create')}
+              className={`px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
+                viewMode === 'create' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <ShoppingCart size={14} /> Create Sale
+            </button>
+            <button
+              onClick={() => { setViewMode('history'); store.fetchBills(); }}
+              className={`px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
+                viewMode === 'history' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <History size={14} /> Bill History
+            </button>
+            <button
+              onClick={() => { setViewMode('rgbHistory'); loadRgbHistory(); }}
+              className={`px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
+                viewMode === 'rgbHistory' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <RotateCcw size={14} /> RGB History
+            </button>
+          </div>
+
+          {/* Sticky Search & Filter Controls for History views */}
+          {viewMode === 'history' && (
+            <div className="flex gap-2 sm:gap-3 mt-2.5 flex-wrap items-center">
+              <div className="relative flex-1 min-w-48">
+                <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search bill# or retailer..."
+                  value={historySearchTerm}
+                  onChange={(e) => setHistorySearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-200 rounded-lg bg-white focus:border-blue-400 focus:outline-none shadow-2xs"
+                />
+              </div>
+              <input
+                type="date"
+                value={historyDateFilter}
+                onChange={(e) => setHistoryDateFilter(e.target.value)}
+                className="text-xs sm:text-sm border border-gray-200 rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white focus:border-blue-400 focus:outline-none shadow-2xs"
+              />
+              {(historySearchTerm || historyDateFilter) && (
+                <button
+                  onClick={() => { setHistorySearchTerm(''); setHistoryDateFilter(''); }}
+                  className="text-xs text-blue-600 hover:underline font-semibold"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+
+          {viewMode === 'rgbHistory' && (
+            <div className="flex gap-2 sm:gap-3 mt-2.5 flex-wrap items-center">
+              <div className="relative flex-1 min-w-48">
+                <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search retailer or crate item..."
+                  value={historySearchTerm}
+                  onChange={(e) => setHistorySearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-200 rounded-lg bg-white focus:border-blue-400 focus:outline-none shadow-2xs"
+                />
+              </div>
+              <input
+                type="date"
+                value={historyDateFilter}
+                onChange={(e) => setHistoryDateFilter(e.target.value)}
+                className="text-xs sm:text-sm border border-gray-200 rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white focus:border-blue-400 focus:outline-none shadow-2xs"
+              />
+              {(historySearchTerm || historyDateFilter) && (
+                <button
+                  onClick={() => { setHistorySearchTerm(''); setHistoryDateFilter(''); }}
+                  className="text-xs text-blue-600 hover:underline font-semibold"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── CREATE SALE ── */}
@@ -845,7 +942,7 @@ Thank you for your business!
                     )
                   ) : (
                     // Product variant grid with real-time stepper controls
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 sm:gap-2">
                       {filteredProducts.map((product) => {
                         const effectiveStock = product.availableStock - (cartStockMap[product.id] ?? 0);
                         const cartQty = cartStockMap[product.id] ?? 0;
@@ -858,7 +955,7 @@ Thank you for your business!
                         return (
                           <div
                             key={product.id}
-                            className={`relative flex flex-col p-2.5 border-2 rounded-lg transition-all duration-150 bg-white ${
+                            className={`relative flex flex-col p-1.5 sm:p-2.5 border-2 rounded-lg transition-all duration-150 bg-white ${
                               isFullyOOS
                                 ? 'border-gray-100 opacity-60'
                                 : isAllInCart
@@ -871,7 +968,7 @@ Thank you for your business!
                             {/* Out of Stock overlay */}
                             {isFullyOOS && (
                               <div className="absolute inset-0 flex items-center justify-center rounded-lg z-10 pointer-events-none">
-                                <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full border border-red-200">
+                                <span className="bg-red-100 text-red-600 text-[10px] sm:text-xs font-bold px-1.5 py-0.5 rounded-full border border-red-200">
                                   Out of Stock
                                 </span>
                               </div>
@@ -879,7 +976,7 @@ Thank you for your business!
 
                             {/* Product image */}
                             {imgUrl && (
-                              <div className="w-full aspect-video rounded-md overflow-hidden mb-1.5 bg-gray-50">
+                              <div className="w-full aspect-[4/3] rounded-md overflow-hidden mb-1 sm:mb-1.5 bg-gray-50">
                                 <img
                                   src={imgUrl}
                                   alt={`${product.brand} ${product.variant}`}
@@ -889,11 +986,11 @@ Thank you for your business!
                               </div>
                             )}
 
-                            <p className="text-xs font-bold text-gray-800 leading-tight">{product.brand}</p>
-                            <p className="text-xs text-gray-500 leading-tight">{product.variant}</p>
-                            <p className="text-xs font-bold text-blue-600 mt-0.5 mb-1.5">
+                            <p className="text-[11px] sm:text-xs font-bold text-gray-800 leading-tight truncate">{product.brand}</p>
+                            <p className="text-[10px] sm:text-xs text-gray-500 leading-tight truncate">{product.variant}</p>
+                            <p className="text-[11px] sm:text-xs font-bold text-blue-600 mt-0.5 mb-1 sm:mb-1.5">
                               ₨{product.defaultPrice.toFixed(0)}
-                              <span className="ml-1 text-gray-400 font-normal text-xs">
+                              <span className="ml-1 text-gray-400 font-normal text-[10px] sm:text-xs block sm:inline">
                                 ({isFullyOOS ? '0' : effectiveStock} left)
                               </span>
                             </p>
@@ -907,9 +1004,9 @@ Thank you for your business!
                               <button
                                 onClick={() => decrementProduct(product.id)}
                                 disabled={cartQty <= 0}
-                                className="w-8 h-8 flex-shrink-0 bg-red-500 hover:bg-red-600 active:scale-95 disabled:bg-gray-100 disabled:text-gray-300 text-white font-bold transition-all flex items-center justify-center"
+                                className="w-6 h-6 sm:w-8 sm:h-8 flex-shrink-0 bg-red-500 hover:bg-red-600 active:scale-95 disabled:bg-gray-100 disabled:text-gray-300 text-white font-bold transition-all flex items-center justify-center"
                               >
-                                <Minus size={13} />
+                                <Minus size={11} className="sm:w-3.5 sm:h-3.5" />
                               </button>
                               <input
                                 type="number"
@@ -928,20 +1025,20 @@ Thank you for your business!
                                     if (!isNaN(parsed)) setProductQuantity(product, parsed);
                                   }
                                 }}
-                                className={`w-12 text-center text-sm font-bold bg-transparent border-0 focus:outline-none focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                                className={`w-7 sm:w-12 text-center text-xs sm:text-sm font-bold bg-transparent border-0 focus:outline-none focus:ring-0 p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
                                   cartQty > 0 ? 'text-blue-700' : 'text-gray-400'
                                 }`}
                               />
                               <button
                                 onClick={() => incrementProduct(product)}
                                 disabled={isFullyOOS || effectiveStock <= 0}
-                                className="w-8 h-8 flex-shrink-0 bg-green-600 hover:bg-green-700 active:scale-95 disabled:bg-gray-100 disabled:text-gray-300 text-white font-bold transition-all flex items-center justify-center"
+                                className="w-6 h-6 sm:w-8 sm:h-8 flex-shrink-0 bg-green-600 hover:bg-green-700 active:scale-95 disabled:bg-gray-100 disabled:text-gray-300 text-white font-bold transition-all flex items-center justify-center"
                               >
-                                <Plus size={13} />
+                                <Plus size={11} className="sm:w-3.5 sm:h-3.5" />
                               </button>
                             </div>
                             {isAllInCart && (
-                              <p className="text-xs text-green-700 font-semibold text-center mt-1">✓ All in cart</p>
+                              <p className="text-[10px] sm:text-xs text-green-700 font-semibold text-center mt-0.5 sm:mt-1">✓ All in cart</p>
                             )}
                           </div>
                         );
@@ -961,27 +1058,29 @@ Thank you for your business!
                       <button onClick={() => setCartItems([])} className="text-xs text-red-500 hover:text-red-700">Clear all</button>
                     </div>
                     {/* Cart Discount Control */}
-                    <div className="mb-3 pb-3 border-b border-gray-100 flex items-center gap-2">
+                    <div className="mb-3 pb-3 border-b border-gray-100 flex items-center gap-2 flex-wrap sm:flex-nowrap">
                       <label className="text-xs font-semibold text-gray-600">Cart Discount:</label>
-                      <select
-                        value={cartDiscountType}
-                        onChange={(e) => setCartDiscountType(e.target.value as 'percent' | 'fixed')}
-                        className="border border-gray-200 rounded text-xs py-1 px-1.5 focus:outline-none focus:border-blue-400 bg-white"
-                      >
-                        <option value="fixed">PKR</option>
-                        <option value="percent">%</option>
-                      </select>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="0"
-                        value={cartDiscountValue ?? ''}
-                        onChange={(e) => setCartDiscountValue(e.target.value)}
-                        className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
-                      />
+                      <div className="flex items-center gap-1.5 flex-1 w-full sm:w-auto">
+                        <select
+                          value={cartDiscountType}
+                          onChange={(e) => setCartDiscountType(e.target.value as 'percent' | 'fixed')}
+                          className="border border-gray-200 rounded text-xs py-1 px-1.5 focus:outline-none focus:border-blue-400 bg-white"
+                        >
+                          <option value="fixed">PKR</option>
+                          <option value="percent">%</option>
+                        </select>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={cartDiscountValue ?? ''}
+                          onChange={(e) => setCartDiscountValue(e.target.value)}
+                          className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                        />
+                      </div>
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
+                    <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                      <table className="w-full text-xs min-w-[460px]">
                         <thead>
                           <tr className="border-b border-gray-100 text-gray-500">
                             <th className="text-left py-1 pr-2">Item</th>
@@ -1226,7 +1325,7 @@ Thank you for your business!
                         onClick={handleCreateBill}
                         loading={store.isLoading}
                         className="w-full"
-                        disabled={cartItems.length === 0}
+                        disabled={cartItems.length === 0 && !Object.values(rgbExchanges).some(v => v.cratesGiven > 0 || v.cratesReturned > 0)}
                       >
                         Create Bill
                       </Button>
@@ -1248,28 +1347,9 @@ Thank you for your business!
         {/* ── BILL HISTORY ── */}
         {viewMode === 'history' && (
           <div>
-            <div className="flex gap-3 mb-4 flex-wrap">
-              <div className="relative flex-1 min-w-48">
-                <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search bill# or retailer..."
-                  value={historySearchTerm}
-                  onChange={(e) => setHistorySearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-blue-400 focus:outline-none"
-                />
-              </div>
-              <input
-                type="date"
-                value={historyDateFilter}
-                onChange={(e) => setHistoryDateFilter(e.target.value)}
-                className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-blue-400 focus:outline-none"
-              />
-            </div>
-
             <Card>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+              <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                <table className="w-full text-xs min-w-[540px]">
                   <thead>
                     <tr className="border-b border-gray-100 text-gray-500">
                       <th className="text-left py-2 px-2">Bill#</th>
@@ -1320,13 +1400,36 @@ Thank you for your business!
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div>
                                     <p className="font-semibold text-xs text-gray-700 mb-1">Items</p>
+                                    {bill.items.length === 0 && !bill.rgbExchanges?.length && (
+                                      <p className="text-xs text-gray-400 italic">No product items</p>
+                                    )}
                                     {bill.items.map((item, idx) => (
                                       <div key={idx} className="flex justify-between text-xs py-0.5">
                                         <span className="text-gray-600">{item.product ? `${item.product.brand} ${item.product.variant}` : item.productId} ×{item.quantity}</span>
                                         <span>₨{Number(item.total).toFixed(0)}</span>
                                       </div>
                                     ))}
+                                    {/* RGB exchange entries */}
+                                    {bill.rgbExchanges && bill.rgbExchanges.length > 0 && (
+                                      <div className="mt-1.5 pt-1.5 border-t border-teal-100">
+                                        <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wide mb-0.5 flex items-center gap-1">
+                                          📦 Crate Exchanges
+                                        </p>
+                                        {bill.rgbExchanges.map((ex) => (
+                                          <div key={ex.id} className="flex items-center justify-between text-xs py-0.5">
+                                            <span className={`font-medium ${ex.type === 'issue' ? 'text-amber-700' : 'text-teal-700'}`}>
+                                              {ex.type === 'issue' ? '📦↓ ' : '📦↑ '}
+                                              {ex.itemName} — {ex.type === 'issue' ? 'Given' : 'Returned'}
+                                            </span>
+                                            <span className={`font-bold ${ex.type === 'issue' ? 'text-amber-700' : 'text-teal-700'}`}>
+                                              {ex.quantity} crates
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
+
                                   {Number(bill.pendingAmount) > 0 && (
                                     <div>
                                       <p className="font-semibold text-xs text-gray-700 mb-1">Add Payment</p>
@@ -1362,6 +1465,77 @@ Thank you for your business!
                   <p className="text-center text-gray-400 py-8 text-sm">No bills found</p>
                 )}
               </div>
+            </Card>
+          </div>
+        )}
+
+        {/* ── RGB HISTORY ── */}
+        {viewMode === 'rgbHistory' && (
+          <div>
+            <Card>
+              {rgbHistoryLoading ? (
+                <div className="py-8 text-center text-sm text-gray-400">Loading RGB history...</div>
+              ) : (
+                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                  <table className="w-full text-xs min-w-[540px]">
+                    <thead>
+                      <tr className="border-b border-gray-100 text-gray-500">
+                        <th className="text-left py-2 px-2">Date</th>
+                        <th className="text-left py-2 px-2">Retailer</th>
+                        <th className="text-left py-2 px-2">RGB Item</th>
+                        <th className="text-center py-2 px-2">Type</th>
+                        <th className="text-right py-2 px-2">Quantity</th>
+                        <th className="text-left py-2 px-2">Worker</th>
+                        <th className="text-center py-2 px-2">Bill Link</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rgbHistory
+                        .filter((tx) => {
+                          const s = historySearchTerm.toLowerCase();
+                          const matchSearch =
+                            !s ||
+                            tx.retailerName.toLowerCase().includes(s) ||
+                            tx.itemName.toLowerCase().includes(s);
+                          const txDate = new Date(tx.createdAt).toISOString().split('T')[0];
+                          const matchDate = !historyDateFilter || txDate === historyDateFilter;
+                          return matchSearch && matchDate;
+                        })
+                        .map((tx) => {
+                          const isIssue = tx.type?.toLowerCase() === 'issue';
+                          return (
+                            <tr key={tx.id} className="border-b border-gray-50 hover:bg-gray-50">
+                              <td className="py-2 px-2 text-gray-500">{new Date(tx.createdAt).toLocaleString()}</td>
+                              <td className="py-2 px-2 font-medium">{tx.retailerName}</td>
+                              <td className="py-2 px-2 text-gray-700">{tx.itemName}</td>
+                              <td className="py-2 px-2 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                                  isIssue ? 'bg-orange-100 text-orange-800' : 'bg-emerald-100 text-emerald-800'
+                                }`}>
+                                  {isIssue ? 'Given ↓' : 'Returned ↑'}
+                                </span>
+                              </td>
+                              <td className="py-2 px-2 text-right font-bold text-gray-900">{tx.quantity} crates</td>
+                              <td className="py-2 px-2 text-gray-500">{tx.workerName || 'N/A'}</td>
+                              <td className="py-2 px-2 text-center">
+                                {tx.saleId ? (
+                                  <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-mono rounded text-[11px] border border-blue-200">
+                                    Linked to Sale
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400 font-normal">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                  {rgbHistory.length === 0 && (
+                    <p className="text-center text-gray-400 py-8 text-sm">No RGB activity recorded yet</p>
+                  )}
+                </div>
+              )}
             </Card>
           </div>
         )}
