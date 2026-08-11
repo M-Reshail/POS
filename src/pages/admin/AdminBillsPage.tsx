@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card } from '../../components/common';
 import { useStore } from '../../store';
 import { billsService } from '../../services/bills';
-import { Search, ChevronDown, ChevronUp, Filter } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Filter, RotateCcw } from 'lucide-react';
+
 import { Bill } from '../../types';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
 
@@ -21,6 +22,7 @@ export const AdminBillsPage: React.FC = () => {
   const [workers, setWorkers] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedBill, setExpandedBill] = useState<string | null>(null);
+  const [activeBillSection, setActiveBillSection] = useState<'all' | 'rgb'>('all');
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -76,6 +78,13 @@ export const AdminBillsPage: React.FC = () => {
     return matchSearch && matchRetailer && matchWorker && matchStatus && matchFrom && matchTo;
   }).slice().reverse();
 
+  const billsToDisplay = useMemo(() => {
+    if (activeBillSection === 'rgb') {
+      return filteredBills.filter((b) => (b as any).rgbExchanges?.length > 0);
+    }
+    return filteredBills;
+  }, [filteredBills, activeBillSection]);
+
   const totalRevenue = filteredBills.reduce((s, b) => s + Number(b.total), 0);
   const totalPaid = filteredBills.reduce((s, b) => s + Number(b.paidAmount), 0);
   const totalPending = filteredBills.reduce((s, b) => s + Number(b.pendingAmount), 0);
@@ -93,14 +102,15 @@ export const AdminBillsPage: React.FC = () => {
   return (
     <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
-        <div className="flex items-center justify-between mb-5">
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Bill History</h1>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Bill History</h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
               {filteredBills.length} bill{filteredBills.length !== 1 ? 's' : ''} found
             </p>
           </div>
-          <Button size="sm" variant="secondary" onClick={loadBills} disabled={loading}>
+          <Button size="sm" variant="secondary" onClick={loadBills} disabled={loading} className="w-full sm:w-auto justify-center">
             Refresh
           </Button>
         </div>
@@ -113,9 +123,9 @@ export const AdminBillsPage: React.FC = () => {
             { label: 'Outstanding', value: `₨${(totalPending / 1000).toFixed(1)}K`, color: 'orange' },
             { label: 'Discounts Given', value: `₨${(totalDiscount / 1000).toFixed(1)}K`, color: 'purple' },
           ].map(({ label, value, color }) => (
-            <Card key={label} className={`border-l-4 border-${color}-400`}>
-              <p className="text-xs text-gray-500">{label}</p>
-              <p className={`text-xl font-bold mt-0.5 text-${color}-700`}>{value}</p>
+            <Card key={label} className={`border-l-4 border-${color}-400 p-3 sm:p-4`}>
+              <p className="text-[11px] sm:text-xs text-gray-500">{label}</p>
+              <p className={`text-lg sm:text-xl font-bold mt-0.5 text-${color}-700`}>{value}</p>
             </Card>
           ))}
         </div>
@@ -131,7 +141,7 @@ export const AdminBillsPage: React.FC = () => {
             {/* Row 1: Search + Retailer + Worker + Status */}
             <div className="flex flex-wrap gap-2">
               {/* Search */}
-              <div className="relative flex-1 min-w-[160px]">
+              <div className="relative flex-1 min-w-[140px]">
                 <Search size={13} className="absolute left-2.5 top-2 text-gray-400" />
                 <input
                   type="text"
@@ -145,7 +155,7 @@ export const AdminBillsPage: React.FC = () => {
               <select
                 value={retailerFilter}
                 onChange={(e) => setRetailerFilter(e.target.value)}
-                className="flex-1 min-w-[130px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+                className="flex-1 min-w-[120px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
               >
                 <option value="">All Retailers</option>
                 {retailers.map((r) => (
@@ -156,7 +166,7 @@ export const AdminBillsPage: React.FC = () => {
               <select
                 value={workerFilter}
                 onChange={(e) => setWorkerFilter(e.target.value)}
-                className="flex-1 min-w-[120px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+                className="flex-1 min-w-[110px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
               >
                 <option value="">All Workers</option>
                 {workers.map((w) => (
@@ -167,7 +177,7 @@ export const AdminBillsPage: React.FC = () => {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="flex-1 min-w-[110px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+                className="flex-1 min-w-[100px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
               >
                 <option value="">All Status</option>
                 <option value="paid">Paid</option>
@@ -182,14 +192,14 @@ export const AdminBillsPage: React.FC = () => {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="flex-1 min-w-[130px] max-w-[180px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+                className="flex-1 min-w-[120px] max-w-[180px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
               />
               <span className="text-xs text-gray-400 flex-shrink-0">to</span>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="flex-1 min-w-[130px] max-w-[180px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
+                className="flex-1 min-w-[120px] max-w-[180px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
               />
             </div>
           </div>
@@ -197,15 +207,38 @@ export const AdminBillsPage: React.FC = () => {
 
         {/* Bills Table */}
         <Card>
+          <div className="flex border-b border-gray-100 mb-4 font-semibold text-xs gap-4 overflow-x-auto whitespace-nowrap scrollbar-none">
+            <button
+              onClick={() => setActiveBillSection('all')}
+              className={`pb-2 border-b-2 transition-colors ${
+                activeBillSection === 'all'
+                  ? 'border-blue-600 text-blue-600 font-bold'
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              All Sales Bills ({filteredBills.length})
+            </button>
+            <button
+              onClick={() => setActiveBillSection('rgb')}
+              className={`pb-2 border-b-2 transition-colors ${
+                activeBillSection === 'rgb'
+                  ? 'border-amber-600 text-amber-600 font-bold'
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              📦 RGB Bills ({filteredBills.filter((b) => (b as any).rgbExchanges?.length > 0).length})
+            </button>
+          </div>
+
           {loading ? (
             <div className="text-center py-10 text-gray-400 text-sm">Loading bills...</div>
-          ) : filteredBills.length === 0 ? (
+          ) : billsToDisplay.length === 0 ? (
             <div className="text-center py-10 text-gray-400 text-sm">
-              No bills found. Try adjusting your filters.
+              {activeBillSection === 'rgb' ? 'No RGB bills found.' : 'No bills found. Try adjusting your filters.'}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+            <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+              <table className="w-full text-xs min-w-[680px]">
                 <thead>
                   <tr className="border-b border-gray-100 text-gray-500">
                     <th className="text-left py-2 px-2">Bill#</th>
@@ -222,7 +255,7 @@ export const AdminBillsPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredBills.map((bill) => {
+                  {billsToDisplay.map((bill: Bill) => {
                     const retailer = retailers.find((r) => r.id === bill.retailerId);
                     const workerName = (bill as any).worker?.name || bill.workerId.slice(0, 8);
                     const isExpanded = expandedBill === bill.id;
@@ -263,38 +296,66 @@ export const AdminBillsPage: React.FC = () => {
                           <tr>
                             <td colSpan={11} className="bg-blue-50 px-4 py-3">
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* Items */}
-                                <div>
-                                  <p className="text-xs font-bold text-gray-700 mb-2">Line Items</p>
-                                  <table className="w-full text-xs">
-                                    <thead>
-                                      <tr className="text-gray-500 border-b border-gray-200">
-                                        <th className="text-left pb-1">Product</th>
-                                        <th className="text-center pb-1">Qty</th>
-                                        <th className="text-right pb-1">Price</th>
-                                        <th className="text-right pb-1">Disc</th>
-                                        <th className="text-right pb-1">Total</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {bill.items.map((item, i) => (
-                                        <tr key={i} className="border-b border-gray-100">
-                                          <td className="py-0.5 text-gray-700">
-                                            {item.product
-                                              ? `${item.product.brand} ${item.product.variant}`
-                                              : item.productId.slice(0, 12)}
-                                          </td>
-                                          <td className="py-0.5 text-center">{item.quantity}</td>
-                                          <td className="py-0.5 text-right">₨{Number(item.price).toFixed(0)}</td>
-                                          <td className="py-0.5 text-right text-purple-600">
-                                            {Number(item.discount) > 0 ? `₨${Number(item.discount).toFixed(0)}` : '—'}
-                                          </td>
-                                          <td className="py-0.5 text-right font-semibold">₨{Number(item.total).toFixed(0)}</td>
+                                  {/* Line items */}
+                                  <div>
+                                    <p className="text-xs font-bold text-gray-700 mb-2">Line Items</p>
+                                    <table className="w-full text-xs">
+                                      <thead>
+                                        <tr className="text-gray-500 border-b border-gray-200">
+                                          <th className="text-left pb-1">Product</th>
+                                          <th className="text-center pb-1">Qty</th>
+                                          <th className="text-right pb-1">Price</th>
+                                          <th className="text-right pb-1">Disc</th>
+                                          <th className="text-right pb-1">Total</th>
                                         </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
+                                      </thead>
+                                      <tbody>
+                                        {bill.items.map((item: any, i: number) => (
+                                          <tr key={i} className="border-b border-gray-100">
+                                            <td className="py-0.5 text-gray-700">
+                                              {item.product
+                                                ? `${item.product.brand} ${item.product.variant}`
+                                                : item.productId.slice(0, 12)}
+                                            </td>
+                                            <td className="py-0.5 text-center">{item.quantity}</td>
+                                            <td className="py-0.5 text-right">₨{Number(item.price).toFixed(0)}</td>
+                                            <td className="py-0.5 text-right text-purple-600">
+                                              {Number(item.discount) > 0 ? `₨${Number(item.discount).toFixed(0)}` : '—'}
+                                            </td>
+                                            <td className="py-0.5 text-right font-semibold">₨{Number(item.total).toFixed(0)}</td>
+                                          </tr>
+                                        ))}
+                                        {bill.items.length === 0 && !(bill as any).rgbExchanges?.length && (
+                                          <tr><td colSpan={5} className="py-1 text-gray-400 italic">No product items</td></tr>
+                                        )}
+                                      </tbody>
+                                    </table>
+                                    {/* RGB Exchange Entries */}
+                                    {(bill as any).rgbExchanges?.length > 0 && (
+                                      <div className="mt-2 pt-2 border-t border-teal-100">
+                                        <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                          <RotateCcw size={10} /> Crate Exchanges
+                                        </p>
+                                        {(bill as any).rgbExchanges.map((ex: any) => {
+                                          const isIssue = ex.type?.toLowerCase() === 'issue';
+                                          return (
+                                            <div key={ex.id} className="flex items-center justify-between text-xs py-0.5">
+                                              <span className={`flex items-center gap-1 font-medium ${
+                                                isIssue ? 'text-amber-700' : 'text-teal-700'
+                                              }`}>
+                                                <span className="text-[10px]">{isIssue ? '📦↓' : '📦↑'}</span>
+                                                {ex.itemName} — {isIssue ? 'Given' : 'Returned'}
+                                              </span>
+                                              <span className={`font-bold ${
+                                                isIssue ? 'text-amber-700' : 'text-teal-700'
+                                              }`}>{ex.quantity} crates</span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+
                                 {/* Payment Info */}
                                 <div>
                                   <p className="text-xs font-bold text-gray-700 mb-2">Payment Details</p>

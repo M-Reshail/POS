@@ -3,7 +3,7 @@ import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card, Input, Select, Modal } from '../../components/common';
 import { useStore } from '../../store';
 import { Package, Plus, Trash2, Upload, X, Pencil, Minus, ImageIcon, ChevronDown, ChevronRight, Boxes, TrendingUp, RotateCcw } from 'lucide-react';
-import { StockBatch, RGBItem, Product, Brand } from '../../types';
+import { StockBatch, RGBItem, Product, Brand, RGBTransactionRecord } from '../../types';
 import { inventoryService } from '../../services/inventory';
 import { productsService } from '../../services/products';
 import { brandsService } from '../../services/brands';
@@ -216,6 +216,7 @@ export const InventoryPage: React.FC = () => {
   const [returnRowKey, setReturnRowKey] = useState<string | null>(null);
   const [returnQtyInput, setReturnQtyInput] = useState<number>(0);
   const [submittingInventoryReturn, setSubmittingInventoryReturn] = useState(false);
+  const [rgbTransactions, setRgbTransactions] = useState<RGBTransactionRecord[]>([]);
 
   // ── Store data ────────────────────────────────────────────────────────────────
   const products = store.products;
@@ -571,7 +572,12 @@ export const InventoryPage: React.FC = () => {
   const loadRGBItems = async () => {
     setRgbLoading(true);
     try {
-      setRgbItems(await rgbService.getAll());
+      const [items, txResult] = await Promise.all([
+        rgbService.getAll(),
+        rgbService.getTransactions(),
+      ]);
+      setRgbItems(items);
+      setRgbTransactions(txResult.transactions || []);
       store.fetchRetailers();
     }
     catch { store.addNotification('error', 'Failed to load RGB items'); }
@@ -651,18 +657,19 @@ export const InventoryPage: React.FC = () => {
     <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
         {/* Page header */}
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold">
             {isRgbPanelOpen ? 'RGB Management' : 'Inventory Management'}
           </h1>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap sm:flex-nowrap">
             {!isRgbPanelOpen ? (
               <>
-                <Button onClick={() => { setIsAddProductModalOpen(true); setAddProductBrandMode('existing'); }}>
-                  <Plus size={18} className="mr-2" /> New Variant
+                <Button onClick={() => { setIsAddProductModalOpen(true); setAddProductBrandMode('existing'); }} className="text-xs sm:text-sm py-2 px-3">
+                  <Plus size={16} className="mr-1.5" /> New Variant
                 </Button>
                 <Button
                   variant="secondary"
+                  className="text-xs sm:text-sm py-2 px-3"
                   onClick={() => {
                     if (products.length === 0) {
                       store.addNotification('info', 'Create a product first before adding stock');
@@ -671,10 +678,11 @@ export const InventoryPage: React.FC = () => {
                     }
                   }}
                 >
-                  <Plus size={18} className="mr-2" /> Add Stock
+                  <Plus size={16} className="mr-1.5" /> Add Stock
                 </Button>
                 <Button
                   variant="secondary"
+                  className="text-xs sm:text-sm py-2 px-3"
                   onClick={() => { setIsRgbPanelOpen(true); loadRGBItems(); }}
                 >
                   📦 RGB Management
@@ -683,6 +691,7 @@ export const InventoryPage: React.FC = () => {
             ) : (
               <Button
                 variant="secondary"
+                className="text-xs sm:text-sm py-2 px-3"
                 onClick={() => setIsRgbPanelOpen(false)}
               >
                 ← Back to Inventory
@@ -829,8 +838,8 @@ export const InventoryPage: React.FC = () => {
                   No outstanding RGB crate balances with any retailer.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                  <table className="w-full text-sm min-w-[540px]">
                     <thead>
                       <tr className="border-b bg-gray-50 text-gray-600">
                         <th className="text-left py-3 px-4">Retailer</th>
@@ -940,6 +949,71 @@ export const InventoryPage: React.FC = () => {
                 </div>
               )}
             </Card>
+
+            {/* RGB Transaction History */}
+            <Card title="RGB Transaction History">
+              {rgbTransactions.length === 0 ? (
+                <div className="py-8 text-center text-sm text-gray-500">
+                  No RGB transactions recorded yet.
+                </div>
+              ) : (
+                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                  <table className="w-full text-sm min-w-[540px]">
+                    <thead>
+                      <tr className="border-b bg-gray-50 text-gray-600">
+                        <th className="text-left py-3 px-4">Date</th>
+                        <th className="text-left py-3 px-4">Retailer</th>
+                        <th className="text-left py-3 px-4">RGB Item</th>
+                        <th className="text-center py-3 px-4">Type</th>
+                        <th className="text-right py-3 px-4">Quantity</th>
+                        <th className="text-left py-3 px-4">Recorded By</th>
+                        <th className="text-center py-3 px-4">Bill Link</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rgbTransactions.map((tx) => {
+                        const isIssue = tx.type?.toLowerCase() === 'issue';
+                        return (
+                          <tr key={tx.id} className="border-b hover:bg-gray-50">
+                            <td className="py-3 px-4 text-xs text-gray-500">
+                              {new Date(tx.createdAt).toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4 font-semibold text-gray-900">
+                              {tx.retailerName}
+                            </td>
+                            <td className="py-3 px-4 font-medium text-gray-700">
+                              {tx.itemName}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                                isIssue ? 'bg-orange-100 text-orange-800' : 'bg-emerald-100 text-emerald-800'
+                              }`}>
+                                {isIssue ? 'Given ↓' : 'Returned ↑'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right font-bold text-gray-900">
+                              {tx.quantity} crates
+                            </td>
+                            <td className="py-3 px-4 text-xs text-gray-600">
+                              {tx.workerName || 'N/A'}
+                            </td>
+                            <td className="py-3 px-4 text-center text-xs">
+                              {tx.saleId ? (
+                                <span className="px-2 py-1 bg-blue-50 text-blue-700 font-mono rounded-md font-medium border border-blue-200">
+                                  Linked to Sale
+                                </span>
+                              ) : (
+                                <span className="text-gray-400 font-normal">Standalone</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
           </div>
         ) : (
           /* ── NORMAL INVENTORY VIEW ─────────────────────────────────────────────────── */
@@ -956,7 +1030,7 @@ export const InventoryPage: React.FC = () => {
         {/* ── Products (brand grid → variant cards) ─────────────────────────── */}
         <Card title="Products" className="mb-6">
           {!selectedInventoryBrand ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3">
               {inventoryBrands.map(([brandKey, { brand, products: brandProducts }]) => {
                 const imgUrl = brand?.imageUrl ? resolveImageUrl(brand.imageUrl)
                   : getProductBrandImage(brandProducts[0]);
@@ -964,17 +1038,17 @@ export const InventoryPage: React.FC = () => {
                   <button
                     key={brandKey}
                     onClick={() => setSelectedInventoryBrand(brandKey)}
-                    className="group flex flex-col items-center p-3 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition-all duration-200 bg-white"
+                    className="group flex flex-col items-center p-1.5 sm:p-2 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition-all duration-200 bg-white"
                   >
-                    <div className="w-full aspect-square rounded-lg overflow-hidden mb-2 bg-gray-100 flex items-center justify-center">
+                    <div className="w-full h-16 sm:h-24 rounded-lg overflow-hidden mb-1 sm:mb-1.5 bg-gray-100 flex items-center justify-center">
                       {imgUrl ? (
                         <img src={imgUrl} alt={brandKey} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       ) : (
-                        <span className="text-4xl">🥤</span>
+                        <span className="text-2xl sm:text-3xl">🥤</span>
                       )}
                     </div>
-                    <p className="font-bold text-gray-900 text-sm text-center">{brand?.displayName ?? brandKey}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{brandProducts.length} variant{brandProducts.length !== 1 ? 's' : ''}</p>
+                    <p className="font-bold text-gray-900 text-[11px] sm:text-xs text-center line-clamp-1">{brand?.displayName ?? brandKey}</p>
+                    <p className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5">{brandProducts.length} variant{brandProducts.length !== 1 ? 's' : ''}</p>
                   </button>
                 );
               })}
@@ -1021,25 +1095,25 @@ export const InventoryPage: React.FC = () => {
                   </div>
                 );
               })()}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
                 {selectedInventoryVariants.map((product) => {
                   const imgUrl = getProductBrandImage(product);
                   const totalStock = stockBatches.filter(b => b.productId === product.id).reduce((s, b) => s + b.quantity, 0);
                   return (
-                    <div key={product.id} className="border border-gray-200 rounded-xl p-3 bg-gray-50 flex items-start gap-3">
-                      <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0 flex items-center justify-center border border-gray-100">
+                    <div key={product.id} className="border border-gray-200 rounded-xl p-2.5 bg-gray-50 flex items-start gap-2.5">
+                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-white flex-shrink-0 flex items-center justify-center border border-gray-100">
                         {imgUrl ? (
                           <img src={imgUrl} alt={getBrandName(product)} className="w-full h-full object-cover" />
                         ) : (
-                          <Package size={20} className="text-gray-400" />
+                          <Package size={18} className="text-gray-400" />
                         )}
                       </div>
-                      <div className="flex-1">
-                        <p className="font-semibold text-gray-900">{getBrandName(product)} {product.variant}</p>
-                        <p className="text-xs text-gray-500 mt-0.5 capitalize">{product.category}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 text-xs truncate">{getBrandName(product)} {product.variant}</p>
+                        <p className="text-[11px] text-gray-500 mt-0.5 capitalize">{product.category}</p>
                         <p className="text-xs font-semibold text-blue-600 mt-0.5">Stock: {totalStock} units</p>
-                        <div className="flex gap-2 mt-2 flex-wrap">
-                          <Button size="sm" onClick={() => openAddStockForVariant(product.id)}>Add Stock</Button>
+                        <div className="flex gap-1.5 mt-2 flex-wrap">
+                          <Button size="sm" onClick={() => openAddStockForVariant(product.id)} className="text-xs py-1 px-2">Add Stock</Button>
                           <button
                             onClick={() => openEditModal(product)}
                             className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"

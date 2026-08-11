@@ -22,6 +22,7 @@ import {
   deleteRGBItem,
   getRetailerBalances,
   returnRGBStandalone,
+  listRGBTransactions,
 } from './rgb.controller';
 
 const router = Router();
@@ -30,6 +31,7 @@ router.use(authenticate);
 
 // Both roles — read-only and workflow endpoints
 router.get('/', listRGBItems);
+router.get('/transactions', listRGBTransactions);             // must be before /:id
 router.get('/retailer/:retailerId', getRetailerBalances);   // must be before /:id
 router.post('/:id/return', returnRGBStandalone);            // both roles can record returns
 

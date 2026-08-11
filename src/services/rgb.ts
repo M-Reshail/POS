@@ -1,11 +1,21 @@
 import { api } from './api';
-import { RGBItem, RGBRetailerBalance } from '../types';
+import { RGBItem, RGBRetailerBalance, RGBTransactionRecord } from '../types';
 
 export const rgbService = {
   /** Get all RGB items */
   getAll: async (): Promise<RGBItem[]> => {
     const response: any = await api.get('/rgb');
     return response.data.items;
+  },
+
+  /** Get all RGB transaction logs */
+  getTransactions: async (params?: {
+    retailerId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ transactions: RGBTransactionRecord[]; total: number }> => {
+    const response: any = await api.get('/rgb/transactions', { params });
+    return response.data;
   },
 
   /** Create a new RGB item (name + starting stockQuantity only) */

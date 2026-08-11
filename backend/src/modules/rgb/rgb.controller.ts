@@ -153,3 +153,19 @@ export const returnRGBStandalone = async (req: Request, res: Response): Promise<
     handleServiceError(res, error, ERROR_MAP);
   }
 };
+
+/**
+ * GET /api/rgb/transactions
+ * Returns all RGB transactions with retailer, item, and worker details.
+ */
+export const listRGBTransactions = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const retailerId = req.query.retailerId as string | undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+    const result = await rgbService.getRGBTransactions({ retailerId, limit, offset });
+    ok(res, result);
+  } catch (error) {
+    handleServiceError(res, error, ERROR_MAP);
+  }
+};

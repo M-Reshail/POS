@@ -8,11 +8,11 @@ export const billsService = {
     const response: any = await api.get('/bills');
     return response.data.bills;
   },
-  create: async (billData: any): Promise<Bill> => {
+  create: async (billData: any): Promise<any> => {
     // Backend createBill returns: created(res, result)
-    // result is the full bill object from the transaction
+    // result is { bill, priceVariances } or { isRgbOnly: true, bill: null, ... }
     const response: any = await api.post('/bills', billData);
-    return response.data.bill;
+    return response.data.bill ?? response.data;
   },
   getById: async (id: string): Promise<Bill> => {
     const response: any = await api.get(`/bills/${id}`);

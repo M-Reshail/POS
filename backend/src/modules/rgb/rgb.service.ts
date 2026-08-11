@@ -268,3 +268,66 @@ export const getRetailerRGBBalances = async (retailerId: string) => {
     orderBy: { rgbItem: { name: 'asc' } },
   });
 };
+
+/**
+ * getRGBTransactions — List RGB transactions (with retailer, item, and worker names).
+ * Accepts optional retailerId filter, limit, offset.
+ */
+export const getRGBTransactions = async (options?: {
+  retailerId?: string;
+  limit?: number;
+  offset?: number;
+}) => {
+  const where: Prisma.RGBTransactionWhereInput = {};
+  if (options?.retailerId) where.retailerId = options.retailerId;
+
+  const [transactions, total] = await Promise.all([
+    prisma.rGBTransaction.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: options?.limit ?? 50,
+      skip: options?.offset ?? 0,
+      include: {
+        rgbItem: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.rGBTransaction.count({ where }),
+  ]);
+
+  const retailerIds = Array.from(new Set(transactions.map((t) => t.retailerId)));
+  const workerIds = Array.from(new Set(transactions.map((t) => t.workerId).filter(Boolean))) as string[];
+
+  const [retailers, workers] = await Promise.all([
+    prisma.retailer.findMany({
+      where: { id: { in: retailerIds } },
+      select: { id: true, shopName: true, ownerName: true },
+    }),
+    prisma.user.findMany({
+      where: { id: { in: workerIds } },
+      select: { id: true, name: true },
+    }),
+  ]);
+
+  const retailerMap = new Map(retailers.map((r) => [r.id, r]));
+  const workerMap = new Map(workers.map((w) => [w.id, w.name]));
+
+  const formatted = transactions.map((t) => {
+    const retailer = retailerMap.get(t.retailerId);
+    return {
+      id: t.id,
+      retailerId: t.retailerId,
+      retailerName: retailer ? retailer.shopName : 'Unknown Retailer',
+      retailerOwner: retailer ? retailer.ownerName : '',
+      rgbItemId: t.rgbItemId,
+      itemName: t.rgbItem?.name ?? 'Unknown Item',
+      type: t.type.toLowerCase() as 'issue' | 'return',
+      quantity: t.quantity,
+      saleId: t.saleId,
+      workerId: t.workerId,
+      workerName: t.workerId ? workerMap.get(t.workerId) ?? 'Unknown Worker' : 'N/A',
+      createdAt: t.createdAt,
+    };
+  });
+
+  return { transactions: formatted, total, limit: options?.limit ?? 50, offset: options?.offset ?? 0 };
+};

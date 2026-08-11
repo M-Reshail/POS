@@ -171,23 +171,29 @@ export const useStore = create<Store>((set, get) => ({
   checkoutBill: async (billData) => {
     try {
       set({ isLoading: true, error: null });
-      const newBill = await billsService.create(billData);
+      const response: any = await billsService.create(billData);
 
-      // Optimistic update
-      set((state) => ({
-        bills: [...state.bills, newBill],
-        currentBill: null,
-        isLoading: false,
-      }));
-      get().addNotification('success', 'Bill created successfully');
+      if (response && response.isRgbOnly) {
+        set({ currentBill: null, isLoading: false });
+        get().addNotification('success', 'RGB crate exchange recorded successfully');
+      } else {
+        // Optimistic update for regular bills
+        set((state) => ({
+          bills: response?.id ? [...state.bills, response] : state.bills,
+          currentBill: null,
+          isLoading: false,
+        }));
+        get().addNotification('success', 'Bill created successfully');
+      }
 
-      // Re-fetch updated data (inventory, retailers, and RGB stock all may have changed)
+      // Re-fetch updated data (inventory, retailers, RGB stock, and bills)
       get().fetchInventory();
       get().fetchRetailers();
       get().fetchRGBItems();
+      get().fetchBills();
     } catch (err: any) {
-      set({ error: err.response?.data?.message || err.message || 'Failed to create bill', isLoading: false });
-      get().addNotification('error', err.response?.data?.message || 'Failed to create bill');
+      set({ error: err.response?.data?.message || err.message || 'Failed to process request', isLoading: false });
+      get().addNotification('error', err.response?.data?.message || 'Failed to process request');
       throw err;
     }
   },
