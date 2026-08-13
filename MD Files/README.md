@@ -6,14 +6,14 @@ A comprehensive **Wholesale & Retail Beverage Management System** built with a f
 
 This system prioritizes simplicity for shop workers (PC-based billing) and control/visibility for owners/admins (mobile-ready dashboard). It supports:
 
-- ✅ **Unified Database Backend** — Centralized data persistence via PostgreSQL.
+- ✅ **Unified Database Backend** — Centralized data persistence via PostgreSQL and Prisma ORM.
 - ✅ **Inventory Batch Tracking** — FIFO (First-In-First-Out) stock depletion logic.
-- ✅ **Credit (Udhari) Management** — Strict credit limit enforcement and automated ledger logging.
-- ✅ **RGB Crate Tracking** — Independent tracking of Returnable Glass Bottles and plastic crates.
+- ✅ **Retailer Ledger Management** — Integrated double-entry debt and payment ledger logging.
+- ✅ **RGB Crate Tracking System** — Itemized tracking of Returnable Glass Bottles (crates), warehouse stock, retailer balances, and atomic exchange history.
+- ✅ **Shared-PC Session Security** — 12h access tokens, 10h refresh tokens, 15-minute inactivity auto-logout, and non-disruptive session expired modals.
 - ✅ **Worker Accountability** — Roles and detailed audit trails for adjustments, price overrides, and voided bills.
 - ✅ **Automated Billing** — Real-time invoice calculations with print preview functionality.
-- ✅ **Price Variance Flagging** — Automated detection of below-default price sales.
-- ✅ **Role-Based Access Control** — Robust backend protection with JWT tokens (Access/Refresh tokens).
+- ✅ **Role-Based Access Control** — Backend route protection with JWT tokens and RBAC middleware.
 
 ---
 

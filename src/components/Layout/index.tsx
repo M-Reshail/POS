@@ -89,8 +89,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems }) => {
               <p className="text-xs text-gray-500 capitalize">{currentUser?.role}</p>
             </div>
           )}
-          {/* Shift-end reminder — visible only when sidebar is expanded */}
-          {sidebarOpen && (
+          {/* Shift-end reminder — visible only for workers when sidebar is expanded */}
+          {sidebarOpen && currentUser?.role === 'worker' && (
             <p className="text-xs text-yellow-400 mb-2 leading-snug">
               Leaving your shift? Log out so noone can use your account.
             </p>
@@ -155,10 +155,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems }) => {
             <p className="text-sm font-medium truncate">{currentUser?.name}</p>
             <p className="text-xs text-gray-500 capitalize">{currentUser?.role}</p>
           </div>
-          {/* Shift-end reminder */}
-          <p className="text-xs text-yellow-400 mb-2 leading-snug">
-            Leaving your shift? Log out so the next person can't use your account.
-          </p>
+          {/* Shift-end reminder — visible only for workers */}
+          {currentUser?.role === 'worker' && (
+            <p className="text-xs text-yellow-400 mb-2 leading-snug">
+              Leaving your shift? Log out so noone can use your account.
+            </p>
+          )}
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-2 px-4 py-2 text-sm bg-red-600 hover:bg-red-700 rounded-lg transition-colors"

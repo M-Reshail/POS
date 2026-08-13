@@ -47,14 +47,14 @@ apiClient.interceptors.response.use(
           {},
           { withCredentials: true }
         );
-        const { token } = res.data;
-        localStorage.setItem("accessToken", token);
-        originalRequest.headers.Authorization = `Bearer ${token}`;
+        const { accessToken } = res.data.data;
+        localStorage.setItem("accessToken", accessToken);
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return apiClient(originalRequest);
       } catch (refreshError) {
-        // Refresh token expired too -> redirect to login
+        // Refresh token expired too -> clean up and notify React tree via CustomEvent
         localStorage.removeItem("accessToken");
-        window.location.href = "/login";
+        window.dispatchEvent(new CustomEvent("session-expired"));
         return Promise.reject(refreshError);
       }
     }
@@ -257,6 +257,47 @@ export const ledgerService = {
     notes?: string;
   }) => {
     const response = await apiClient.post("/payment", paymentData);
+    return response.data;
+  }
+};
+```
+
+### 7. Returnable Glass Bottles (RGB) Service (`src/services/rgb.ts`)
+Coordinates empty crate stock items, per-retailer balances, and crate issue/return transactions.
+- **Endpoint**: `/api/rgb`
+
+```typescript
+import { apiClient } from "./api";
+
+export const rgbService = {
+  getAll: async () => {
+    const response = await apiClient.get("/rgb");
+    return response.data;
+  },
+
+  createItem: async (name: string) => {
+    const response = await apiClient.post("/rgb", { name });
+    return response.data;
+  },
+
+  recordTransaction: async (data: {
+    retailerId: string;
+    rgbItemId: string;
+    type: "ISSUE" | "RETURN";
+    quantity: number;
+    saleId?: string;
+  }) => {
+    const response = await apiClient.post("/rgb/transaction", data);
+    return response.data;
+  },
+
+  getTransactions: async (params?: { retailerId?: string; saleId?: string }) => {
+    const response = await apiClient.get("/rgb/transactions", { params });
+    return response.data;
+  },
+
+  getRetailerBalances: async (retailerId: string) => {
+    const response = await apiClient.get(`/rgb/retailer/${retailerId}/balances`);
     return response.data;
   }
 };

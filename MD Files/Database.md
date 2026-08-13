@@ -86,16 +86,44 @@ Unified catalog of products (beverages, snacks, general groceries) linked to a p
 
 ---
 
-### 2a. RGBVariety (`rgb_varieties`)
-Standalone Returnable Glass Bottle (crate) stock counts, replacing localStorage.
+### 2a. RGBItem (`rgb_items`)
+Standalone Returnable Glass Bottle (crate) stock counts in the warehouse.
 
 | Field | Type | Attributes | Description |
 |---|---|---|---|
 | `id` | String | PK, UUID | Primary Key |
-| `name` | String | Unique | Crate variety name (e.g., 'Pepsi RGB') |
-| `linkedProductId` | String | `@map("linked_product_id")`, FK -> `Product.id`, Nullable | Connected product catalog reference |
-| `stockQuantity` | Int | `@map("stock_quantity")`, Default: `0` | Active empty crates count in stock |
+| `name` | String | Unique | Crate item name (e.g. 'Coca Cola RGB', 'Pepsi RGB') |
+| `stockQuantity` | Int | `@map("stock_quantity")`, Default: `0` | Active empty crates count in warehouse stock |
 | `lastUpdated` | DateTime | `@map("last_updated")`, Updated automatic | Last stepper adjustment timestamp |
+
+---
+
+### 2b. RGBRetailerBalance (`rgb_retailer_balances`)
+Tracks per-retailer, per-item outstanding crate balances (`balance > 0` means retailer currently owes crates back).
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `retailerId` | String | `@map("retailer_id")`, FK -> `Retailer.id` | Customer retailer reference |
+| `rgbItemId` | String | `@map("rgb_item_id")`, FK -> `RGBItem.id` | Crate item reference |
+| `balance` | Int | Default: `0` | Outstanding crate count owed by retailer |
+| `updatedAt` | DateTime | `@map("updated_at")`, Updated automatic | Timestamp of last balance change |
+
+---
+
+### 2c. RGBTransaction (`rgb_transactions`)
+Audit trail log of crate issue and return exchanges.
+
+| Field | Type | Attributes | Description |
+|---|---|---|---|
+| `id` | String | PK, UUID | Primary Key |
+| `retailerId` | String | `@map("retailer_id")`, FK -> `Retailer.id` | Customer retailer reference |
+| `rgbItemId` | String | `@map("rgb_item_id")`, FK -> `RGBItem.id` | Crate item reference |
+| `type` | `RGBTransactionType` (Enum) | | Action: `ISSUE` or `RETURN` |
+| `quantity` | Int | | Number of crates exchanged |
+| `saleId` | String | `@map("sale_id")`, Nullable | Connected bill ID (loose FK, null for standalone exchanges) |
+| `workerId` | String | `@map("worker_id")`, Nullable | Processing worker ID (loose FK) |
+| `createdAt` | DateTime | `@map("created_at")`, Default: `now()` | Transaction timestamp |
 
 ---
 
@@ -144,8 +172,6 @@ Customer accounts.
 | `mobileNumber` | String | | Phone number |
 | `address` | String | | Delivery address |
 | `deliveryLocation`| String | Nullable | GPS coords or routing notes |
-| `creditLimit` | Decimal (12,2) | | Maximum allowed unpaid debt balance |
-| `priceTier` | `PriceTier` (Enum) | Default: `standard` | Pricing tier: `standard`, `premium`, `discount` |
 | `createdAt` | DateTime | Default: `now()` | Account creation date |
 
 ---
@@ -164,20 +190,6 @@ Double-entry record of retailer credit mutations.
 | `paymentMode` | `LedgerPaymentMode` (Enum) | Nullable | Payment type: `cash`, `bank_transfer`, `check` |
 | `notes` | String | Nullable | Audit logs notes |
 | `createdAt` | DateTime | Default: `now()` | Entry timestamp |
-
----
-
-### 7. RGBTracking (`rgb_tracking`)
-Crate (Returnable Glass Bottles) asset logs.
-
-| Field | Type | Attributes | Description |
-|---|---|---|---|
-| `id` | String | PK, UUID | Primary Key |
-| `retailerId` | String | FK -> `Retailer.id`, Unique | Retailer reference |
-| `issuedQuantity` | Int | Default: `0` | Crates issued |
-| `returnedQuantity`| Int | Default: `0` | Crates returned |
-| `balance` | Int | Default: `0` | Outstanding crates owed (`issued - returned`) |
-| `lastUpdated` | DateTime | Default: `now()`, Auto | Last transaction timestamp |
 
 ---
 

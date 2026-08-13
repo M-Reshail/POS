@@ -8,6 +8,7 @@ import { WorkerRetailersPage } from './pages/worker/WorkerRetailersPage';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { InventoryPage } from './pages/admin/InventoryPage';
 import { RetailersPage } from './pages/admin/RetailersPage';
+import { RetailerDetailPage } from './pages/admin/RetailerDetailPage';
 import { ReportsPage } from './pages/admin/ReportsPage';
 import { WorkersPage } from './pages/admin/WorkersPage';
 import { ExpensesPage } from './pages/admin/ExpensesPage';
@@ -267,6 +268,7 @@ export default function App() {
           <Route path="/admin/dashboard" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
           <Route path="/admin/inventory" element={<ProtectedRoute requiredRole="admin"><InventoryPage /></ProtectedRoute>} />
           <Route path="/admin/retailers" element={<ProtectedRoute requiredRole="admin"><RetailersPage /></ProtectedRoute>} />
+          <Route path="/admin/retailers/:id" element={<ProtectedRoute requiredRole="admin"><RetailerDetailPage /></ProtectedRoute>} />
           <Route path="/admin/reports"   element={<ProtectedRoute requiredRole="admin"><ReportsPage /></ProtectedRoute>} />
           <Route path="/admin/workers"   element={<ProtectedRoute requiredRole="admin"><WorkersPage /></ProtectedRoute>} />
           <Route path="/admin/expenses"  element={<ProtectedRoute requiredRole="admin"><ExpensesPage /></ProtectedRoute>} />

@@ -92,32 +92,46 @@ The database schema is defined in `backend/prisma/schema.prisma` and uses Postgr
 
 ### Enums
 - **`UserRole`**: `admin`, `worker`
-- **`ProductCategory`**: `soft_drink`, `juice`, `water`, `energy_drink`
+- **`ExpenseCategory`**: `fuel`, `salary`, `delivery`, `electricity`, `maintenance`, `other`
 - **`AdjustmentReason`**: `damage`, `theft`, `manual_correction`
-- **`PriceTier`**: `standard`, `premium`, `discount`
 - **`LedgerEntryType`**: `sale`, `payment`, `return`, `adjustment`
 - **`LedgerPaymentMode`**: `cash`, `bank_transfer`, `check`
 - **`BillPaymentMode`**: `cash`, `credit`, `udhar`, `generate_only`
 - **`BillStatus`**: `pending`, `paid`, `partial`
+- **`RGBTransactionType`**: `ISSUE`, `RETURN`
 
 ### Users (`users`)
-Represents an individual with access to the system.
+Represents an individual with access to the system (username-based login).
 - `id` (String/UUID, PK)
 - `name` (String)
-- `email` (String, Unique)
+- `username` (String, Unique) - Login username (lowercase)
+- `email` (String, Nullable, Unique)
 - `passwordHash` (String)
 - `role` (UserRole)
 - `isActive` (Boolean, default `true`)
+- `cnic` (String, Nullable)
+- `phone` (String, Nullable)
+- `joinDate` (DateTime, Nullable)
 - `createdAt` (DateTime, default `now()`)
+
+### Brands (`brands`)
+Represents product brands (e.g. 'Pepsi', 'Coca Cola'). Images are managed at brand level.
+- `id` (String/UUID, PK)
+- `name` (String, Unique) - Normalized lowercase key (e.g. "pepsi")
+- `displayName` (String) - UI display casing (e.g. "Pepsi")
+- `imageUrl` (String, Nullable) - Brand image path
+- `createdAt` (DateTime, default `now()`)
+- `updatedAt` (DateTime, updated automatic)
 
 ### Products (`products`)
 Represents a sellable beverage brand/variant catalog.
 - `id` (String/UUID, PK)
-- `brand` (String) - e.g., 'Pepsi', 'Sprite'
-- `category` (ProductCategory)
-- `variant` (String) - e.g., '1.5L', 'Can'
-- `petConversionFactor` (Int) - Multiplier to convert Variant to Bottle Equivalents (PET)
+- `brandId` (String/UUID, FK -> `Brand.id`)
+- `brand` (String) - Legacy brand string (kept for backward compat)
+- `category` (String, default `"general"`) - Free-text category tag
+- `variant` (String) - Size/Packaging details (e.g. '1.5L', 'Can')
 - `description` (String, Nullable)
+- `isActive` (Boolean, default `true`) - Soft-delete flag
 
 ### Stock Batches (`stock_batches`)
 Represents a specific shipment of a Product received into inventory. FIFO queue is resolved across these batches.
@@ -151,8 +165,6 @@ Represents a customer/shop interacting with the wholesale business.
 - `mobileNumber` (String)
 - `address` (String)
 - `deliveryLocation` (String, Nullable)
-- `creditLimit` (Decimal, 12,2) - Ceiling for pending debts
-- `priceTier` (PriceTier, default `standard`)
 - `createdAt` (DateTime, default `now()`)
 
 ### Ledger Entries (`ledger_entries`)
@@ -167,14 +179,31 @@ Records transactions affecting a Retailer's credit balance.
 - `notes` (String, Nullable)
 - `createdAt` (DateTime, default `now()`)
 
-### RGB Tracking (`rgb_tracking`)
-Tracks the issue and return of Returnable Glass Bottles (crates) independently of cash balance.
+### RGB Items (`rgb_items`)
+Represents a type of returnable glass bottle crate (e.g. "Coca Cola RGB", "Pepsi RGB").
 - `id` (String/UUID, PK)
-- `retailerId` (String/UUID, FK -> `Retailer.id`, Unique)
-- `issuedQuantity` (Int, default `0`)
-- `returnedQuantity` (Int, default `0`)
-- `balance` (Int, default `0`) - `issuedQuantity - returnedQuantity`
+- `name` (String, Unique) - Crate name
+- `stockQuantity` (Int, default `0`) - Active empty crates in warehouse stock
 - `lastUpdated` (DateTime, updated automatic)
+
+### RGB Retailer Balances (`rgb_retailer_balances`)
+Tracks per-retailer, per-item outstanding crate balances (`balance > 0` means retailer owes crates back).
+- `id` (String/UUID, PK)
+- `retailerId` (String/UUID, FK -> `Retailer.id`)
+- `rgbItemId` (String/UUID, FK -> `RGBItem.id`)
+- `balance` (Int, default `0`)
+- `updatedAt` (DateTime, updated automatic)
+
+### RGB Transactions (`rgb_transactions`)
+Audit trail of crate issue and return exchanges.
+- `id` (String/UUID, PK)
+- `retailerId` (String/UUID, FK -> `Retailer.id`)
+- `rgbItemId` (String/UUID, FK -> `RGBItem.id`)
+- `type` (RGBTransactionType: `ISSUE` | `RETURN`)
+- `quantity` (Int) - Count of crates exchanged
+- `saleId` (String, Nullable) - Linked invoice ID (loose string)
+- `workerId` (String, Nullable) - Processing worker ID (loose string)
+- `createdAt` (DateTime, default `now()`)
 
 ### Bills (`bills`)
 Represents a finalized sales invoice.

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card } from '../../components/common';
 import { useStore } from '../../store';
@@ -24,6 +25,7 @@ const BLANK_FORM: RetailerForm = {
 };
 
 export const RetailersPage: React.FC = () => {
+  const navigate = useNavigate();
   const store = useStore();
   const [isAddRetailerModalOpen, setIsAddRetailerModalOpen] = useState(false);
   const [isCratesPanelOpen, setIsCratesPanelOpen] = useState(false);
@@ -351,6 +353,7 @@ export const RetailersPage: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-center">
                         <button
+                          onClick={() => navigate(`/admin/retailers/${retailer.id}`)}
                           className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                         >
                           View

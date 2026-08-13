@@ -113,6 +113,11 @@ Each directory contains service logics, Express routing handlers, and endpoints.
   - `ledger.controller.ts`
   - `ledger.service.ts`
 
+- **rgb/** - Empty crate item definitions, per-retailer crate balances, and atomic crate issue/return transactions.
+  - `rgb.routes.ts`
+  - `rgb.controller.ts`
+  - `rgb.service.ts`
+
 ---
 
 ## 5. Frontend Services (`src/services/`)
@@ -124,6 +129,7 @@ Communicates with the backend REST endpoints.
 - **src/services/inventory.ts** - Stock batch additions and adjustments.
 - **src/services/retailers.ts** - Retailer accounts and balance statements.
 - **src/services/bills.ts** - Sales billing processing.
+- **src/services/rgb.ts** - Returnable Glass Bottles (crates) management, balances, and exchange history.
 
 ---
 

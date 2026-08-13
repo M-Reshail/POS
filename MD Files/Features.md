@@ -6,30 +6,47 @@ This document provides a comprehensive list of all functional features implement
 
 ## Authentication & Access Control
 
-### 🔐 JWT-Based Authentication
+### 🔐 JWT-Based Authentication & Session Security
 - **Secure Token Lifecycle:** Implements dual-token JWT login.
-  - **Access Token:** Short-lived (15 minutes) token returned in JSON response payload.
-  - **Refresh Token:** Long-lived (7 days) token stored in a secure, `httpOnly`, same-site cookie.
-- **Silent Re-Authentication:** The frontend interceptor automatically catches 401 errors, calls the refresh endpoint (`/api/auth/refresh`) using the HTTP cookie, updates the access token, and retries the original request without user interruption.
-- **Safe Session Revocation:** Standard logout endpoint clears the refresh token cookie on the backend.
+  - **Access Token:** 12-hour lifespan (`JWT_ACCESS_EXPIRES_IN=12h`) returned in JSON response payload.
+  - **Refresh Token:** 10-hour lifespan (`JWT_REFRESH_EXPIRES_IN=10h`) stored in a secure, `httpOnly`, same-site cookie with dynamic `maxAge`.
+- **Graceful Session Expiry Handling:** The frontend interceptor catches 401 errors and attempts silent renewal. If the refresh token is also expired, it dispatches a `session-expired` CustomEvent, opening a non-disruptive, backdrop-blurred `SessionExpiredModal` with SPA React Router navigation to `/login` — preserving in-memory cart state without abrupt page reloads.
+- **Shared-PC Inactivity Auto-Logout:** An `InactivityTimer` tracks user activity (mouse, keyboard, touch, scroll) and automatically triggers the session-expired modal after 15 minutes of inactivity on shared shop PCs.
+- **Shift-End Security Warning:** Desktop and mobile sidebars display a clear security reminder (*"Leaving your shift? Log out so noone can use your account."*) above the Logout button.
+- **Safe Session Revocation:** Logout calls backend `/api/auth/logout` clearing the `httpOnly` cookie before clearing local storage.
 
 ### 🛡️ Role-Based Access Control (RBAC)
 - **Role Privileges:** User sessions carry one of two roles, validated server-side for every API action:
-  - **Admin Access:** Full permission across inventory adjustments, reports, catalogs, CRM, and void operations.
-  - **Worker Access:** Restricted exclusively to the Sales page. Unauthorized route queries yield 403 Forbidden responses.
+  - **Admin Access:** Full permission across inventory adjustments, reports, catalogs, CRM, expenses, and void operations.
+  - **Worker Access:** Restricted to Sales billing and RGB crate exchange screens. Unauthorized route queries yield 403 Forbidden responses.
 - **UI Route Protection:** Client-side routing automatically redirects workers and admins to their respective views (e.g., workers are blocked from accessing `/admin/*`).
+
+---
+
+## Returnable Glass Bottles (RGB) Crate Management
+
+### 🍾 Itemized Crate Tracking System
+- **Warehouse Crate Stock:** Manages empty crate inventory in warehouse stock (`RGBItem`: e.g. "Coca Cola RGB", "Pepsi RGB").
+- **Retailer Crate Debt Balances:** Tracks itemized crate balances per retailer (`RGBRetailerBalance`: `balance > 0` indicates retailer owes crates back).
+- **Atomic Crate Exchanges:** Issue and return actions modify warehouse stock and retailer crate balances in atomic PostgreSQL transactions, recording audit logs (`RGBTransaction`).
+- **Standalone & Mixed-Bill Support:**
+  - **Mixed Bills:** Product sales combined with crate exchanges attach the generated `billId` to the RGB transactions.
+  - **Standalone Exchanges:** Crate-only issues/returns (empty cart) log RGB transactions directly without creating a `Bill` record.
+- **Dedicated RGB Views:**
+  - **Inventory Page:** View Crates panel for managing crate stock and item definitions.
+  - **Create Sale Page:** "RGB History" tab showing retailer crate balances, standalone issue/return buttons, and audit logs.
+  - **Admin Bills Page:** "RGB Bills" tab rendering a dedicated RGB Transaction History table (Date, Retailer, RGB Item, Type, Quantity, Worker, Bill Link).
 
 ---
 
 ## Worker Module (Sales & Billing)
 
 ### 🖱️ Brand-First Selection
-- **Brand Cards:** Interactive visual grid displaying parent brands (`Pepsi`, `Dew`, `Fanta`, etc.) using high-contrast logos in `public/images/`.
-- **Variant Drill-Down:** Selecting a brand filters and displays its variants (e.g., `1.5L`, `Can`, `Glass Bottle (RGB)`) in a nested grid for rapid selection.
+- **Brand Cards:** Interactive visual grid displaying parent brands (`Pepsi`, `Dew`, `Fanta`, etc.) using high-contrast logos.
+- **Variant Drill-Down:** Selecting a brand filters and displays its packaging variants (e.g., `1.5L PET`, `500ml PET`, `250ml Glass`) in a nested grid for rapid selection.
 
 ### 🛒 Cart & Pricing Engine
 - **Calculations:** Real-time calculation of subtotal, applied item/cart discounts, and total values.
-- **Price Overrides:** Workers can manually overwrite unit pricing during checkout. This triggers price variance tracking rules.
 - **Print Preview Invoice:** Displays formatted invoices ready for print margins, appending carryover balances from the retailer's ledger.
 
 ---
@@ -46,7 +63,6 @@ This document provides a comprehensive list of all functional features implement
 ### 🚨 Live Alerts Engine
 - **Low Stock Thresholds:** Flags products whose remaining batch quantities drop below standard thresholds.
 - **Expiry Risk Indicators:** Warns when batches expire within 30 days, using color-coded urgency styles (Yellow / Red).
-- **Credit Limit Monitor:** Flags retailers whose outstanding debt exceeds credit limits.
 
 ---
 
@@ -56,19 +72,15 @@ This document provides a comprehensive list of all functional features implement
 - **FIFO Batch Depletion:** System deducts inventory starting from the oldest active stock batch, reducing expiry shrinkage.
 - **Manual Adjustments:** Interface for receiving new batches and recording supplier info, buy/sale prices, and expiry dates.
 - **Deduction Auditing:** Admin-only adjustments require selection of a standardized code (`damage`, `theft`, `manual_correction`) and a mandatory text log.
+- **Streamlined Catalog Entry:** Product variant creation and editing focuses on variant name and description; category defaults automatically to `'general'`.
 
 ---
 
 ## Retailer CRM
 
-### 👥 Profiles & pricing
-- **Retailer Profile:** Shop name, owner name, contact number, address, and special delivery directions.
-- **Pricing Tiers:** Supports distinct price lists (`standard`, `premium`, `discount`) linked to profiles, serving as default rates during billing.
-
-### 💰 Ledger & Credit Checks
-- **Credit Limits:** Outstanding balances are capped. Attempts to check out invoices that raise total debt past a retailer's credit limit are blocked.
-- **Automatic Double-Entry Ledger:** Bill creations and payment logs automatically write matching debits and credits to the retailer ledger table, ensuring balances balance.
-- **RGB Crate Tracker:** Independently tracks returnable glass crates (`issuedQuantity`, `returnedQuantity`, `balance`) to balance container assets separately from cash transactions.
+### 👥 Profiles & Accounting
+- **Retailer Profile:** Shop name, owner name, contact number, address, and delivery location notes.
+- **Automatic Double-Entry Ledger:** Bill creations and payment logs automatically write matching debits and credits to the retailer ledger table, tracking outstanding debt cleanly.
 
 ---
 

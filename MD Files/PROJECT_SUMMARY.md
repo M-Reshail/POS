@@ -70,11 +70,17 @@ The codebase is organized as a monorepo containing two key modules:
 ### Phase 4: Inventory & RGB Database Migration
 - Generalised categories to free-text strings (no enum lock-in).
 - Removed deprecated `petConversionFactor` logic.
-- Moved RGB crate stock tracking from localStorage to PostgreSQL `rgb_varieties` table.
+- Moved RGB crate stock tracking to PostgreSQL `rgb_items`, `rgb_retailer_balances`, and `rgb_transactions` tables.
 - Added multer-based image upload and dynamic frontend image URLs.
 
 ### Phase 5: Dialog Modal System Rebuild
 - Replaced custom inline CSS overlays with a shared, accessible React Portal Modal component supporting Escape close, click-outside, focus recovery, and body scroll lock.
+
+### Phase 6: RGB System, Retailer Refactoring & Session Security
+- Itemized crate management (`RGBItem`), per-retailer crate balances (`RGBRetailerBalance`), and atomic crate issue/return transactions (`RGBTransaction`). Standalone crate exchanges (empty cart) bypass Bill creation.
+- Dedicated RGB transaction history views on Inventory Page, Create Sale Page, and Admin Bills Page.
+- Full removal of `creditLimit`, `priceTier`, and `creditStatus` across schema, backend, and frontend.
+- Shared-PC session security: 12h access tokens, 10h refresh tokens, dynamic cookie maxAge, `session-expired` CustomEvent with SPA modal overlay, shift-end logout warning, and 15-minute inactivity auto-logout timer.
 
 ---
 
@@ -91,9 +97,9 @@ Now that the core full-stack foundations are running, future milestones include:
 
 ---
 
-**Version**: 2.2.0  
+**Version**: 2.4.0  
 **Status**: ✅ Full-Stack Foundation Ready  
-**Last Updated**: July 8, 2026  
+**Last Updated**: August 13, 2026  
 **License**: Commercial/Educational  
 
 🎉 Enjoy your new full-stack AbdulHaq POS System! 🎉

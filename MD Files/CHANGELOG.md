@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## Table of Contents
+- [[2.5.0] - 2026-08-14](#250---2026-08-14)
 - [[2.4.0] - 2026-08-13](#240---2026-08-13)
 - [[2.3.0] - 2026-07-17](#230---2026-07-17)
 - [[2.2.0] - 2026-07-08](#220---2026-07-08)
@@ -14,6 +15,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - [[2.0.0] - 2026-06-26](#200---2026-06-26)
 - [[1.1.0] - 2026-06-19](#110---2026-06-19)
 - [[1.0.0] - 2026-02-19](#100---2026-02-19)
+
+---
+
+## [2.5.0] - 2026-08-14
+
+### Added
+- **Retailer Detail Page**: Built a dedicated `/admin/retailers/:id` page featuring shop profile info, net outstanding debt, RGB balances, and paginated double-entry ledger audit statement table with full pagination controls.
+- **Wired Retailer Navigation**: Connected the "View" button in `RetailersPage.tsx` table to navigate to `/admin/retailers/:id`.
+
+### Fixed
+- **Central Prisma Decimal Serialization**: Added recursive `serializeDecimals` in `backend/src/lib/response.ts` to convert all `Prisma.Decimal` instances to native JS numbers in `ok()`, `created()`, and `badRequest()` response envelopes, preventing string concatenation bugs on the frontend.
+- **Role-Scoped Shift-End Reminder**: Updated `Layout/index.tsx` so the shift-end logout warning (*"Leaving your shift? Log out so noone can use your account."*) only displays for worker accounts and is hidden for admins.
 
 ---
 

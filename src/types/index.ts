@@ -130,6 +130,7 @@ export interface Retailer {
   address: string;
   deliveryLocation?: string;
   createdAt: Date;
+  outstanding?: number;
   rgbBalances?: RGBRetailerBalance[];
 }
 
@@ -144,6 +145,7 @@ export interface LedgerEntry {
   paymentMode?: 'cash' | 'bank-transfer' | 'check';
   notes?: string;
   createdAt: Date;
+  bill?: { id: string; billNumber: string; total: number };
 }
 
 // Bill Types
