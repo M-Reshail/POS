@@ -64,41 +64,41 @@ export const AdminDashboard: React.FC = () => {
     <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
         {/* Welcome Header Banner */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 md:p-8 text-white shadow-xl mb-8 border border-slate-800">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 sm:p-6 md:p-8 text-white shadow-xl mb-6 sm:mb-8 border border-slate-800">
           <div className="absolute -top-12 -right-12 w-64 h-64 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute -bottom-12 -left-12 w-64 h-64 bg-blue-600/20 rounded-full blur-3xl pointer-events-none" />
 
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5 sm:gap-6">
             <div>
-              <div className="flex items-center gap-2 text-indigo-300 text-xs font-semibold uppercase tracking-wider mb-2">
+              <div className="flex items-center gap-2 text-indigo-300 text-xs font-semibold uppercase tracking-wider mb-1.5 sm:mb-2">
                 <Sparkles size={14} className="text-indigo-400" /> Executive Overview
               </div>
-              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight leading-tight">
                 Beverage Distribution Dashboard
               </h1>
-              <p className="text-slate-300 text-sm mt-1 max-w-xl">
+              <p className="text-slate-300 text-xs sm:text-sm mt-1 max-w-xl">
                 Real-time monitoring for inventory, sales operations, retailer ledgers, and empty crates tracking.
               </p>
             </div>
 
             {/* Header Action Buttons */}
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap sm:flex-nowrap">
               <button
                 onClick={() => navigate('/sales')}
-                className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white text-xs md:text-sm font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-indigo-500/20 transition-all hover:scale-[1.02] active:scale-95"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white text-xs md:text-sm font-bold px-3.5 sm:px-4 py-2.5 rounded-xl shadow-lg shadow-indigo-500/20 transition-all hover:scale-[1.02] active:scale-95"
               >
                 <Plus size={16} /> New Sale
               </button>
               <button
                 onClick={() => navigate('/admin/inventory')}
-                className="flex items-center gap-2 bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700 text-xs md:text-sm font-semibold px-4 py-2.5 rounded-xl transition-all"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700 text-xs md:text-sm font-semibold px-3.5 sm:px-4 py-2.5 rounded-xl transition-all"
               >
-                <Boxes size={16} className="text-indigo-400" /> Manage Inventory
+                <Boxes size={16} className="text-indigo-400" /> Inventory
               </button>
               <button
                 onClick={() => fetchInitialData()}
                 disabled={isLoading}
-                className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 border border-slate-700 transition-all"
+                className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 border border-slate-700 transition-all flex-shrink-0"
                 title="Refresh Data"
               >
                 <RefreshCw size={16} className={isLoading ? 'animate-spin text-indigo-400' : ''} />
@@ -108,22 +108,22 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* ── Key Business Performance Cards ───────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5 mb-6 sm:mb-8">
 
           {/* Card 1: Today's Sales */}
-          <div className="relative overflow-hidden bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition-all group">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Today's Revenue</span>
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-blue-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 group-hover:scale-110 transition-transform">
-                <DollarSign size={20} />
+          <div className="relative overflow-hidden bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition-all group">
+            <div className="flex items-center justify-between mb-2.5 sm:mb-3">
+              <span className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Today's Revenue</span>
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-blue-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 group-hover:scale-110 transition-transform">
+                <DollarSign size={18} className="sm:w-5 sm:h-5" />
               </div>
             </div>
             <div className="flex items-baseline gap-2">
-              <h3 className="text-2xl md:text-3xl font-extrabold text-slate-900">
+              <h3 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900">
                 ₨{todaysSalesAmount.toLocaleString()}
               </h3>
             </div>
-            <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+            <div className="flex items-center justify-between mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-slate-100 text-xs text-slate-500">
               <span>{todaysBills.length} bill{todaysBills.length !== 1 ? 's' : ''} today</span>
               <span className="font-semibold text-indigo-600 flex items-center gap-0.5">
                 Live <Activity size={12} className="animate-pulse" />
@@ -132,19 +132,19 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           {/* Card 2: Total Sales & Revenue */}
-          <div className="relative overflow-hidden bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition-all group">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">All-Time Revenue</span>
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 group-hover:scale-110 transition-transform">
-                <TrendingUp size={20} />
+          <div className="relative overflow-hidden bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition-all group">
+            <div className="flex items-center justify-between mb-2.5 sm:mb-3">
+              <span className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">All-Time Revenue</span>
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 group-hover:scale-110 transition-transform">
+                <TrendingUp size={18} className="sm:w-5 sm:h-5" />
               </div>
             </div>
             <div className="flex items-baseline gap-2">
-              <h3 className="text-2xl md:text-3xl font-extrabold text-slate-900">
+              <h3 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900">
                 ₨{totalSales.toLocaleString()}
               </h3>
             </div>
-            <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+            <div className="flex items-center justify-between mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-slate-100 text-xs text-slate-500">
               <span>Paid: <strong className="text-emerald-700">₨{totalPaid.toLocaleString()}</strong></span>
               {totalPending > 0 && (
                 <span className="text-amber-700 font-semibold">Pending: ₨{totalPending.toLocaleString()}</span>
@@ -153,20 +153,20 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           {/* Card 3: Retailers & Accounts */}
-          <div className="relative overflow-hidden bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition-all group">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Retailer Accounts</span>
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-500 to-pink-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20 group-hover:scale-110 transition-transform">
-                <Users size={20} />
+          <div className="relative overflow-hidden bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition-all group">
+            <div className="flex items-center justify-between mb-2.5 sm:mb-3">
+              <span className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Retailer Accounts</span>
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-purple-500 to-pink-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20 group-hover:scale-110 transition-transform">
+                <Users size={18} className="sm:w-5 sm:h-5" />
               </div>
             </div>
             <div className="flex items-baseline gap-2">
-              <h3 className="text-2xl md:text-3xl font-extrabold text-slate-900">
+              <h3 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900">
                 {retailers.length}
               </h3>
               <span className="text-xs text-slate-500">Shops</span>
             </div>
-            <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+            <div className="flex items-center justify-between mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-slate-100 text-xs text-slate-500">
               <span>Catalog: <strong>{products.length} Products</strong></span>
               <button onClick={() => navigate('/admin/retailers')} className="text-purple-600 hover:text-purple-700 font-bold flex items-center gap-0.5">
                 View <ArrowRight size={12} />
@@ -175,20 +175,20 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           {/* Card 4: Inventory & RGB Crates */}
-          <div className="relative overflow-hidden bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition-all group">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Inventory & RGB Crates</span>
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 text-white flex items-center justify-center shadow-md shadow-cyan-500/20 group-hover:scale-110 transition-transform">
-                <Boxes size={20} />
+          <div className="relative overflow-hidden bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition-all group">
+            <div className="flex items-center justify-between mb-2.5 sm:mb-3">
+              <span className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Inventory & RGB Crates</span>
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 text-white flex items-center justify-center shadow-md shadow-cyan-500/20 group-hover:scale-110 transition-transform">
+                <Boxes size={18} className="sm:w-5 sm:h-5" />
               </div>
             </div>
             <div className="flex items-baseline gap-2">
-              <h3 className="text-2xl md:text-3xl font-extrabold text-slate-900">
+              <h3 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900">
                 {totalStockQuantity.toLocaleString()}
               </h3>
               <span className="text-xs text-slate-500">PET Units</span>
             </div>
-            <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+            <div className="flex items-center justify-between mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-slate-100 text-xs text-slate-500">
               <span>RGB Stock: <strong className="text-cyan-700">{totalRgbCrates} Crates</strong></span>
               <button onClick={() => navigate('/admin/inventory')} className="text-cyan-600 hover:text-cyan-700 font-bold flex items-center gap-0.5">
                 RGB Panel <ArrowRight size={12} />
@@ -199,23 +199,23 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* ── Main Content Split Grid ────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8 mb-8">
 
           {/* Left Column (2 spans): Operations & Recent Bills */}
-          <div className="lg:col-span-2 space-y-8">
+          <div className="lg:col-span-2 space-y-6 sm:space-y-8">
 
             {/* Quick Action Navigation Modules */}
-            <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs">
-              <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/80 shadow-xs">
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 mb-3.5 sm:mb-4 flex items-center gap-2">
                 <Layers size={18} className="text-indigo-600" /> Quick Operations Modules
               </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
                 <button
                   onClick={() => navigate('/sales')}
-                  className="flex flex-col items-center p-3.5 bg-gradient-to-b from-indigo-50/50 to-blue-50/50 hover:from-indigo-100/50 hover:to-blue-100/50 border border-indigo-100 rounded-xl text-center transition-all group"
+                  className="flex flex-col items-center p-3 sm:p-3.5 bg-gradient-to-b from-indigo-50/50 to-blue-50/50 hover:from-indigo-100/50 hover:to-blue-100/50 border border-indigo-100 rounded-xl text-center transition-all group"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-indigo-600 text-white flex items-center justify-center mb-2 shadow-sm group-hover:scale-110 transition-transform">
-                    <Plus size={20} />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-indigo-600 text-white flex items-center justify-center mb-1.5 sm:mb-2 shadow-sm group-hover:scale-110 transition-transform">
+                    <Plus size={18} className="sm:w-5 sm:h-5" />
                   </div>
                   <span className="font-bold text-slate-800 text-xs">Create Sale</span>
                   <span className="text-[10px] text-slate-500 mt-0.5">Worker checkout</span>
@@ -223,10 +223,10 @@ export const AdminDashboard: React.FC = () => {
 
                 <button
                   onClick={() => navigate('/admin/inventory')}
-                  className="flex flex-col items-center p-3.5 bg-gradient-to-b from-emerald-50/50 to-teal-50/50 hover:from-emerald-100/50 hover:to-teal-100/50 border border-emerald-100 rounded-xl text-center transition-all group"
+                  className="flex flex-col items-center p-3 sm:p-3.5 bg-gradient-to-b from-emerald-50/50 to-teal-50/50 hover:from-emerald-100/50 hover:to-teal-100/50 border border-emerald-100 rounded-xl text-center transition-all group"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-emerald-600 text-white flex items-center justify-center mb-2 shadow-sm group-hover:scale-110 transition-transform">
-                    <Package size={20} />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-emerald-600 text-white flex items-center justify-center mb-1.5 sm:mb-2 shadow-sm group-hover:scale-110 transition-transform">
+                    <Package size={18} className="sm:w-5 sm:h-5" />
                   </div>
                   <span className="font-bold text-slate-800 text-xs">Inventory Catalog</span>
                   <span className="text-[10px] text-slate-500 mt-0.5">Stock & brands</span>
@@ -234,10 +234,10 @@ export const AdminDashboard: React.FC = () => {
 
                 <button
                   onClick={() => navigate('/admin/retailers')}
-                  className="flex flex-col items-center p-3.5 bg-gradient-to-b from-purple-50/50 to-pink-50/50 hover:from-purple-100/50 hover:to-pink-100/50 border border-purple-100 rounded-xl text-center transition-all group"
+                  className="flex flex-col items-center p-3 sm:p-3.5 bg-gradient-to-b from-purple-50/50 to-pink-50/50 hover:from-purple-100/50 hover:to-pink-100/50 border border-purple-100 rounded-xl text-center transition-all group"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-purple-600 text-white flex items-center justify-center mb-2 shadow-sm group-hover:scale-110 transition-transform">
-                    <Users size={20} />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-purple-600 text-white flex items-center justify-center mb-1.5 sm:mb-2 shadow-sm group-hover:scale-110 transition-transform">
+                    <Users size={18} className="sm:w-5 sm:h-5" />
                   </div>
                   <span className="font-bold text-slate-800 text-xs">Retailers CRM</span>
                   <span className="text-[10px] text-slate-500 mt-0.5">Accounts & Debt</span>
@@ -245,10 +245,10 @@ export const AdminDashboard: React.FC = () => {
 
                 <button
                   onClick={() => navigate('/admin/expenses')}
-                  className="flex flex-col items-center p-3.5 bg-gradient-to-b from-amber-50/50 to-orange-50/50 hover:from-amber-100/50 hover:to-orange-100/50 border border-amber-100 rounded-xl text-center transition-all group"
+                  className="flex flex-col items-center p-3 sm:p-3.5 bg-gradient-to-b from-amber-50/50 to-orange-50/50 hover:from-amber-100/50 hover:to-orange-100/50 border border-amber-100 rounded-xl text-center transition-all group"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-amber-600 text-white flex items-center justify-center mb-2 shadow-sm group-hover:scale-110 transition-transform">
-                    <CreditCard size={20} />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-amber-600 text-white flex items-center justify-center mb-1.5 sm:mb-2 shadow-sm group-hover:scale-110 transition-transform">
+                    <CreditCard size={18} className="sm:w-5 sm:h-5" />
                   </div>
                   <span className="font-bold text-slate-800 text-xs">Expenses Log</span>
                   <span className="text-[10px] text-slate-500 mt-0.5">Daily cash outflows</span>
@@ -256,10 +256,10 @@ export const AdminDashboard: React.FC = () => {
 
                 <button
                   onClick={() => navigate('/admin/reports')}
-                  className="flex flex-col items-center p-3.5 bg-gradient-to-b from-cyan-50/50 to-blue-50/50 hover:from-cyan-100/50 hover:to-blue-100/50 border border-cyan-100 rounded-xl text-center transition-all group"
+                  className="flex flex-col items-center p-3 sm:p-3.5 bg-gradient-to-b from-cyan-50/50 to-blue-50/50 hover:from-cyan-100/50 hover:to-blue-100/50 border border-cyan-100 rounded-xl text-center transition-all group"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-cyan-600 text-white flex items-center justify-center mb-2 shadow-sm group-hover:scale-110 transition-transform">
-                    <BarChart3 size={20} />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-cyan-600 text-white flex items-center justify-center mb-1.5 sm:mb-2 shadow-sm group-hover:scale-110 transition-transform">
+                    <BarChart3 size={18} className="sm:w-5 sm:h-5" />
                   </div>
                   <span className="font-bold text-slate-800 text-xs">Reports & Analytics</span>
                   <span className="text-[10px] text-slate-500 mt-0.5">Audit & variance</span>
@@ -267,10 +267,10 @@ export const AdminDashboard: React.FC = () => {
 
                 <button
                   onClick={() => navigate('/admin/bills')}
-                  className="flex flex-col items-center p-3.5 bg-gradient-to-b from-slate-100 to-slate-200/60 hover:from-slate-200/80 hover:to-slate-300/80 border border-slate-200 rounded-xl text-center transition-all group"
+                  className="flex flex-col items-center p-3 sm:p-3.5 bg-gradient-to-b from-slate-100 to-slate-200/60 hover:from-slate-200/80 hover:to-slate-300/80 border border-slate-200 rounded-xl text-center transition-all group"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-slate-800 text-white flex items-center justify-center mb-2 shadow-sm group-hover:scale-110 transition-transform">
-                    <FileText size={20} />
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-slate-800 text-white flex items-center justify-center mb-1.5 sm:mb-2 shadow-sm group-hover:scale-110 transition-transform">
+                    <FileText size={18} className="sm:w-5 sm:h-5" />
                   </div>
                   <span className="font-bold text-slate-800 text-xs">Bill Statements</span>
                   <span className="text-[10px] text-slate-500 mt-0.5">History & Voiding</span>
@@ -279,24 +279,24 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             {/* Recent Transactions Table */}
-            <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs">
+            <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/80 shadow-xs">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
                     <Clock size={18} className="text-indigo-600" /> Recent Invoices & Sales
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">Latest transactions generated by workers</p>
                 </div>
                 <button
                   onClick={() => navigate('/admin/bills')}
-                  className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 flex-shrink-0"
                 >
-                  View All Invoices <ArrowRight size={14} />
+                  View All <ArrowRight size={14} />
                 </button>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+              <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                <table className="w-full text-left border-collapse min-w-[480px]">
                   <thead>
                     <tr className="border-b border-slate-100 text-[11px] font-bold uppercase text-slate-400 tracking-wider">
                       <th className="py-2.5 px-3">Bill #</th>

@@ -61,6 +61,24 @@ const handleServiceError = (res: Response, error: unknown): void => {
   throw error;
 };
 
+// ── Cookie maxAge Helper ──────────────────────────────────────────────────────
+// Converts a jsonwebtoken-style duration string (e.g. '10h', '7d', '30m', '60s')
+// to milliseconds so the cookie's maxAge always matches the refresh JWT lifetime.
+// Falls back to 10 hours if the format is unrecognised.
+const parseDurationToMs = (duration: string): number => {
+  const match = duration.match(/^(\d+)(s|m|h|d)$/);
+  if (!match) return 10 * 60 * 60 * 1000; // fallback: 10h
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+  const multipliers: Record<string, number> = {
+    s: 1_000,
+    m: 60_000,
+    h: 3_600_000,
+    d: 86_400_000,
+  };
+  return value * multipliers[unit];
+};
+
 // ── Controllers ───────────────────────────────────────────────────────────────
 
 /**
@@ -85,12 +103,14 @@ export const loginController = async (req: Request, res: Response): Promise<void
 
     const result = await authService.login(parsed.data);
 
-    // Set refresh token as httpOnly cookie for security
+    // Set refresh token as httpOnly cookie.
+    // maxAge is derived from JWT_REFRESH_EXPIRES_IN so cookie lifetime
+    // always matches the JWT lifetime — no more hardcoded 7-day override.
     res.cookie('refreshToken', result.tokens.refreshToken, {
       httpOnly: true,
       secure: env.isProduction,
       sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
+      maxAge: parseDurationToMs(env.JWT_REFRESH_EXPIRES_IN),
     });
 
     res.status(200).json({

@@ -20,10 +20,13 @@ export const productsService = {
   create: async (data: {
     brandId: string;
     variant: string;
-    category: string;
+    category?: string;
     description?: string;
   }): Promise<Product> => {
-    const response: any = await api.post('/products', data);
+    const response: any = await api.post('/products', {
+      category: 'general',
+      ...data,
+    });
     return response.data.product;
   },
 

@@ -12,9 +12,7 @@ import { ADMIN_SIDEBAR } from '../../constants/navigation';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const CATEGORY_SUGGESTIONS = [
-  'soft-drink', 'juice', 'water', 'energy-drink', 'snack', 'dairy', 'general',
-];
+
 
 const resolveImageUrl = (imageUrl?: string | null): string | null => {
   if (!imageUrl) return null;
@@ -171,7 +169,6 @@ export const InventoryPage: React.FC = () => {
   const [addProductSelectedBrandId, setAddProductSelectedBrandId] = useState('');
   const [addProductNewBrandName, setAddProductNewBrandName] = useState('');
   const [addProductVariant, setAddProductVariant] = useState('');
-  const [addProductCategory, setAddProductCategory] = useState('');
   const [addProductDescription, setAddProductDescription] = useState('');
   const [addProductErrors, setAddProductErrors] = useState<Record<string, string>>({});
   const [addProductLoading, setAddProductLoading] = useState(false);
@@ -182,7 +179,6 @@ export const InventoryPage: React.FC = () => {
   // ── Edit Product modal (Bug 2 fix: brand is read-only here) ───────────────────
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editVariant, setEditVariant] = useState('');
-  const [editCategory, setEditCategory] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [editLoading, setEditLoading] = useState(false);
@@ -303,7 +299,6 @@ export const InventoryPage: React.FC = () => {
     if (addProductBrandMode === 'existing' && !addProductSelectedBrandId) errs.brand = 'Select a brand.';
     if (addProductBrandMode === 'new' && !addProductNewBrandName.trim()) errs.brand = 'Brand name is required.';
     if (!addProductVariant.trim()) errs.variant = 'Variant is required.';
-    if (!addProductCategory.trim()) errs.category = 'Category is required.';
     if (Object.keys(errs).length > 0) { setAddProductErrors(errs); return; }
     setAddProductErrors({});
     setAddProductLoading(true);
@@ -324,7 +319,6 @@ export const InventoryPage: React.FC = () => {
       await productsService.create({
         brandId,
         variant: addProductVariant.trim().toLowerCase(),
-        category: addProductCategory.trim().toLowerCase(),
         description: addProductDescription.trim() || undefined,
       });
 
@@ -338,7 +332,6 @@ export const InventoryPage: React.FC = () => {
       setAddProductSelectedBrandId('');
       setAddProductNewBrandName('');
       setAddProductVariant('');
-      setAddProductCategory('');
       setAddProductDescription('');
       addBrandImage.reset();
       setIsAddProductModalOpen(false);
@@ -368,24 +361,21 @@ export const InventoryPage: React.FC = () => {
   const openEditModal = (product: Product) => {
     setEditingProduct(product);
     setEditVariant(product.variant);
-    setEditCategory(product.category);
     setEditDescription(product.description || '');
     setEditErrors({});
   };
 
-  // ── Save Edit (Bug 2 fix: only variant/category/description — NO brand) ───────
+  // ── Save Edit (Bug 2 fix: only variant/description — NO brand) ────────
   const handleSaveEdit = async () => {
     if (!editingProduct) return;
     const errs: Record<string, string> = {};
     if (!editVariant.trim()) errs.variant = 'Variant is required.';
-    if (!editCategory.trim()) errs.category = 'Category is required.';
     if (Object.keys(errs).length > 0) { setEditErrors(errs); return; }
     setEditErrors({});
     setEditLoading(true);
     try {
       await productsService.update(editingProduct.id, {
         variant: editVariant.trim().toLowerCase(),
-        category: editCategory.trim().toLowerCase(),
         description: editDescription.trim() || undefined,
       });
       store.fetchProducts();
@@ -1574,31 +1564,7 @@ export const InventoryPage: React.FC = () => {
               {addProductErrors.variant && <p className="text-red-500 text-xs mt-1">{addProductErrors.variant}</p>}
             </div>
 
-            {/* Category */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">
-                Category <span className="text-red-500">*</span>
-              </label>
-              <input
-                list="cat-suggestions"
-                className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${addProductErrors.category ? 'border-red-400' : 'border-gray-200'}`}
-                value={addProductCategory}
-                onChange={e => setAddProductCategory(e.target.value)}
-                placeholder="e.g. soft-drink, juice…"
-              />
-              <datalist id="cat-suggestions">
-                {CATEGORY_SUGGESTIONS.map(c => <option key={c} value={c} />)}
-              </datalist>
-              <div className="flex flex-wrap gap-1 mt-1.5">
-                {CATEGORY_SUGGESTIONS.map(c => (
-                  <button key={c} type="button" onClick={() => setAddProductCategory(c)}
-                    className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${addProductCategory === c ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-500 hover:border-blue-300'}`}>
-                    {c}
-                  </button>
-                ))}
-              </div>
-              {addProductErrors.category && <p className="text-red-500 text-xs mt-1">{addProductErrors.category}</p>}
-            </div>
+
 
             {/* Description */}
             <div>
@@ -1661,29 +1627,7 @@ export const InventoryPage: React.FC = () => {
               {editErrors.variant && <p className="text-red-500 text-xs mt-1">{editErrors.variant}</p>}
             </div>
 
-            {/* Category */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Category <span className="text-red-500">*</span></label>
-              <input
-                list="edit-cat-suggestions"
-                className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 ${editErrors.category ? 'border-red-400' : 'border-gray-200'}`}
-                value={editCategory}
-                onChange={e => setEditCategory(e.target.value)}
-                placeholder="e.g. soft-drink"
-              />
-              <datalist id="edit-cat-suggestions">
-                {CATEGORY_SUGGESTIONS.map(c => <option key={c} value={c} />)}
-              </datalist>
-              <div className="flex flex-wrap gap-1 mt-1.5">
-                {CATEGORY_SUGGESTIONS.map(c => (
-                  <button key={c} type="button" onClick={() => setEditCategory(c)}
-                    className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${editCategory === c ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-500 hover:border-blue-300'}`}>
-                    {c}
-                  </button>
-                ))}
-              </div>
-              {editErrors.category && <p className="text-red-500 text-xs mt-1">{editErrors.category}</p>}
-            </div>
+
 
             {/* Description */}
             <div>

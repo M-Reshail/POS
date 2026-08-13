@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useStore } from './store';
 import { authService } from './services/auth';
 import { LoginPage } from './pages/auth/LoginPage';
@@ -12,7 +12,7 @@ import { ReportsPage } from './pages/admin/ReportsPage';
 import { WorkersPage } from './pages/admin/WorkersPage';
 import { ExpensesPage } from './pages/admin/ExpensesPage';
 import { AdminBillsPage } from './pages/admin/AdminBillsPage';
-import { X } from 'lucide-react';
+import { X, LogIn, Clock } from 'lucide-react';
 import './index.css';
 
 // ── Auth Persistence ──────────────────────────────────────────────────────────
@@ -123,6 +123,127 @@ const Notifications: React.FC = () => {
   );
 };
 
+// ── Session Expired Modal ─────────────────────────────────────────────────────
+// Rendered when the interceptor in api.ts dispatches a 'session-expired' event.
+// Blocks the entire UI with a clear, non-dismissable overlay and prompts the
+// user to log in again. Uses React Router navigation — no hard page reload.
+const SessionExpiredModal: React.FC = () => {
+  const sessionExpired = useStore((s) => s.sessionExpired);
+  const setSessionExpired = useStore((s) => s.setSessionExpired);
+  const navigate = useNavigate();
+
+  if (!sessionExpired) return null;
+
+  const handleLoginAgain = () => {
+    setSessionExpired(false);
+    navigate('/login', { replace: true });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="session-expired-title"
+    >
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full mx-4 p-8 text-center">
+        {/* Icon */}
+        <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Clock size={32} className="text-orange-500" />
+        </div>
+
+        {/* Message */}
+        <h2 id="session-expired-title" className="text-xl font-bold text-gray-900 mb-2">
+          Session Expired
+        </h2>
+        <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+          Your session has timed out. Please log in again to continue — your work
+          on this page remains in place until you do.
+        </p>
+
+        {/* CTA */}
+        <button
+          id="session-expired-login-btn"
+          onClick={handleLoginAgain}
+          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+        >
+          <LogIn size={16} />
+          Log in again
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ── Session Expired Event Listener ────────────────────────────────────────────
+// Mounted once at the app root. Listens for the CustomEvent fired by api.ts
+// when both the access token and refresh token are no longer valid.
+const SessionExpiredListener: React.FC = () => {
+  const setCurrentUser = useStore((s) => s.setCurrentUser);
+  const setSessionExpired = useStore((s) => s.setSessionExpired);
+
+  useEffect(() => {
+    const handler = () => {
+      // Clear user from store — ProtectedRoute will block any navigation attempts.
+      setCurrentUser(null);
+      // Show the persistent modal (not the 1.5s auto-dismiss toast).
+      setSessionExpired(true);
+    };
+
+    window.addEventListener('session-expired', handler);
+    return () => window.removeEventListener('session-expired', handler);
+  }, [setCurrentUser, setSessionExpired]);
+
+  return null;
+};
+
+// ── Inactivity Auto-Logout ────────────────────────────────────────────────────
+// Tracks user activity (mouse, keyboard, touch, scroll). If no activity is
+// detected for INACTIVITY_TIMEOUT_MS the same 'session-expired' CustomEvent
+// is fired so the existing modal + redirect flow handles the logout gracefully.
+// The timer only runs when a user is logged in.
+//
+// Activity events counted:
+//   mousemove, mousedown, keydown, touchstart, scroll
+//
+// NOTE FOR TESTING: Temporarily lower INACTIVITY_TIMEOUT_MS to e.g. 30_000 (30s),
+// confirm the modal fires, then restore to 15 * 60 * 1000 before committing.
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+const InactivityTimer: React.FC = () => {
+  const currentUser = useStore((s) => s.currentUser);
+
+  useEffect(() => {
+    // Only run the timer when someone is logged in
+    if (!currentUser) return;
+
+    let timer: ReturnType<typeof setTimeout>;
+
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        // Fire the same event the token interceptor fires — reuses the
+        // existing SessionExpiredListener → modal → login redirect flow.
+        window.dispatchEvent(new CustomEvent('session-expired'));
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
+    // Events that count as "activity"
+    const events: string[] = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((e) => window.addEventListener(e, resetTimer, { passive: true }));
+
+    // Start the timer immediately on mount / user change
+    resetTimer();
+
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, resetTimer));
+    };
+  }, [currentUser]);
+
+  return null;
+};
+
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const currentUser = useStore((s) => s.currentUser);
@@ -130,6 +251,9 @@ export default function App() {
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AuthGate>
+        <SessionExpiredListener />
+        <InactivityTimer />
+        <SessionExpiredModal />
         <Notifications />
         <Routes>
           {/* Auth */}

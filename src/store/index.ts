@@ -20,6 +20,8 @@ interface Store {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
   fetchCurrentUser: () => Promise<void>;
+  sessionExpired: boolean;
+  setSessionExpired: (expired: boolean) => void;
 
   // Retailers
   retailers: Retailer[];
@@ -85,6 +87,8 @@ export const useStore = create<Store>((set, get) => ({
       set({ currentUser: null });
     }
   },
+  sessionExpired: false,
+  setSessionExpired: (expired) => set({ sessionExpired: expired }),
 
   retailers: [],
   fetchRetailers: async () => {

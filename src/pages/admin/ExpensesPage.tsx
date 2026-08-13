@@ -149,36 +149,36 @@ export const ExpensesPage: React.FC = () => {
   return (
     <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Expense Tracking</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Daily business expense management</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Expense Tracking</h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-0.5">Daily business expense management</p>
           </div>
-          <Button onClick={() => setShowAddModal(true)}>
+          <Button onClick={() => setShowAddModal(true)} className="w-full sm:w-auto justify-center text-xs sm:text-sm py-2 px-3">
             <Plus size={16} className="mr-1" /> Add Expense
           </Button>
         </div>
 
         {/* Summary KPI Cards — clickable with selected state */}
-        <div className="grid grid-cols-3 gap-4 mb-5">
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-4 mb-5">
           {([['today', 'Today', 'blue'], ['week', 'This Week', 'purple'], ['month', 'This Month', 'green']] as [PeriodTab, string, string][]).map(([key, label, color]) => (
             <button
               key={key}
               onClick={() => setPeriod(key)}
-              className={`p-4 rounded-xl border-2 text-left transition-all cursor-pointer select-none ${
+              className={`p-2.5 sm:p-4 rounded-xl border-2 text-left transition-all cursor-pointer select-none ${
                 period === key
                   ? `border-${color}-500 bg-${color}-50 ring-2 ring-${color}-200 scale-[1.02] shadow-sm`
                   : 'border-gray-200 bg-white hover:border-gray-400 hover:shadow-sm hover:scale-[1.01]'
               }`}
             >
-              <p className="text-xs text-gray-500 font-medium">{label}</p>
-              <p className={`text-2xl font-bold mt-1 ${
+              <p className="text-[10px] sm:text-xs text-gray-500 font-medium">{label}</p>
+              <p className={`text-base sm:text-2xl font-bold mt-0.5 sm:mt-1 ${
                 period === key ? `text-${color}-700` : 'text-gray-900'
               }`}>
                 ₨{summary ? (key === 'today' ? summary.today : key === 'week' ? summary.week : summary.month).toFixed(0) : '—'}
               </p>
               {period === key && (
-                <p className="text-xs mt-1 font-semibold" style={{ color: `var(--tw-${color})` }}>● Selected</p>
+                <p className="text-[10px] sm:text-xs mt-0.5 sm:mt-1 font-semibold" style={{ color: `var(--tw-${color})` }}>● Selected</p>
               )}
             </button>
           ))}
@@ -287,8 +287,8 @@ export const ExpensesPage: React.FC = () => {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+              <table className="w-full text-sm min-w-[540px]">
                 <thead>
                   <tr className="border-b border-gray-100 text-gray-500 text-xs">
                     <th className="text-left py-2 px-2">Date</th>

@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## Table of Contents
+- [[2.4.0] - 2026-08-13](#240---2026-08-13)
 - [[2.3.0] - 2026-07-17](#230---2026-07-17)
 - [[2.2.0] - 2026-07-08](#220---2026-07-08)
 - [[2.1.0] - 2026-06-30](#210---2026-06-30)
@@ -15,6 +16,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - [[1.0.0] - 2026-02-19](#100---2026-02-19)
 
 ---
+
+## [2.4.0] - 2026-08-13
+
+### Added
+- **Multi-Worker Shared PC Session Security**: Implemented a 15-minute frontend `InactivityTimer` that automatically dispatches a `session-expired` CustomEvent when no user input (mouse, keyboard, touch, scroll) is detected.
+- **Graceful Session Expired Modal**: Replaced abrupt `window.location.href` browser reloads with a backdrop-blurred `SessionExpiredModal` in `App.tsx` featuring smooth SPA React Router navigation to `/login`.
+- **Shift-End Logout Warning**: Added a prominent security reminder above the Logout button in both desktop and mobile sidebars (*"Leaving your shift? Log out so noone can use your account."*).
+- **RGB Transaction Table in Admin Bills**: Replaced generic product bill columns in the Admin Bills page "RGB Bills" tab with a dedicated RGB Transaction History table (Date, Retailer, RGB Item, Type, Quantity, Worker, Bill Link).
+
+### Changed
+- **Extended Token Lifetime**: Configured access token lifetime to 12 hours (`JWT_ACCESS_EXPIRES_IN=12h`) and refresh token lifetime to 10 hours (`JWT_REFRESH_EXPIRES_IN=10h`).
+- **Dynamic Cookie Lifetime**: Updated backend `auth.controller.ts` to calculate cookie `maxAge` dynamically from `env.JWT_REFRESH_EXPIRES_IN` rather than using a hardcoded 7-day duration.
+- **Retailer Feature Refactoring**: Completely removed `creditLimit`, `priceTier`, and `creditStatus` fields from Prisma schema, backend controllers/services, ledger logic, and frontend types/forms. Removed the `PriceTier` enum and credit limit check logic.
+- **Simplified Product Creation**: Removed the redundant Category selection dropdown and suggestions from Add Variant and Edit Variant modals in `InventoryPage.tsx`. Category in backend schema now defaults to `'general'`.
+- **Sidebar Layout Fix**: Made the sidebar navigation container scrollable (`overflow-y-auto`) and pinned the user info & logout footer (`flex-shrink-0`), preventing the Logout button from overflowing out of the viewport on lower-height screens.
 
 ## [2.3.0] - 2026-07-17
 

@@ -87,31 +87,31 @@ export const WorkersPage: React.FC = () => {
   return (
     <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Worker Management</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Manage sales team accounts and performance</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Worker Management</h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-0.5">Manage sales team accounts and performance</p>
           </div>
-          <Button onClick={() => setShowCreateModal(true)}>
+          <Button onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto justify-center text-xs sm:text-sm py-2 px-3">
             <Plus size={16} className="mr-1" /> Add Worker
           </Button>
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5">
           {[
             { label: 'Total Workers', value: workers.length, color: 'blue', icon: <Users size={20} /> },
             { label: 'Active', value: activeWorkers, color: 'green', icon: <CheckCircle size={20} /> },
             { label: 'Inactive', value: workers.length - activeWorkers, color: 'red', icon: <XCircle size={20} /> },
             { label: 'Total Revenue', value: `₨${(totalRevenue / 1000).toFixed(0)}K`, color: 'purple', icon: <TrendingUp size={20} /> },
           ].map(({ label, value, color, icon }) => (
-            <Card key={label} className={`border-l-4 border-${color}-500`}>
+            <Card key={label} className={`border-l-4 border-${color}-500 p-3 sm:p-4`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-gray-500">{label}</p>
-                  <p className="text-2xl font-bold mt-1">{value}</p>
+                  <p className="text-[11px] sm:text-xs text-gray-500">{label}</p>
+                  <p className="text-lg sm:text-2xl font-bold mt-0.5 sm:mt-1">{value}</p>
                 </div>
-                <div className={`text-${color}-400 opacity-60`}>{icon}</div>
+                <div className={`text-${color}-400 opacity-60 hidden sm:block`}>{icon}</div>
               </div>
             </Card>
           ))}
@@ -174,8 +174,8 @@ export const WorkersPage: React.FC = () => {
           </Card>
         ) : (
           <Card>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+              <table className="w-full text-sm min-w-[620px]">
                 <thead>
                   <tr className="border-b border-gray-100 text-gray-500">
                     <th className="text-left py-2 px-3">Name</th>

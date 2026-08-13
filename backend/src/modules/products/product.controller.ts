@@ -26,7 +26,7 @@ import {
 
 const createProductSchema = z.object({
   brandId:     z.string().uuid('Invalid brandId — must be a valid brand UUID.'),
-  category:    z.string().min(1, 'Category is required.').trim(),
+  category:    z.string().trim().optional().default('general'),
   variant:     z.string().min(1, 'Variant is required.').trim(),
   description: z.string().trim().optional(),
 });

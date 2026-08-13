@@ -37,11 +37,15 @@ api.interceptors.response.use(
         localStorage.setItem('accessToken', newAccessToken);
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return api(originalRequest);
-      } catch (refreshError) {
-        // Refresh failed, logout
+      } catch {
+        // Refresh token also expired or missing — clean up and notify the React
+        // tree via a CustomEvent so we can show a proper modal instead of a
+        // hard browser reload (window.location.href would wipe all React state).
         localStorage.removeItem('accessToken');
-        window.location.href = '/login';
-        return Promise.reject(refreshError);
+        window.dispatchEvent(new CustomEvent('session-expired'));
+        // Return a rejected promise so the original caller's catch block also
+        // fires (e.g. form submit handlers will stop their loading spinners).
+        return Promise.reject(error);
       }
     }
     return Promise.reject(error);
