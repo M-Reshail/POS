@@ -22,8 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [2.6.0] - 2026-08-14
 
 ### Added
-- **10-Bill Initial Page Size & Incremental Load More**: Updated `AdminBillsPage.tsx` to load only the latest 10 bills (and 10 RGB transactions) on initial page render (`PAGE_SIZE = 10`), appending 10 more records with updated headers (e.g. `Showing 20 of 61 bills`) on each "Load More" click.
-- **Bills Page Quick Period Presets**: Added 3 Quick Period Preset cards (**Today**, **This Week**, **This Month**) at the top of `AdminBillsPage.tsx` matching the Expenses page design. Presets display live period revenue totals and feature interactive toggle filtering (clicking filters table date range, clicking active card deselects back to all bills).
+- **Preset Revenue Cards & Auto-Expanded Period View**: Configured `AdminBillsPage.tsx` to compute Today, This Week, and This Month preset revenue cards from the complete bill dataset on initial page load. Clicking any period preset card (**Today**, **This Week**, **This Month**) automatically expands and displays ALL bills matching that period (bypassing the 10-item display limit). Deselecting the card restores the 10-item paginated view with the "Load More Bills" button.
 - **Single-Bill Creation for RGB-Only Sales**: Updated `createBill` in `bill.service.ts` so all checkout sales (whether product-only, mixed, or RGB-only crate exchanges) generate a single unified `Bill` record with `total: 0` and `status: 'paid'`, linking both crate issue (`ISSUE`) and return (`RETURN`) transactions to `saleId: bill.id`.
 - **Grouped RGB History View on Worker Site**: Implemented memoized grouping (`groupedWorkerRgbHistory`) in `SalesPage.tsx` so sales with dual crate exchanges (Give and Return) display as a single combined row with `Given ↓ X` and `Returned ↑ Y` badges under `Linked to Sale`, matching the admin view.
 

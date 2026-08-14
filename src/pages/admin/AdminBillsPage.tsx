@@ -120,15 +120,13 @@ export const AdminBillsPage: React.FC = () => {
   const { retailers, fetchInitialData } = useStore();
   const store = useStore();
 
-  // Data & Pagination state (page size = 10)
-  const PAGE_SIZE = 10;
+  // Full dataset loaded from backend to compute accurate revenue cards & support period expansion
   const [bills, setBills] = useState<Bill[]>([]);
-  const [totalBills, setTotalBills] = useState<number>(0);
-  const [loadingMoreBills, setLoadingMoreBills] = useState<boolean>(false);
-
   const [rgbTransactions, setRgbTransactions] = useState<RGBTransactionRecord[]>([]);
-  const [totalRgbTransactions, setTotalRgbTransactions] = useState<number>(0);
-  const [loadingMoreRgb, setLoadingMoreRgb] = useState<boolean>(false);
+
+  // Pagination display limit for normal view (starts at 10)
+  const [visibleBillCount, setVisibleBillCount] = useState<number>(10);
+  const [visibleRgbCount, setVisibleRgbCount] = useState<number>(10);
 
   const [workers, setWorkers] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -155,15 +153,13 @@ export const AdminBillsPage: React.FC = () => {
   const loadBills = async () => {
     setLoading(true);
     try {
+      // Fetch full bill dataset so preset revenue cards calculate 100% accurate totals on initial load
       const [billsRes, rgbRes] = await Promise.all([
-        billsService.list({ limit: PAGE_SIZE, offset: 0 }),
-        rgbService.getTransactions({ limit: PAGE_SIZE, offset: 0 }),
+        billsService.list({ limit: 10000, offset: 0 }),
+        rgbService.getTransactions({ limit: 10000, offset: 0 }),
       ]);
       setBills(billsRes.bills || []);
-      setTotalBills(billsRes.total || 0);
-
       setRgbTransactions(rgbRes.transactions || []);
-      setTotalRgbTransactions(rgbRes.total || 0);
 
       // Extract unique workers from bills and RGB transactions
       const workerMap = new Map<string, string>();
@@ -184,32 +180,6 @@ export const AdminBillsPage: React.FC = () => {
     }
   };
 
-  const handleLoadMoreBills = async () => {
-    setLoadingMoreBills(true);
-    try {
-      const res = await billsService.list({ limit: PAGE_SIZE, offset: bills.length });
-      setBills((prev) => [...prev, ...(res.bills || [])]);
-      setTotalBills(res.total || 0);
-    } catch {
-      store.addNotification('error', 'Failed to load more bills');
-    } finally {
-      setLoadingMoreBills(false);
-    }
-  };
-
-  const handleLoadMoreRgb = async () => {
-    setLoadingMoreRgb(true);
-    try {
-      const res = await rgbService.getTransactions({ limit: PAGE_SIZE, offset: rgbTransactions.length });
-      setRgbTransactions((prev) => [...prev, ...(res.transactions || [])]);
-      setTotalRgbTransactions(res.total || 0);
-    } catch {
-      store.addNotification('error', 'Failed to load more RGB transactions');
-    } finally {
-      setLoadingMoreRgb(false);
-    }
-  };
-
   const getPresetRanges = () => {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
@@ -223,6 +193,7 @@ export const AdminBillsPage: React.FC = () => {
     return { todayStr, weekStr, monthStr };
   };
 
+  // Calculate revenue totals across ALL bills for Today, This Week, and This Month immediately on page load
   const presetTotals = useMemo(() => {
     const { todayStr, weekStr, monthStr } = getPresetRanges();
     let today = 0;
@@ -252,6 +223,8 @@ export const AdminBillsPage: React.FC = () => {
       setPeriod(null);
       setDateFrom('');
       setDateTo('');
+      setVisibleBillCount(10);
+      setVisibleRgbCount(10);
     } else {
       setPeriod(selectedPeriod);
       const { todayStr, weekStr, monthStr } = getPresetRanges();
@@ -276,39 +249,51 @@ export const AdminBillsPage: React.FC = () => {
     setDateFrom('');
     setDateTo('');
     setStatusFilter('');
+    setVisibleBillCount(10);
+    setVisibleRgbCount(10);
   };
 
-  const hasActiveFilters =
+  const isFilterActive =
     period !== null ||
+    Boolean(dateFrom) ||
+    Boolean(dateTo) ||
     Boolean(searchTerm) ||
     Boolean(retailerFilter) ||
     Boolean(workerFilter) ||
-    Boolean(dateFrom) ||
-    Boolean(dateTo) ||
     Boolean(statusFilter);
 
   // Newest-first order matching backend
-  const filteredBills = bills.filter((bill) => {
-    const retailer = retailers.find((r) => r.id === bill.retailerId);
-    const workerName = (bill as any).worker?.name || '';
-    const s = searchTerm.toLowerCase();
+  const filteredBills = useMemo(() => {
+    return bills.filter((bill) => {
+      const retailer = retailers.find((r) => r.id === bill.retailerId);
+      const workerName = (bill as any).worker?.name || '';
+      const s = searchTerm.toLowerCase();
 
-    const matchSearch = !s ||
-      bill.billNumber.toLowerCase().includes(s) ||
-      (retailer?.shopName || '').toLowerCase().includes(s) ||
-      (retailer?.ownerName || '').toLowerCase().includes(s) ||
-      workerName.toLowerCase().includes(s);
+      const matchSearch = !s ||
+        bill.billNumber.toLowerCase().includes(s) ||
+        (retailer?.shopName || '').toLowerCase().includes(s) ||
+        (retailer?.ownerName || '').toLowerCase().includes(s) ||
+        workerName.toLowerCase().includes(s);
 
-    const matchRetailer = !retailerFilter || bill.retailerId === retailerFilter;
-    const matchWorker = !workerFilter || bill.workerId === workerFilter;
-    const matchStatus = !statusFilter || bill.status === statusFilter;
+      const matchRetailer = !retailerFilter || bill.retailerId === retailerFilter;
+      const matchWorker = !workerFilter || bill.workerId === workerFilter;
+      const matchStatus = !statusFilter || bill.status === statusFilter;
 
-    const billDate = new Date(bill.createdAt).toISOString().split('T')[0];
-    const matchFrom = !dateFrom || billDate >= dateFrom;
-    const matchTo = !dateTo || billDate <= dateTo;
+      const billDate = new Date(bill.createdAt).toISOString().split('T')[0];
+      const matchFrom = !dateFrom || billDate >= dateFrom;
+      const matchTo = !dateTo || billDate <= dateTo;
 
-    return matchSearch && matchRetailer && matchWorker && matchStatus && matchFrom && matchTo;
-  });
+      return matchSearch && matchRetailer && matchWorker && matchStatus && matchFrom && matchTo;
+    });
+  }, [bills, retailers, searchTerm, retailerFilter, workerFilter, statusFilter, dateFrom, dateTo]);
+
+  // If a period/date filter is selected, expand ALL matching bills. If normal view, slice to visibleBillCount.
+  const displayedBills = useMemo(() => {
+    if (period !== null || Boolean(dateFrom) || Boolean(dateTo)) {
+      return filteredBills;
+    }
+    return filteredBills.slice(0, visibleBillCount);
+  }, [filteredBills, period, dateFrom, dateTo, visibleBillCount]);
 
   const filteredRgbTransactions = useMemo(() => {
     return rgbTransactions.filter((tx) => {
@@ -398,6 +383,13 @@ export const AdminBillsPage: React.FC = () => {
     return groups;
   }, [filteredRgbTransactions]);
 
+  const displayedGroupedRgbTransactions = useMemo(() => {
+    if (period !== null || Boolean(dateFrom) || Boolean(dateTo)) {
+      return groupedRgbTransactions;
+    }
+    return groupedRgbTransactions.slice(0, visibleRgbCount);
+  }, [groupedRgbTransactions, period, dateFrom, dateTo, visibleRgbCount]);
+
   const totalRevenue = filteredBills.reduce((s, b) => s + Number(b.total), 0);
   const totalPaid = filteredBills.reduce((s, b) => s + Number(b.paidAmount), 0);
   const totalPending = filteredBills.reduce((s, b) => s + Number(b.pendingAmount), 0);
@@ -412,8 +404,8 @@ export const AdminBillsPage: React.FC = () => {
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Bill History</h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
               {activeBillSection === 'all'
-                ? `Showing ${filteredBills.length} of ${totalBills} bill${totalBills !== 1 ? 's' : ''}`
-                : `Showing ${groupedRgbTransactions.length} grouped entry (${filteredRgbTransactions.length} of ${totalRgbTransactions} RGB transaction${totalRgbTransactions !== 1 ? 's' : ''})`}
+                ? `Showing ${displayedBills.length} of ${filteredBills.length} bill${filteredBills.length !== 1 ? 's' : ''}`
+                : `Showing ${displayedGroupedRgbTransactions.length} grouped entry (${filteredRgbTransactions.length} RGB transaction${filteredRgbTransactions.length !== 1 ? 's' : ''})`}
             </p>
           </div>
           <Button size="sm" variant="secondary" onClick={loadBills} disabled={loading} className="w-full sm:w-auto justify-center">
@@ -424,7 +416,7 @@ export const AdminBillsPage: React.FC = () => {
         {/* Quick Period Presets Header */}
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Quick Period Presets</p>
-          {hasActiveFilters && (
+          {isFilterActive && (
             <button
               onClick={handleClearFilters}
               className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 cursor-pointer"
@@ -452,7 +444,7 @@ export const AdminBillsPage: React.FC = () => {
                   ? `border-${color}-500 bg-${color}-50 ring-2 ring-${color}-200 scale-[1.02] shadow-sm`
                   : 'border-gray-200 bg-white hover:border-gray-400 hover:shadow-sm hover:scale-[1.01]'
               }`}
-              title={period === key ? 'Click again to deselect & show all bills' : `Filter table for ${label}`}
+              title={period === key ? 'Click again to deselect & show all bills' : `Filter table & expand all for ${label}`}
             >
               <p className="text-[10px] sm:text-xs text-gray-500 font-medium">{label}</p>
               <p className={`text-base sm:text-2xl font-bold mt-0.5 sm:mt-1 ${
@@ -462,10 +454,10 @@ export const AdminBillsPage: React.FC = () => {
               </p>
               {period === key ? (
                 <p className="text-[10px] sm:text-xs mt-0.5 sm:mt-1 font-semibold text-blue-600 flex items-center gap-1">
-                  ● Filtered (click to reset)
+                  ● Filtered & Expanded (click to reset)
                 </p>
               ) : (
-                <p className="text-[10px] sm:text-xs text-gray-400 mt-0.5 sm:mt-1">Click to filter</p>
+                <p className="text-[10px] sm:text-xs text-gray-400 mt-0.5 sm:mt-1">Click to filter & expand all</p>
               )}
             </button>
           ))}
@@ -572,7 +564,7 @@ export const AdminBillsPage: React.FC = () => {
                   : 'border-transparent text-gray-400 hover:text-gray-600'
               }`}
             >
-              All Sales Bills ({filteredBills.length})
+              All Sales Bills ({displayedBills.length})
             </button>
             <button
               onClick={() => setActiveBillSection('rgb')}
@@ -582,7 +574,7 @@ export const AdminBillsPage: React.FC = () => {
                   : 'border-transparent text-gray-400 hover:text-gray-600'
               }`}
             >
-              📦 RGB Bills ({groupedRgbTransactions.length})
+              📦 RGB Bills ({displayedGroupedRgbTransactions.length})
             </button>
           </div>
 
@@ -590,7 +582,7 @@ export const AdminBillsPage: React.FC = () => {
             <div className="text-center py-10 text-gray-400 text-sm">Loading data...</div>
           ) : activeBillSection === 'all' ? (
             /* ALL SALES BILLS TABLE */
-            filteredBills.length === 0 ? (
+            displayedBills.length === 0 ? (
               <div className="text-center py-10 text-gray-400 text-sm">No bills found. Try adjusting your filters.</div>
             ) : (
               <div>
@@ -612,7 +604,7 @@ export const AdminBillsPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredBills.map((bill: Bill) => {
+                      {displayedBills.map((bill: Bill) => {
                         const retailer = retailers.find((r) => r.id === bill.retailerId);
                         const workerName = (bill as any).worker?.name || bill.workerId.slice(0, 8);
                         const isExpanded = expandedBill === bill.id;
@@ -663,17 +655,16 @@ export const AdminBillsPage: React.FC = () => {
                   </table>
                 </div>
 
-                {/* Load More Bills Button */}
-                {bills.length < totalBills && (
+                {/* Load More Bills Button (shown ONLY in normal view when more bills remain) */}
+                {period === null && !dateFrom && !dateTo && displayedBills.length < filteredBills.length && (
                   <div className="text-center pt-4 mt-2 border-t border-gray-100">
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={handleLoadMoreBills}
-                      disabled={loadingMoreBills}
+                      onClick={() => setVisibleBillCount((prev) => prev + 10)}
                       className="px-6"
                     >
-                      {loadingMoreBills ? 'Loading...' : `Load More Bills (Showing ${bills.length} of ${totalBills})`}
+                      Load More Bills (Showing {displayedBills.length} of {filteredBills.length})
                     </Button>
                   </div>
                 )}
@@ -681,7 +672,7 @@ export const AdminBillsPage: React.FC = () => {
             )
           ) : (
             /* RGB TRANSACTION HISTORY TABLE (GROUPED) */
-            groupedRgbTransactions.length === 0 ? (
+            displayedGroupedRgbTransactions.length === 0 ? (
               <div className="text-center py-10 text-gray-400 text-sm">No RGB transactions found. Try adjusting your filters.</div>
             ) : (
               <div>
@@ -699,7 +690,7 @@ export const AdminBillsPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {groupedRgbTransactions.map((group) => {
+                      {displayedGroupedRgbTransactions.map((group) => {
                         const linkedBill = group.saleId ? bills.find((b) => b.id === group.saleId) : null;
                         const isExpanded = expandedGroupKey === group.key;
                         const retailer = retailers.find((r) => r.id === group.retailerId);
@@ -778,16 +769,15 @@ export const AdminBillsPage: React.FC = () => {
                 </div>
 
                 {/* Load More RGB Transactions Button */}
-                {rgbTransactions.length < totalRgbTransactions && (
+                {period === null && !dateFrom && !dateTo && displayedGroupedRgbTransactions.length < groupedRgbTransactions.length && (
                   <div className="text-center pt-4 mt-2 border-t border-gray-100">
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={handleLoadMoreRgb}
-                      disabled={loadingMoreRgb}
+                      onClick={() => setVisibleRgbCount((prev) => prev + 10)}
                       className="px-6"
                     >
-                      {loadingMoreRgb ? 'Loading...' : `Load More RGB Transactions (Showing ${rgbTransactions.length} of ${totalRgbTransactions})`}
+                      Load More RGB Transactions (Showing {displayedGroupedRgbTransactions.length} of {groupedRgbTransactions.length})
                     </Button>
                   </div>
                 )}
