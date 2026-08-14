@@ -15,6 +15,8 @@ const STATUS_COLORS: Record<string, string> = {
   partial: 'bg-yellow-100 text-yellow-700',
 };
 
+type PeriodPreset = 'today' | 'week' | 'month' | null;
+
 interface GroupedRGBTransaction {
   key: string;
   saleId: string | null;
@@ -118,7 +120,8 @@ export const AdminBillsPage: React.FC = () => {
   const { retailers, fetchInitialData } = useStore();
   const store = useStore();
 
-  // Data & Pagination state
+  // Data & Pagination state (page size = 10)
+  const PAGE_SIZE = 10;
   const [bills, setBills] = useState<Bill[]>([]);
   const [totalBills, setTotalBills] = useState<number>(0);
   const [loadingMoreBills, setLoadingMoreBills] = useState<boolean>(false);
@@ -132,6 +135,9 @@ export const AdminBillsPage: React.FC = () => {
   const [expandedBill, setExpandedBill] = useState<string | null>(null);
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   const [activeBillSection, setActiveBillSection] = useState<'all' | 'rgb'>('all');
+
+  // Quick Period Presets state
+  const [period, setPeriod] = useState<PeriodPreset>(null);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -150,8 +156,8 @@ export const AdminBillsPage: React.FC = () => {
     setLoading(true);
     try {
       const [billsRes, rgbRes] = await Promise.all([
-        billsService.list({ limit: 50, offset: 0 }),
-        rgbService.getTransactions({ limit: 50, offset: 0 }),
+        billsService.list({ limit: PAGE_SIZE, offset: 0 }),
+        rgbService.getTransactions({ limit: PAGE_SIZE, offset: 0 }),
       ]);
       setBills(billsRes.bills || []);
       setTotalBills(billsRes.total || 0);
@@ -181,7 +187,7 @@ export const AdminBillsPage: React.FC = () => {
   const handleLoadMoreBills = async () => {
     setLoadingMoreBills(true);
     try {
-      const res = await billsService.list({ limit: 50, offset: bills.length });
+      const res = await billsService.list({ limit: PAGE_SIZE, offset: bills.length });
       setBills((prev) => [...prev, ...(res.bills || [])]);
       setTotalBills(res.total || 0);
     } catch {
@@ -194,7 +200,7 @@ export const AdminBillsPage: React.FC = () => {
   const handleLoadMoreRgb = async () => {
     setLoadingMoreRgb(true);
     try {
-      const res = await rgbService.getTransactions({ limit: 50, offset: rgbTransactions.length });
+      const res = await rgbService.getTransactions({ limit: PAGE_SIZE, offset: rgbTransactions.length });
       setRgbTransactions((prev) => [...prev, ...(res.transactions || [])]);
       setTotalRgbTransactions(res.total || 0);
     } catch {
@@ -204,7 +210,84 @@ export const AdminBillsPage: React.FC = () => {
     }
   };
 
-  // FIX BUG 1: Remove .reverse() so bills display in backend's native newest-first order
+  const getPresetRanges = () => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    const weekDate = new Date(now);
+    weekDate.setDate(weekDate.getDate() - 6);
+    const weekStr = weekDate.toISOString().split('T')[0];
+
+    const monthStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+
+    return { todayStr, weekStr, monthStr };
+  };
+
+  const presetTotals = useMemo(() => {
+    const { todayStr, weekStr, monthStr } = getPresetRanges();
+    let today = 0;
+    let week = 0;
+    let month = 0;
+
+    bills.forEach((b) => {
+      const bDate = new Date(b.createdAt).toISOString().split('T')[0];
+      const val = Number(b.total) || 0;
+
+      if (bDate === todayStr) {
+        today += val;
+      }
+      if (bDate >= weekStr && bDate <= todayStr) {
+        week += val;
+      }
+      if (bDate >= monthStr && bDate <= todayStr) {
+        month += val;
+      }
+    });
+
+    return { today, week, month };
+  }, [bills]);
+
+  const handlePeriodClick = (selectedPeriod: 'today' | 'week' | 'month') => {
+    if (period === selectedPeriod) {
+      setPeriod(null);
+      setDateFrom('');
+      setDateTo('');
+    } else {
+      setPeriod(selectedPeriod);
+      const { todayStr, weekStr, monthStr } = getPresetRanges();
+      if (selectedPeriod === 'today') {
+        setDateFrom(todayStr);
+        setDateTo(todayStr);
+      } else if (selectedPeriod === 'week') {
+        setDateFrom(weekStr);
+        setDateTo(todayStr);
+      } else if (selectedPeriod === 'month') {
+        setDateFrom(monthStr);
+        setDateTo(todayStr);
+      }
+    }
+  };
+
+  const handleClearFilters = () => {
+    setPeriod(null);
+    setSearchTerm('');
+    setRetailerFilter('');
+    setWorkerFilter('');
+    setDateFrom('');
+    setDateTo('');
+    setStatusFilter('');
+  };
+
+  const hasActiveFilters =
+    period !== null ||
+    Boolean(searchTerm) ||
+    Boolean(retailerFilter) ||
+    Boolean(workerFilter) ||
+    Boolean(dateFrom) ||
+    Boolean(dateTo) ||
+    Boolean(statusFilter);
+
+  // Newest-first order matching backend
   const filteredBills = bills.filter((bill) => {
     const retailer = retailers.find((r) => r.id === bill.retailerId);
     const workerName = (bill as any).worker?.name || '';
@@ -258,7 +341,7 @@ export const AdminBillsPage: React.FC = () => {
     });
   }, [rgbTransactions, searchTerm, retailerFilter, workerFilter, statusFilter, dateFrom, dateTo, retailers, bills]);
 
-  // FIX BUG 3: Group RGB transactions by (saleId + rgbItemId) for bills, or keep standalone
+  // Group RGB transactions by (saleId + rgbItemId) for bills, or keep standalone
   const groupedRgbTransactions = useMemo(() => {
     const groups: GroupedRGBTransaction[] = [];
     const map = new Map<string, GroupedRGBTransaction>();
@@ -320,15 +403,6 @@ export const AdminBillsPage: React.FC = () => {
   const totalPending = filteredBills.reduce((s, b) => s + Number(b.pendingAmount), 0);
   const totalDiscount = filteredBills.reduce((s, b) => s + Number(b.discount || 0), 0);
 
-  const clearFilters = () => {
-    setSearchTerm('');
-    setRetailerFilter('');
-    setWorkerFilter('');
-    setDateFrom('');
-    setDateTo('');
-    setStatusFilter('');
-  };
-
   return (
     <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
@@ -345,6 +419,56 @@ export const AdminBillsPage: React.FC = () => {
           <Button size="sm" variant="secondary" onClick={loadBills} disabled={loading} className="w-full sm:w-auto justify-center">
             Refresh
           </Button>
+        </div>
+
+        {/* Quick Period Presets Header */}
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Quick Period Presets</p>
+          {hasActiveFilters && (
+            <button
+              onClick={handleClearFilters}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <RotateCcw size={12} />
+              Show All Bills
+            </button>
+          )}
+        </div>
+
+        {/* Quick Period Preset Cards (Today / This Week / This Month) */}
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-4 mb-5">
+          {(
+            [
+              ['today', 'Today', 'blue'],
+              ['week', 'This Week', 'purple'],
+              ['month', 'This Month', 'green'],
+            ] as ['today' | 'week' | 'month', string, string][]
+          ).map(([key, label, color]) => (
+            <button
+              key={key}
+              onClick={() => handlePeriodClick(key)}
+              className={`p-2.5 sm:p-4 rounded-xl border-2 text-left transition-all cursor-pointer select-none ${
+                period === key
+                  ? `border-${color}-500 bg-${color}-50 ring-2 ring-${color}-200 scale-[1.02] shadow-sm`
+                  : 'border-gray-200 bg-white hover:border-gray-400 hover:shadow-sm hover:scale-[1.01]'
+              }`}
+              title={period === key ? 'Click again to deselect & show all bills' : `Filter table for ${label}`}
+            >
+              <p className="text-[10px] sm:text-xs text-gray-500 font-medium">{label}</p>
+              <p className={`text-base sm:text-2xl font-bold mt-0.5 sm:mt-1 ${
+                period === key ? `text-${color}-700` : 'text-gray-900'
+              }`}>
+                ₨{presetTotals[key].toFixed(0)}
+              </p>
+              {period === key ? (
+                <p className="text-[10px] sm:text-xs mt-0.5 sm:mt-1 font-semibold text-blue-600 flex items-center gap-1">
+                  ● Filtered (click to reset)
+                </p>
+              ) : (
+                <p className="text-[10px] sm:text-xs text-gray-400 mt-0.5 sm:mt-1">Click to filter</p>
+              )}
+            </button>
+          ))}
         </div>
 
         {/* KPIs */}
@@ -367,7 +491,7 @@ export const AdminBillsPage: React.FC = () => {
           <div className="flex items-center gap-2 mb-3">
             <Filter size={14} className="text-gray-400" />
             <span className="text-sm font-semibold text-gray-700">Filters</span>
-            <button onClick={clearFilters} className="ml-auto text-xs text-blue-600 hover:underline">Clear all</button>
+            <button onClick={handleClearFilters} className="ml-auto text-xs text-blue-600 hover:underline">Clear all</button>
           </div>
           <div className="flex flex-col gap-2">
             {/* Row 1: Search + Retailer + Worker + Status */}
@@ -423,14 +547,14 @@ export const AdminBillsPage: React.FC = () => {
               <input
                 type="date"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                onChange={(e) => { setDateFrom(e.target.value); setPeriod(null); }}
                 className="flex-1 min-w-[120px] max-w-[180px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
               />
               <span className="text-xs text-gray-400 flex-shrink-0">to</span>
               <input
                 type="date"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                onChange={(e) => { setDateTo(e.target.value); setPeriod(null); }}
                 className="flex-1 min-w-[120px] max-w-[180px] text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
               />
             </div>
