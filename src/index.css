@@ -11,7 +11,7 @@ html {
 }
 
 body {
-  @apply bg-gray-50 text-gray-900 antialiased;
+  @apply bg-gray-200/80 text-gray-900 antialiased;
 }
 
 /* Custom smooth scrollbar */
@@ -43,11 +43,11 @@ body {
 }
 
 .card {
-  @apply bg-white rounded-lg shadow-md p-6;
+  @apply bg-white border border-gray-300 rounded-xl shadow-sm p-6;
 }
 
 .input-field {
-  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500;
+  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white;
 }
 
 /* Page fade entrance animation */

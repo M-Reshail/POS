@@ -124,7 +124,7 @@ export const useStore = create<Store>((set, get) => ({
   fetchBills: async () => {
     try {
       const data = await billsService.list();
-      set({ bills: data });
+      set({ bills: Array.isArray(data) ? data : data.bills });
     } catch (err: any) {
       get().addNotification('error', 'Failed to load bills');
     }
@@ -215,13 +215,14 @@ export const useStore = create<Store>((set, get) => ({
   fetchInitialData: async () => {
     set({ isLoading: true, error: null });
     try {
-      const [retailers, products, stockBatches, bills, rgbItems] = await Promise.all([
+      const [retailers, products, stockBatches, billsRes, rgbItems] = await Promise.all([
         retailersService.getAll(),
         productsService.getAll(),
         inventoryService.getBatches(),
         billsService.list(),
         rgbService.getAll(),
       ]);
+      const bills = Array.isArray(billsRes) ? billsRes : billsRes.bills;
       set({ retailers, products, stockBatches, bills, rgbItems, isLoading: false });
     } catch (err: any) {
       set({ error: err.message || 'Failed to load initial data', isLoading: false });

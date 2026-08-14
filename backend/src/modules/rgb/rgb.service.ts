@@ -36,6 +36,7 @@ export interface ReturnRGBInput {
   retailerId: string;
   rgbItemId: string;
   quantity: number;
+  saleId?: string;
   workerId?: string;
 }
 
@@ -187,7 +188,7 @@ export const returnRGB = async (
   tx: Prisma.TransactionClient,
   input: ReturnRGBInput
 ): Promise<void> => {
-  const { retailerId, rgbItemId, quantity, workerId } = input;
+  const { retailerId, rgbItemId, quantity, saleId, workerId } = input;
 
   if (quantity <= 0) return;
 
@@ -250,6 +251,7 @@ export const returnRGB = async (
       rgbItemId,
       type: 'RETURN',
       quantity: actualReturned,
+      saleId: saleId ?? null,
       workerId: workerId ?? null,
     },
   });

@@ -102,44 +102,6 @@ export const createBill = async (input: CreateBillInput) => {
   // 0. Guard: bill must have at least one product OR one non-zero RGB exchange
   if (!hasProducts && !hasRgb) throw new Error('EMPTY_BILL');
 
-  // RGB-Only Exchange: No products in cart → process RGB activity directly with no Bill record
-  if (!hasProducts && hasRgb) {
-    return prisma.$transaction(async (tx) => {
-      const retailer = await tx.retailer.findUnique({ where: { id: input.retailerId } });
-      if (!retailer) throw new Error('RETAILER_NOT_FOUND');
-
-      const worker = await tx.user.findUnique({ where: { id: input.workerId } });
-      if (!worker || !worker.isActive) throw new Error('WORKER_NOT_FOUND');
-
-      for (const exchange of input.rgbExchanges!) {
-        if (exchange.cratesGiven > 0) {
-          await issueRGB(tx, {
-            retailerId: input.retailerId,
-            rgbItemId: exchange.rgbItemId,
-            quantity: exchange.cratesGiven,
-            saleId: undefined, // left null — no Bill record linked
-            workerId: input.workerId,
-          });
-        }
-        if (exchange.cratesReturned > 0) {
-          await returnRGB(tx, {
-            retailerId: input.retailerId,
-            rgbItemId: exchange.rgbItemId,
-            quantity: exchange.cratesReturned,
-            workerId: input.workerId,
-          });
-        }
-      }
-
-      return {
-        isRgbOnly: true,
-        message: 'Crate exchange recorded successfully.',
-        bill: null,
-        priceVariances: [],
-      };
-    });
-  }
-
   return prisma.$transaction(async (tx) => {
     // 1. Validate retailer ────────────────────────────────────────────────────
     const retailer = await tx.retailer.findUnique({ where: { id: input.retailerId } });
@@ -273,6 +235,7 @@ export const createBill = async (input: CreateBillInput) => {
             retailerId: input.retailerId,
             rgbItemId: exchange.rgbItemId,
             quantity: exchange.cratesReturned,
+            saleId: bill.id,
             workerId: input.workerId,
           });
         }

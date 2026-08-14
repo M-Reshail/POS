@@ -195,13 +195,13 @@ export const RetailerDetailPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <button
               onClick={() => navigate('/admin/retailers')}
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 bg-white border border-gray-300 rounded-lg shadow-2xs hover:bg-gray-50 transition-colors"
             >
               <ArrowLeft size={16} />
               Back to Retailers
             </button>
-            <span className="text-xs text-gray-400">
-              Retailer ID: <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono">{retailer.id.slice(0, 8)}</code>
+            <span className="text-xs text-gray-500 font-medium">
+              Retailer ID: <code className="bg-gray-100 border border-gray-300 text-gray-700 px-2 py-0.5 rounded font-mono">{retailer.id.slice(0, 8)}</code>
             </span>
           </div>
 
@@ -209,19 +209,19 @@ export const RetailerDetailPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {/* Shop Profile Details */}
             <Card className="md:col-span-1">
-              <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100">
+              <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-200">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center font-bold">
                     <Store size={20} />
                   </div>
                   <div>
                     <h3 className="font-bold text-gray-900 text-base">{retailer.shopName}</h3>
-                    <p className="text-xs text-gray-500">Retailer Profile</p>
+                    <p className="text-xs text-gray-500 font-medium">Retailer Profile</p>
                   </div>
                 </div>
                 <button
                   onClick={openEditModal}
-                  className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                  className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 rounded-lg transition-colors"
                   title="Edit Retailer Details"
                 >
                   <Pencil size={16} />
@@ -232,12 +232,12 @@ export const RetailerDetailPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <User size={14} className="text-gray-400 flex-shrink-0" />
                   <span className="font-medium text-gray-700">Owner:</span>
-                  <span className="text-gray-900">{retailer.ownerName}</span>
+                  <span className="text-gray-900 font-medium">{retailer.ownerName}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Phone size={14} className="text-gray-400 flex-shrink-0" />
                   <span className="font-medium text-gray-700">Phone:</span>
-                  <a href={`tel:${retailer.mobileNumber}`} className="text-blue-600 hover:underline">
+                  <a href={`tel:${retailer.mobileNumber}`} className="text-blue-600 font-medium hover:underline">
                     {retailer.mobileNumber}
                   </a>
                 </div>
@@ -247,7 +247,7 @@ export const RetailerDetailPage: React.FC = () => {
                     <span className="font-medium text-gray-700">Address: </span>
                     <span className="text-gray-900">{retailer.address}</span>
                     {retailer.deliveryLocation && (
-                      <p className="text-gray-400 italic text-[11px] mt-0.5">
+                      <p className="text-gray-500 italic text-[11px] mt-0.5">
                         Note: {retailer.deliveryLocation}
                       </p>
                     )}
@@ -256,7 +256,7 @@ export const RetailerDetailPage: React.FC = () => {
                 <div className="flex items-center gap-2 pt-1">
                   <Calendar size={14} className="text-gray-400 flex-shrink-0" />
                   <span className="font-medium text-gray-700">Customer Since:</span>
-                  <span className="text-gray-500">
+                  <span className="text-gray-600">
                     {new Date(retailer.createdAt).toLocaleDateString()}
                   </span>
                 </div>
@@ -265,23 +265,23 @@ export const RetailerDetailPage: React.FC = () => {
 
             {/* Financial Summary */}
             <Card className="md:col-span-1">
-              <div className="flex items-center gap-3 pb-3 mb-3 border-b border-gray-100">
-                <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <div className="flex items-center gap-3 pb-3 mb-3 border-b border-gray-200">
+                <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center font-bold">
                   <CreditCard size={20} />
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-900 text-base">Financial Ledger</h3>
-                  <p className="text-xs text-gray-500">Outstanding Balance</p>
+                  <p className="text-xs text-gray-500 font-medium">Outstanding Balance</p>
                 </div>
               </div>
 
               <div className="space-y-4">
-                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-center">
-                  <p className="text-xs font-semibold text-gray-500 mb-1">Net Outstanding Balance</p>
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-300 text-center shadow-2xs">
+                  <p className="text-xs font-semibold text-gray-600 mb-1">Net Outstanding Balance</p>
                   <p className={`text-2xl font-bold ${outstanding > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                     ₨{Number(outstanding).toLocaleString('en-PK', { minimumFractionDigits: 0 })}
                   </p>
-                  <p className="text-[11px] text-gray-400 mt-1">
+                  <p className="text-[11px] text-gray-500 mt-1 font-medium">
                     {outstanding > 0 ? 'Retailer owes pending balance' : 'No outstanding debt'}
                   </p>
                 </div>
@@ -290,13 +290,13 @@ export const RetailerDetailPage: React.FC = () => {
 
             {/* RGB Crate Balances */}
             <Card className="md:col-span-1">
-              <div className="flex items-center gap-3 pb-3 mb-3 border-b border-gray-100">
-                <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+              <div className="flex items-center gap-3 pb-3 mb-3 border-b border-gray-200">
+                <div className="w-10 h-10 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center font-bold">
                   <Boxes size={20} />
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-900 text-base">RGB Crates Summary</h3>
-                  <p className="text-xs text-gray-500">{totalCratesOwed} Total Crates Pending</p>
+                  <p className="text-xs text-gray-500 font-medium">{totalCratesOwed} Total Crates Pending</p>
                 </div>
               </div>
 
@@ -305,19 +305,19 @@ export const RetailerDetailPage: React.FC = () => {
                   {retailer.rgbBalances.map((b) => (
                     <div
                       key={b.id}
-                      className="flex items-center justify-between p-2 bg-gray-50 rounded-lg border border-gray-100 text-xs"
+                      className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg border border-gray-300 text-xs shadow-2xs"
                     >
-                      <span className="font-medium text-gray-700 capitalize">
+                      <span className="font-semibold text-gray-800 capitalize">
                         {b.rgbItem?.name || 'Crate Item'}
                       </span>
-                      <span className={`font-semibold px-2 py-0.5 rounded-md ${b.balance > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-200 text-gray-600'}`}>
+                      <span className={`font-bold px-2 py-0.5 rounded-md border ${b.balance > 0 ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-gray-200 text-gray-700 border-gray-300'}`}>
                         {b.balance} crates
                       </span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="bg-gray-50 p-4 rounded-xl text-center text-xs text-gray-400 italic">
+                <div className="bg-gray-50 border border-gray-300 p-4 rounded-xl text-center text-xs text-gray-500 italic">
                   No empty crate balances recorded for this retailer.
                 </div>
               )}
@@ -338,10 +338,10 @@ export const RetailerDetailPage: React.FC = () => {
               )}
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto border border-gray-300 rounded-xl shadow-2xs">
               <table className="w-full text-xs text-left">
                 <thead>
-                  <tr className="bg-gray-50 text-gray-600 uppercase border-b border-gray-200 font-semibold">
+                  <tr className="bg-gray-100 text-gray-700 uppercase border-b-2 border-gray-300 font-bold tracking-wider text-[11px]">
                     <th className="py-3 px-4">Date & Time</th>
                     <th className="py-3 px-4">Type</th>
                     <th className="py-3 px-4">Bill Ref</th>
@@ -351,7 +351,7 @@ export const RetailerDetailPage: React.FC = () => {
                     <th className="py-3 px-4">Notes</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-200 bg-white">
                   {ledgerEntries.length > 0 ? (
                     ledgerEntries.map((entry) => {
                       const badge = ENTRY_TYPE_BADGES[entry.entryType.toLowerCase()] || {
@@ -361,31 +361,31 @@ export const RetailerDetailPage: React.FC = () => {
                       };
 
                       return (
-                        <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap">
+                        <tr key={entry.id} className="hover:bg-blue-50/40 transition-colors border-b border-gray-200">
+                          <td className="py-3 px-4 text-gray-700 font-medium whitespace-nowrap">
                             {new Date(entry.createdAt).toLocaleString('en-PK', {
                               dateStyle: 'medium',
                               timeStyle: 'short',
                             })}
                           </td>
                           <td className="py-3 px-4">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-semibold text-[11px] ${badge.bg} ${badge.text}`}>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md font-bold text-[11px] border border-gray-200 ${badge.bg} ${badge.text}`}>
                               {badge.label}
                             </span>
                           </td>
-                          <td className="py-3 px-4 font-mono font-medium text-gray-800">
+                          <td className="py-3 px-4 font-mono font-bold text-gray-800">
                             {entry.bill?.billNumber ? `#${entry.bill.billNumber}` : '—'}
                           </td>
-                          <td className="py-3 px-4 capitalize text-gray-600">
+                          <td className="py-3 px-4 capitalize text-gray-700 font-medium">
                             {entry.paymentMode ? entry.paymentMode.replace('_', ' ') : '—'}
                           </td>
-                          <td className="py-3 px-4 text-right font-semibold text-gray-900">
+                          <td className="py-3 px-4 text-right font-bold text-gray-900">
                             ₨{Number(entry.amount).toLocaleString('en-PK', { minimumFractionDigits: 0 })}
                           </td>
-                          <td className="py-3 px-4 text-right font-bold text-gray-900">
+                          <td className="py-3 px-4 text-right font-extrabold text-gray-900">
                             ₨{Number(entry.balance).toLocaleString('en-PK', { minimumFractionDigits: 0 })}
                           </td>
-                          <td className="py-3 px-4 text-gray-500 max-w-xs truncate">
+                          <td className="py-3 px-4 text-gray-600 max-w-xs truncate">
                             {entry.notes || '—'}
                           </td>
                         </tr>
@@ -393,7 +393,7 @@ export const RetailerDetailPage: React.FC = () => {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-gray-400 italic">
+                      <td colSpan={7} className="py-8 text-center text-gray-500 italic">
                         {loadingLedger ? 'Loading statement…' : 'No ledger transactions recorded yet.'}
                       </td>
                     </tr>
@@ -404,31 +404,31 @@ export const RetailerDetailPage: React.FC = () => {
 
             {/* Pagination Controls */}
             {totalEntries > 0 && (
-              <div className="flex items-center justify-between pt-4 mt-4 border-t border-gray-100 text-xs">
-                <p className="text-gray-500">
-                  Showing <span className="font-semibold text-gray-700">{(page - 1) * PAGE_SIZE + 1}</span> to{' '}
-                  <span className="font-semibold text-gray-700">{Math.min(page * PAGE_SIZE, totalEntries)}</span> of{' '}
-                  <span className="font-semibold text-gray-700">{totalEntries}</span> entries
+              <div className="flex items-center justify-between pt-4 mt-4 border-t border-gray-300 text-xs">
+                <p className="text-gray-600 font-medium">
+                  Showing <span className="font-bold text-gray-800">{(page - 1) * PAGE_SIZE + 1}</span> to{' '}
+                  <span className="font-bold text-gray-800">{Math.min(page * PAGE_SIZE, totalEntries)}</span> of{' '}
+                  <span className="font-bold text-gray-800">{totalEntries}</span> entries
                 </p>
 
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setPage((p) => Math.max(p - 1, 1))}
                     disabled={page === 1 || loadingLedger}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-gray-600"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-gray-700 shadow-2xs"
                   >
                     <ChevronLeft size={14} />
                     Previous
                   </button>
 
-                  <span className="px-2 font-medium text-gray-600">
+                  <span className="px-2 font-bold text-gray-700">
                     Page {page} of {totalPages}
                   </span>
 
                   <button
                     onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
                     disabled={page >= totalPages || loadingLedger}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-gray-600"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-gray-700 shadow-2xs"
                   >
                     Next
                     <ChevronRight size={14} />

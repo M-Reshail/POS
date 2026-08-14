@@ -218,7 +218,7 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         ref={panelRef}
         className={`
-          relative bg-white rounded-xl shadow-2xl w-full ${SIZE_CLASSES[size]}
+          relative bg-white border border-gray-300 rounded-xl shadow-2xl w-full ${SIZE_CLASSES[size]}
           flex flex-col
           max-h-[calc(100vh-2rem)]
           animate-[modalIn_150ms_ease-out]

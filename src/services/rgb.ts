@@ -13,7 +13,7 @@ export const rgbService = {
     retailerId?: string;
     limit?: number;
     offset?: number;
-  }): Promise<{ transactions: RGBTransactionRecord[]; total: number }> => {
+  }): Promise<{ transactions: RGBTransactionRecord[]; total: number; limit?: number; offset?: number }> => {
     const response: any = await api.get('/rgb/transactions', { params });
     return response.data;
   },

@@ -82,6 +82,14 @@ The codebase is organized as a monorepo containing two key modules:
 - Full removal of `creditLimit`, `priceTier`, and `creditStatus` across schema, backend, and frontend.
 - Shared-PC session security: 12h access tokens, 10h refresh tokens, dynamic cookie maxAge, `session-expired` CustomEvent with SPA modal overlay, shift-end logout warning, and 15-minute inactivity auto-logout timer.
 
+### Phase 7: Single-Bill RGB Unified Engine, High-Contrast UI & Pagination
+- **Single-Bill Creation Engine**: All sale checkouts (whether standard inventory products, mixed, or RGB-only crate exchanges) create a single unified `Bill` record (`total: 0`, `status: 'paid'`), linking both `ISSUE` and `RETURN` transactions to `saleId: bill.id`.
+- **Grouped RGB History Views**: Memoized grouping (`groupedWorkerRgbHistory` on `SalesPage.tsx` and `groupedRgbTransactions` on `AdminBillsPage.tsx`) merging Give and Return legs into single combined rows showing `Given ↓ X` and `Returned ↑ Y` badges linked to the bill.
+- **High-Contrast Grey Theme**: Medium grey background (`bg-gray-200/80`), crisp white card containers (`bg-white`), and defined outline borders (`border border-gray-300`).
+- **Expenses Page Direct Backend Querying & Dynamic Charts**: Period presets trigger fresh date-bounded backend queries (`expensesService.getAll({ dateFrom, dateTo })`) with toggle deselect, and dynamic Bar/Pie charts.
+- **Paginated Lists**: Limit/offset pagination for bills and RGB transactions with "Load More" controls.
+- **Worker Sales Double-Submission Guard**: Synchronous `isSubmittingRef` guard preventing rapid double-clicks from creating duplicate bill records.
+
 ---
 
 ## 🎯 Next Steps
@@ -97,9 +105,9 @@ Now that the core full-stack foundations are running, future milestones include:
 
 ---
 
-**Version**: 2.4.0  
+**Version**: 2.6.0  
 **Status**: ✅ Full-Stack Foundation Ready  
-**Last Updated**: August 13, 2026  
+**Last Updated**: August 14, 2026  
 **License**: Commercial/Educational  
 
 🎉 Enjoy your new full-stack AbdulHaq POS System! 🎉

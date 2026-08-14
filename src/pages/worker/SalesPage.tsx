@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card } from '../../components/common';
 import { useStore } from '../../store';
@@ -127,6 +127,76 @@ export const SalesPage: React.FC = () => {
         p.variant.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [inventoryProducts, selectedProductBrand, searchTerm]);
+
+  // ── Grouped RGB History for Worker Tab ───────────────────────────────────────
+  const groupedWorkerRgbHistory = useMemo(() => {
+    const filtered = rgbHistory.filter((tx) => {
+      const s = historySearchTerm.toLowerCase();
+      const matchSearch =
+        !s ||
+        (tx.retailerName || '').toLowerCase().includes(s) ||
+        (tx.itemName || '').toLowerCase().includes(s);
+      const txDate = new Date(tx.createdAt).toISOString().split('T')[0];
+      const matchDate = !historyDateFilter || txDate === historyDateFilter;
+      return matchSearch && matchDate;
+    });
+
+    const groups: {
+      key: string;
+      saleId: string | null;
+      retailerName: string;
+      rgbItemId: string;
+      itemName: string;
+      workerName: string;
+      cratesGiven: number;
+      cratesReturned: number;
+      createdAt: string | Date;
+    }[] = [];
+
+    const map = new Map<string, (typeof groups)[0]>();
+
+    filtered.forEach((tx) => {
+      if (tx.saleId) {
+        const groupKey = `${tx.saleId}_${tx.rgbItemId}`;
+        let group = map.get(groupKey);
+        if (!group) {
+          group = {
+            key: groupKey,
+            saleId: tx.saleId,
+            retailerName: tx.retailerName || '',
+            rgbItemId: tx.rgbItemId,
+            itemName: tx.itemName || '',
+            workerName: tx.workerName || '',
+            cratesGiven: 0,
+            cratesReturned: 0,
+            createdAt: tx.createdAt,
+          };
+          map.set(groupKey, group);
+          groups.push(group);
+        }
+        if (tx.type?.toLowerCase() === 'issue') {
+          group.cratesGiven += tx.quantity;
+        } else if (tx.type?.toLowerCase() === 'return') {
+          group.cratesReturned += tx.quantity;
+        }
+      } else {
+        // Standalone RGB transaction
+        groups.push({
+          key: tx.id,
+          saleId: null,
+          retailerName: tx.retailerName || '',
+          rgbItemId: tx.rgbItemId,
+          itemName: tx.itemName || '',
+          workerName: tx.workerName || '',
+          cratesGiven: tx.type?.toLowerCase() === 'issue' ? tx.quantity : 0,
+          cratesReturned: tx.type?.toLowerCase() === 'return' ? tx.quantity : 0,
+          createdAt: tx.createdAt,
+        });
+      }
+    });
+
+    return groups;
+  }, [rgbHistory, historySearchTerm, historyDateFilter]);
 
   // ── Cart-derived stock map (real-time, updates on every cart change) ──────────
   // Maps productId → quantity currently in cart (non-RGB items only)
@@ -310,54 +380,60 @@ export const SalesPage: React.FC = () => {
   const existingPendingForRetailer = retailerPendingBills
     .reduce((s, b) => s + Number(b.pendingAmount), 0);
 
+  // Synchronous submission guard preventing double-clicks/rapid re-submits
+  const isSubmittingRef = useRef(false);
+
   // ── Bill submission ───────────────────────────────────────────────────────────
   const handleCreateBill = async () => {
-    if (!selectedRetailer) {
-      store.addNotification('error', 'Select a retailer in Bill Summary');
-      return;
-    }
-    // Allow RGB-only bill: empty cart is valid if there's at least one non-zero RGB exchange
-    const hasRgbActivity = Object.values(rgbExchanges).some(
-      (v) => v.cratesGiven > 0 || v.cratesReturned > 0
-    );
-    if (cartItems.length === 0 && !hasRgbActivity) {
-      store.addNotification('error', 'Add at least one product or record a crate exchange');
-      return;
-    }
-    if (paymentMethod === 'cash' && amountReceivedNum === 0) {
-      store.addNotification('error', 'Enter amount received');
-      return;
-    }
-
-    const isPaid = paymentMethod === 'cash' && amountReceivedNum >= total;
-    const paidAmt = paymentMethod === 'generate-only' ? 0 : amountReceivedNum;
-    const pendingAmt = paymentMethod === 'generate-only' ? total : udhariAmount;
-
-    // Build rgbExchanges array (only entries with at least one non-zero value)
-    const rgbExchangesPayload = Object.entries(rgbExchanges)
-      .filter(([, v]) => v.cratesGiven > 0 || v.cratesReturned > 0)
-      .map(([rgbItemId, v]) => ({
-        rgbItemId,
-        cratesGiven: v.cratesGiven,
-        cratesReturned: v.cratesReturned,
-      }));
-
-    const billPayload = {
-      retailerId: selectedRetailer,
-      items: cartItems.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        price: item.price,
-        discount: item.discountValue || 0,
-      })),
-      discount: totalDiscounts,
-      paymentMode: paymentMethod,
-      paidAmount: paidAmt,
-      previousPendingAdded: manualPendingNum || undefined,
-      rgbExchanges: rgbExchangesPayload,
-    };
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
 
     try {
+      if (!selectedRetailer) {
+        store.addNotification('error', 'Select a retailer in Bill Summary');
+        return;
+      }
+      // Allow RGB-only bill: empty cart is valid if there's at least one non-zero RGB exchange
+      const hasRgbActivity = Object.values(rgbExchanges).some(
+        (v) => v.cratesGiven > 0 || v.cratesReturned > 0
+      );
+      if (cartItems.length === 0 && !hasRgbActivity) {
+        store.addNotification('error', 'Add at least one product or record a crate exchange');
+        return;
+      }
+      if (paymentMethod === 'cash' && amountReceivedNum === 0) {
+        store.addNotification('error', 'Enter amount received');
+        return;
+      }
+
+      const isPaid = paymentMethod === 'cash' && amountReceivedNum >= total;
+      const paidAmt = paymentMethod === 'generate-only' ? 0 : amountReceivedNum;
+      const pendingAmt = paymentMethod === 'generate-only' ? total : udhariAmount;
+
+      // Build rgbExchanges array (only entries with at least one non-zero value)
+      const rgbExchangesPayload = Object.entries(rgbExchanges)
+        .filter(([, v]) => v.cratesGiven > 0 || v.cratesReturned > 0)
+        .map(([rgbItemId, v]) => ({
+          rgbItemId,
+          cratesGiven: v.cratesGiven,
+          cratesReturned: v.cratesReturned,
+        }));
+
+      const billPayload = {
+        retailerId: selectedRetailer,
+        items: cartItems.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          price: item.price,
+          discount: item.discountValue || 0,
+        })),
+        discount: totalDiscounts,
+        paymentMode: paymentMethod,
+        paidAmount: paidAmt,
+        previousPendingAdded: manualPendingNum || undefined,
+        rgbExchanges: rgbExchangesPayload,
+      };
+
       await store.checkoutBill(billPayload);
       if (cartItems.length > 0) {
         const billForReceipt: Bill = {
@@ -386,6 +462,8 @@ export const SalesPage: React.FC = () => {
       }
     } catch (err) {
       // Error handled in store
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
@@ -1483,55 +1561,55 @@ Thank you for your business!
                         <th className="text-left py-2 px-2">Date</th>
                         <th className="text-left py-2 px-2">Retailer</th>
                         <th className="text-left py-2 px-2">RGB Item</th>
-                        <th className="text-center py-2 px-2">Type</th>
-                        <th className="text-right py-2 px-2">Quantity</th>
+                        <th className="text-center py-2 px-2">Crate Exchange Activity</th>
                         <th className="text-left py-2 px-2">Worker</th>
                         <th className="text-center py-2 px-2">Bill Link</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {rgbHistory
-                        .filter((tx) => {
-                          const s = historySearchTerm.toLowerCase();
-                          const matchSearch =
-                            !s ||
-                            tx.retailerName.toLowerCase().includes(s) ||
-                            tx.itemName.toLowerCase().includes(s);
-                          const txDate = new Date(tx.createdAt).toISOString().split('T')[0];
-                          const matchDate = !historyDateFilter || txDate === historyDateFilter;
-                          return matchSearch && matchDate;
-                        })
-                        .map((tx) => {
-                          const isIssue = tx.type?.toLowerCase() === 'issue';
-                          return (
-                            <tr key={tx.id} className="border-b border-gray-50 hover:bg-gray-50">
-                              <td className="py-2 px-2 text-gray-500">{new Date(tx.createdAt).toLocaleString()}</td>
-                              <td className="py-2 px-2 font-medium">{tx.retailerName}</td>
-                              <td className="py-2 px-2 text-gray-700">{tx.itemName}</td>
-                              <td className="py-2 px-2 text-center">
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                                  isIssue ? 'bg-orange-100 text-orange-800' : 'bg-emerald-100 text-emerald-800'
-                                }`}>
-                                  {isIssue ? 'Given ↓' : 'Returned ↑'}
+                      {groupedWorkerRgbHistory.map((group) => (
+                        <tr key={group.key} className="border-b border-gray-50 hover:bg-gray-50">
+                          <td className="py-2 px-2 text-gray-500 font-mono">
+                            {new Date(group.createdAt).toLocaleString('en-PK', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit',
+                            })}
+                          </td>
+                          <td className="py-2 px-2 font-medium">{group.retailerName}</td>
+                          <td className="py-2 px-2 font-semibold text-gray-800">{group.itemName}</td>
+                          <td className="py-2 px-2 text-center">
+                            <div className="inline-flex items-center gap-1.5 flex-wrap justify-center">
+                              {group.cratesGiven > 0 && (
+                                <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                  Given ↓ {group.cratesGiven}
                                 </span>
-                              </td>
-                              <td className="py-2 px-2 text-right font-bold text-gray-900">{tx.quantity} crates</td>
-                              <td className="py-2 px-2 text-gray-500">{tx.workerName || 'N/A'}</td>
-                              <td className="py-2 px-2 text-center">
-                                {tx.saleId ? (
-                                  <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-mono rounded text-[11px] border border-blue-200">
-                                    Linked to Sale
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-400 font-normal">—</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
+                              )}
+                              {group.cratesReturned > 0 && (
+                                <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  Returned ↑ {group.cratesReturned}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2 px-2 text-gray-500">{group.workerName || 'N/A'}</td>
+                          <td className="py-2 px-2 text-center">
+                            {group.saleId ? (
+                              <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-mono rounded text-[11px] border border-blue-200 font-semibold">
+                                Linked to Sale
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 font-normal">Standalone</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
-                  {rgbHistory.length === 0 && (
+                  {groupedWorkerRgbHistory.length === 0 && (
                     <p className="text-center text-gray-400 py-8 text-sm">No RGB activity recorded yet</p>
                   )}
                 </div>

@@ -174,7 +174,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems }) => {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden w-full">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-4 md:px-6 py-4 shadow-sm flex items-center justify-between">
+        <div className="bg-white border-b border-gray-300 px-4 md:px-6 py-4 shadow-sm flex items-center justify-between">
           <h2 className="text-xl md:text-2xl font-semibold text-gray-900 truncate">
             {sidebarItems.find((item) => item.path === location.pathname)?.label}
           </h2>

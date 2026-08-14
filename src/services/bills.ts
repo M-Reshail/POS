@@ -2,11 +2,16 @@ import { api } from './api';
 import { Bill } from '../types';
 
 export const billsService = {
-  list: async (): Promise<Bill[]> => {
+  list: async (params?: {
+    limit?: number;
+    offset?: number;
+    retailerId?: string;
+    status?: string;
+  }): Promise<{ bills: Bill[]; total: number; limit: number; offset: number }> => {
     // Backend getBills returns: ok(res, { bills, total, limit, offset })
     // After interceptor: { success: true, data: { bills: [...], total, limit, offset } }
-    const response: any = await api.get('/bills');
-    return response.data.bills;
+    const response: any = await api.get('/bills', { params });
+    return response.data;
   },
   create: async (billData: any): Promise<any> => {
     // Backend createBill returns: created(res, result)

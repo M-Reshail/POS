@@ -9,12 +9,27 @@ import { Search, ChevronDown, ChevronUp, Filter, RotateCcw } from 'lucide-react'
 import { Bill, RGBTransactionRecord } from '../../types';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
 
-
 const STATUS_COLORS: Record<string, string> = {
   paid: 'bg-green-100 text-green-700',
   pending: 'bg-orange-100 text-orange-700',
   partial: 'bg-yellow-100 text-yellow-700',
 };
+
+interface GroupedRGBTransaction {
+  key: string;
+  saleId: string | null;
+  retailerId: string;
+  retailerName: string;
+  retailerOwner: string;
+  rgbItemId: string;
+  itemName: string;
+  workerId?: string;
+  workerName: string;
+  cratesGiven: number;
+  cratesReturned: number;
+  createdAt: string | Date;
+  transactions: RGBTransactionRecord[];
+}
 
 const RenderBillDetails: React.FC<{ bill: Bill }> = ({ bill }) => {
   const workerName = (bill as any).worker?.name || bill.workerId.slice(0, 8);
@@ -102,12 +117,20 @@ const RenderBillDetails: React.FC<{ bill: Bill }> = ({ bill }) => {
 export const AdminBillsPage: React.FC = () => {
   const { retailers, fetchInitialData } = useStore();
   const store = useStore();
+
+  // Data & Pagination state
   const [bills, setBills] = useState<Bill[]>([]);
+  const [totalBills, setTotalBills] = useState<number>(0);
+  const [loadingMoreBills, setLoadingMoreBills] = useState<boolean>(false);
+
   const [rgbTransactions, setRgbTransactions] = useState<RGBTransactionRecord[]>([]);
+  const [totalRgbTransactions, setTotalRgbTransactions] = useState<number>(0);
+  const [loadingMoreRgb, setLoadingMoreRgb] = useState<boolean>(false);
+
   const [workers, setWorkers] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedBill, setExpandedBill] = useState<string | null>(null);
-  const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
+  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   const [activeBillSection, setActiveBillSection] = useState<'all' | 'rgb'>('all');
 
   // Filters
@@ -126,20 +149,23 @@ export const AdminBillsPage: React.FC = () => {
   const loadBills = async () => {
     setLoading(true);
     try {
-      const [data, rgbData] = await Promise.all([
-        billsService.list(),
-        rgbService.getTransactions(),
+      const [billsRes, rgbRes] = await Promise.all([
+        billsService.list({ limit: 50, offset: 0 }),
+        rgbService.getTransactions({ limit: 50, offset: 0 }),
       ]);
-      setBills(data);
-      setRgbTransactions(rgbData.transactions || []);
+      setBills(billsRes.bills || []);
+      setTotalBills(billsRes.total || 0);
+
+      setRgbTransactions(rgbRes.transactions || []);
+      setTotalRgbTransactions(rgbRes.total || 0);
 
       // Extract unique workers from bills and RGB transactions
       const workerMap = new Map<string, string>();
-      data.forEach((b) => {
+      (billsRes.bills || []).forEach((b) => {
         const workerName = (b as any).worker?.name || b.workerId;
         if (workerName) workerMap.set(b.workerId, workerName);
       });
-      (rgbData.transactions || []).forEach((tx) => {
+      (rgbRes.transactions || []).forEach((tx) => {
         if (tx.workerId && tx.workerName) {
           workerMap.set(tx.workerId, tx.workerName);
         }
@@ -152,6 +178,33 @@ export const AdminBillsPage: React.FC = () => {
     }
   };
 
+  const handleLoadMoreBills = async () => {
+    setLoadingMoreBills(true);
+    try {
+      const res = await billsService.list({ limit: 50, offset: bills.length });
+      setBills((prev) => [...prev, ...(res.bills || [])]);
+      setTotalBills(res.total || 0);
+    } catch {
+      store.addNotification('error', 'Failed to load more bills');
+    } finally {
+      setLoadingMoreBills(false);
+    }
+  };
+
+  const handleLoadMoreRgb = async () => {
+    setLoadingMoreRgb(true);
+    try {
+      const res = await rgbService.getTransactions({ limit: 50, offset: rgbTransactions.length });
+      setRgbTransactions((prev) => [...prev, ...(res.transactions || [])]);
+      setTotalRgbTransactions(res.total || 0);
+    } catch {
+      store.addNotification('error', 'Failed to load more RGB transactions');
+    } finally {
+      setLoadingMoreRgb(false);
+    }
+  };
+
+  // FIX BUG 1: Remove .reverse() so bills display in backend's native newest-first order
   const filteredBills = bills.filter((bill) => {
     const retailer = retailers.find((r) => r.id === bill.retailerId);
     const workerName = (bill as any).worker?.name || '';
@@ -172,7 +225,7 @@ export const AdminBillsPage: React.FC = () => {
     const matchTo = !dateTo || billDate <= dateTo;
 
     return matchSearch && matchRetailer && matchWorker && matchStatus && matchFrom && matchTo;
-  }).slice().reverse();
+  });
 
   const filteredRgbTransactions = useMemo(() => {
     return rgbTransactions.filter((tx) => {
@@ -205,6 +258,63 @@ export const AdminBillsPage: React.FC = () => {
     });
   }, [rgbTransactions, searchTerm, retailerFilter, workerFilter, statusFilter, dateFrom, dateTo, retailers, bills]);
 
+  // FIX BUG 3: Group RGB transactions by (saleId + rgbItemId) for bills, or keep standalone
+  const groupedRgbTransactions = useMemo(() => {
+    const groups: GroupedRGBTransaction[] = [];
+    const map = new Map<string, GroupedRGBTransaction>();
+
+    filteredRgbTransactions.forEach((tx) => {
+      if (tx.saleId) {
+        const groupKey = `${tx.saleId}_${tx.rgbItemId}`;
+        let group = map.get(groupKey);
+        if (!group) {
+          group = {
+            key: groupKey,
+            saleId: tx.saleId,
+            retailerId: tx.retailerId,
+            retailerName: tx.retailerName || '',
+            retailerOwner: tx.retailerOwner || '',
+            rgbItemId: tx.rgbItemId,
+            itemName: tx.itemName,
+            workerId: tx.workerId || undefined,
+            workerName: tx.workerName || '',
+            cratesGiven: 0,
+            cratesReturned: 0,
+            createdAt: tx.createdAt,
+            transactions: [],
+          };
+          map.set(groupKey, group);
+          groups.push(group);
+        }
+        group.transactions.push(tx);
+        if (tx.type?.toLowerCase() === 'issue') {
+          group.cratesGiven += tx.quantity;
+        } else if (tx.type?.toLowerCase() === 'return') {
+          group.cratesReturned += tx.quantity;
+        }
+      } else {
+        // Standalone RGB transaction (saleId === null)
+        groups.push({
+          key: tx.id,
+          saleId: null,
+          retailerId: tx.retailerId,
+          retailerName: tx.retailerName || '',
+          retailerOwner: tx.retailerOwner || '',
+          rgbItemId: tx.rgbItemId,
+          itemName: tx.itemName,
+          workerId: tx.workerId || undefined,
+          workerName: tx.workerName || '',
+          cratesGiven: tx.type?.toLowerCase() === 'issue' ? tx.quantity : 0,
+          cratesReturned: tx.type?.toLowerCase() === 'return' ? tx.quantity : 0,
+          createdAt: tx.createdAt,
+          transactions: [tx],
+        });
+      }
+    });
+
+    return groups;
+  }, [filteredRgbTransactions]);
+
   const totalRevenue = filteredBills.reduce((s, b) => s + Number(b.total), 0);
   const totalPaid = filteredBills.reduce((s, b) => s + Number(b.paidAmount), 0);
   const totalPending = filteredBills.reduce((s, b) => s + Number(b.pendingAmount), 0);
@@ -228,8 +338,8 @@ export const AdminBillsPage: React.FC = () => {
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Bill History</h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
               {activeBillSection === 'all'
-                ? `${filteredBills.length} bill${filteredBills.length !== 1 ? 's' : ''} found`
-                : `${filteredRgbTransactions.length} RGB transaction${filteredRgbTransactions.length !== 1 ? 's' : ''} found`}
+                ? `Showing ${filteredBills.length} of ${totalBills} bill${totalBills !== 1 ? 's' : ''}`
+                : `Showing ${groupedRgbTransactions.length} grouped entry (${filteredRgbTransactions.length} of ${totalRgbTransactions} RGB transaction${totalRgbTransactions !== 1 ? 's' : ''})`}
             </p>
           </div>
           <Button size="sm" variant="secondary" onClick={loadBills} disabled={loading} className="w-full sm:w-auto justify-center">
@@ -348,7 +458,7 @@ export const AdminBillsPage: React.FC = () => {
                   : 'border-transparent text-gray-400 hover:text-gray-600'
               }`}
             >
-              📦 RGB Bills ({filteredRgbTransactions.length})
+              📦 RGB Bills ({groupedRgbTransactions.length})
             </button>
           </div>
 
@@ -359,166 +469,204 @@ export const AdminBillsPage: React.FC = () => {
             filteredBills.length === 0 ? (
               <div className="text-center py-10 text-gray-400 text-sm">No bills found. Try adjusting your filters.</div>
             ) : (
-              <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
-                <table className="w-full text-xs min-w-[680px]">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-gray-500">
-                      <th className="text-left py-2 px-2">Bill#</th>
-                      <th className="text-left py-2 px-2">Retailer</th>
-                      <th className="text-left py-2 px-2">Worker</th>
-                      <th className="text-right py-2 px-2">Total</th>
-                      <th className="text-right py-2 px-2">Paid</th>
-                      <th className="text-right py-2 px-2">Pending</th>
-                      <th className="text-right py-2 px-2">Discount</th>
-                      <th className="text-center py-2 px-2">Mode</th>
-                      <th className="text-center py-2 px-2">Status</th>
-                      <th className="text-left py-2 px-2">Date</th>
-                      <th className="py-2 px-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredBills.map((bill: Bill) => {
-                      const retailer = retailers.find((r) => r.id === bill.retailerId);
-                      const workerName = (bill as any).worker?.name || bill.workerId.slice(0, 8);
-                      const isExpanded = expandedBill === bill.id;
-                      return (
-                        <React.Fragment key={bill.id}>
-                          <tr className="border-b border-gray-50 hover:bg-gray-50">
-                            <td className="py-2 px-2 font-mono text-gray-600">{bill.billNumber}</td>
-                            <td className="py-2 px-2">
-                              <div className="font-medium text-gray-900">{retailer?.shopName || '—'}</div>
-                              <div className="text-gray-400">{retailer?.ownerName}</div>
-                            </td>
-                            <td className="py-2 px-2 text-gray-700">{workerName}</td>
-                            <td className="py-2 px-2 text-right font-bold text-gray-900">₨{Number(bill.total).toFixed(0)}</td>
-                            <td className="py-2 px-2 text-right text-green-700">₨{Number(bill.paidAmount).toFixed(0)}</td>
-                            <td className="py-2 px-2 text-right text-orange-600">₨{Number(bill.pendingAmount).toFixed(0)}</td>
-                            <td className="py-2 px-2 text-right text-purple-600">
-                              {Number(bill.discount) > 0 ? `₨${Number(bill.discount).toFixed(0)}` : '—'}
-                            </td>
-                            <td className="py-2 px-2 text-center capitalize text-gray-500">
-                              {bill.paymentMode?.replace('-', ' ') || '—'}
-                            </td>
-                            <td className="py-2 px-2 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_COLORS[bill.status]}`}>
-                                {bill.status}
-                              </span>
-                            </td>
-                            <td className="py-2 px-2 text-gray-400">{new Date(bill.createdAt).toLocaleDateString()}</td>
-                            <td className="py-2 px-2">
-                              <button
-                                onClick={() => setExpandedBill(isExpanded ? null : bill.id)}
-                                className="text-blue-500 hover:text-blue-700"
-                              >
-                                {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                              </button>
-                            </td>
-                          </tr>
-                          {isExpanded && (
-                            <tr>
-                              <td colSpan={11} className="bg-blue-50 px-4 py-3">
-                                <RenderBillDetails bill={bill} />
+              <div>
+                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                  <table className="w-full text-xs min-w-[680px]">
+                    <thead>
+                      <tr className="border-b border-gray-100 text-gray-500">
+                        <th className="text-left py-2 px-2">Bill#</th>
+                        <th className="text-left py-2 px-2">Retailer</th>
+                        <th className="text-left py-2 px-2">Worker</th>
+                        <th className="text-right py-2 px-2">Total</th>
+                        <th className="text-right py-2 px-2">Paid</th>
+                        <th className="text-right py-2 px-2">Pending</th>
+                        <th className="text-right py-2 px-2">Discount</th>
+                        <th className="text-center py-2 px-2">Mode</th>
+                        <th className="text-center py-2 px-2">Status</th>
+                        <th className="text-left py-2 px-2">Date</th>
+                        <th className="py-2 px-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredBills.map((bill: Bill) => {
+                        const retailer = retailers.find((r) => r.id === bill.retailerId);
+                        const workerName = (bill as any).worker?.name || bill.workerId.slice(0, 8);
+                        const isExpanded = expandedBill === bill.id;
+                        return (
+                          <React.Fragment key={bill.id}>
+                            <tr className="border-b border-gray-50 hover:bg-gray-50">
+                              <td className="py-2 px-2 font-mono text-gray-600">{bill.billNumber}</td>
+                              <td className="py-2 px-2">
+                                <div className="font-medium text-gray-900">{retailer?.shopName || '—'}</div>
+                                <div className="text-gray-400">{retailer?.ownerName}</div>
                               </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )
-          ) : (
-            /* RGB TRANSACTION HISTORY TABLE */
-            filteredRgbTransactions.length === 0 ? (
-              <div className="text-center py-10 text-gray-400 text-sm">No RGB transactions found. Try adjusting your filters.</div>
-            ) : (
-              <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
-                <table className="w-full text-xs min-w-[680px]">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-gray-500">
-                      <th className="text-left py-2 px-2">Date</th>
-                      <th className="text-left py-2 px-2">Retailer</th>
-                      <th className="text-left py-2 px-2">RGB Item</th>
-                      <th className="text-center py-2 px-2">Type</th>
-                      <th className="text-right py-2 px-2">Quantity</th>
-                      <th className="text-left py-2 px-2">Worker</th>
-                      <th className="text-center py-2 px-2">Bill Link</th>
-                      <th className="py-2 px-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRgbTransactions.map((tx) => {
-                      const isIssue = tx.type?.toLowerCase() === 'issue';
-                      const linkedBill = tx.saleId ? bills.find((b) => b.id === tx.saleId) : null;
-                      const isExpanded = expandedTxId === tx.id;
-                      const retailer = retailers.find((r) => r.id === tx.retailerId);
-                      const retailerShop = tx.retailerName || retailer?.shopName || '—';
-                      const retailerOwner = tx.retailerOwner || retailer?.ownerName || '';
-
-                      return (
-                        <React.Fragment key={tx.id}>
-                          <tr className="border-b border-gray-50 hover:bg-gray-50">
-                            <td className="py-2 px-2 text-gray-500 font-mono">
-                              {new Date(tx.createdAt).toLocaleString('en-PK', {
-                                day: '2-digit',
-                                month: 'short',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </td>
-                            <td className="py-2 px-2">
-                              <div className="font-medium text-gray-900">{retailerShop}</div>
-                              {retailerOwner && <div className="text-gray-400 text-[11px]">{retailerOwner}</div>}
-                            </td>
-                            <td className="py-2 px-2 font-medium text-gray-800">{tx.itemName}</td>
-                            <td className="py-2 px-2 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                                isIssue ? 'bg-orange-100 text-orange-800' : 'bg-emerald-100 text-emerald-800'
-                              }`}>
-                                {isIssue ? 'Given ↓' : 'Returned ↑'}
-                              </span>
-                            </td>
-                            <td className="py-2 px-2 text-right font-bold text-gray-900">{tx.quantity} crates</td>
-                            <td className="py-2 px-2 text-gray-600">{tx.workerName || 'N/A'}</td>
-                            <td className="py-2 px-2 text-center">
-                              {linkedBill ? (
+                              <td className="py-2 px-2 text-gray-700">{workerName}</td>
+                              <td className="py-2 px-2 text-right font-bold text-gray-900">₨{Number(bill.total).toFixed(0)}</td>
+                              <td className="py-2 px-2 text-right text-green-700">₨{Number(bill.paidAmount).toFixed(0)}</td>
+                              <td className="py-2 px-2 text-right text-orange-600">₨{Number(bill.pendingAmount).toFixed(0)}</td>
+                              <td className="py-2 px-2 text-right text-purple-600">
+                                {Number(bill.discount) > 0 ? `₨${Number(bill.discount).toFixed(0)}` : '—'}
+                              </td>
+                              <td className="py-2 px-2 text-center capitalize text-gray-500">
+                                {bill.paymentMode?.replace('-', ' ') || '—'}
+                              </td>
+                              <td className="py-2 px-2 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_COLORS[bill.status]}`}>
+                                  {bill.status}
+                                </span>
+                              </td>
+                              <td className="py-2 px-2 text-gray-400">{new Date(bill.createdAt).toLocaleDateString()}</td>
+                              <td className="py-2 px-2">
                                 <button
-                                  onClick={() => setExpandedTxId(isExpanded ? null : tx.id)}
-                                  className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-mono rounded text-[11px] border border-blue-200 inline-flex items-center gap-1 font-semibold transition-colors"
-                                >
-                                  Bill #{linkedBill.billNumber}
-                                  {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                                </button>
-                              ) : (
-                                <span className="text-gray-400 font-normal">Standalone</span>
-                              )}
-                            </td>
-                            <td className="py-2 px-2 text-center">
-                              {linkedBill && (
-                                <button
-                                  onClick={() => setExpandedTxId(isExpanded ? null : tx.id)}
+                                  onClick={() => setExpandedBill(isExpanded ? null : bill.id)}
                                   className="text-blue-500 hover:text-blue-700"
-                                  title={isExpanded ? 'Hide Bill Details' : 'View Bill Details'}
                                 >
                                   {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                                 </button>
-                              )}
-                            </td>
-                          </tr>
-                          {isExpanded && linkedBill && (
-                            <tr>
-                              <td colSpan={8} className="bg-blue-50 px-4 py-3">
-                                <RenderBillDetails bill={linkedBill} />
                               </td>
                             </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={11} className="bg-blue-50 px-4 py-3">
+                                  <RenderBillDetails bill={bill} />
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Load More Bills Button */}
+                {bills.length < totalBills && (
+                  <div className="text-center pt-4 mt-2 border-t border-gray-100">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleLoadMoreBills}
+                      disabled={loadingMoreBills}
+                      className="px-6"
+                    >
+                      {loadingMoreBills ? 'Loading...' : `Load More Bills (Showing ${bills.length} of ${totalBills})`}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )
+          ) : (
+            /* RGB TRANSACTION HISTORY TABLE (GROUPED) */
+            groupedRgbTransactions.length === 0 ? (
+              <div className="text-center py-10 text-gray-400 text-sm">No RGB transactions found. Try adjusting your filters.</div>
+            ) : (
+              <div>
+                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                  <table className="w-full text-xs min-w-[680px]">
+                    <thead>
+                      <tr className="border-b border-gray-100 text-gray-500">
+                        <th className="text-left py-2 px-2">Date</th>
+                        <th className="text-left py-2 px-2">Retailer</th>
+                        <th className="text-left py-2 px-2">RGB Item</th>
+                        <th className="text-center py-2 px-2">Crate Exchange Activity</th>
+                        <th className="text-left py-2 px-2">Worker</th>
+                        <th className="text-center py-2 px-2">Bill Link</th>
+                        <th className="py-2 px-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groupedRgbTransactions.map((group) => {
+                        const linkedBill = group.saleId ? bills.find((b) => b.id === group.saleId) : null;
+                        const isExpanded = expandedGroupKey === group.key;
+                        const retailer = retailers.find((r) => r.id === group.retailerId);
+                        const retailerShop = group.retailerName || retailer?.shopName || '—';
+                        const retailerOwner = group.retailerOwner || retailer?.ownerName || '';
+
+                        return (
+                          <React.Fragment key={group.key}>
+                            <tr className="border-b border-gray-50 hover:bg-gray-50">
+                              <td className="py-2 px-2 text-gray-500 font-mono">
+                                {new Date(group.createdAt).toLocaleString('en-PK', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </td>
+                              <td className="py-2 px-2">
+                                <div className="font-medium text-gray-900">{retailerShop}</div>
+                                {retailerOwner && <div className="text-gray-400 text-[11px]">{retailerOwner}</div>}
+                              </td>
+                              <td className="py-2 px-2 font-bold text-gray-800">{group.itemName}</td>
+                              <td className="py-2 px-2 text-center">
+                                <div className="inline-flex items-center gap-1.5 flex-wrap justify-center">
+                                  {group.cratesGiven > 0 && (
+                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                      Given ↓ {group.cratesGiven}
+                                    </span>
+                                  )}
+                                  {group.cratesReturned > 0 && (
+                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                      Returned ↑ {group.cratesReturned}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-2 px-2 text-gray-600">{group.workerName || 'N/A'}</td>
+                              <td className="py-2 px-2 text-center">
+                                {linkedBill ? (
+                                  <button
+                                    onClick={() => setExpandedGroupKey(isExpanded ? null : group.key)}
+                                    className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-mono rounded text-[11px] border border-blue-200 inline-flex items-center gap-1 font-semibold transition-colors"
+                                  >
+                                    Bill #{linkedBill.billNumber}
+                                    {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-400 font-normal">Standalone</span>
+                                )}
+                              </td>
+                              <td className="py-2 px-2 text-center">
+                                {linkedBill && (
+                                  <button
+                                    onClick={() => setExpandedGroupKey(isExpanded ? null : group.key)}
+                                    className="text-blue-500 hover:text-blue-700"
+                                    title={isExpanded ? 'Hide Bill Details' : 'View Bill Details'}
+                                  >
+                                    {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                            {isExpanded && linkedBill && (
+                              <tr>
+                                <td colSpan={8} className="bg-blue-50 px-4 py-3">
+                                  <RenderBillDetails bill={linkedBill} />
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Load More RGB Transactions Button */}
+                {rgbTransactions.length < totalRgbTransactions && (
+                  <div className="text-center pt-4 mt-2 border-t border-gray-100">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleLoadMoreRgb}
+                      disabled={loadingMoreRgb}
+                      className="px-6"
+                    >
+                      {loadingMoreRgb ? 'Loading...' : `Load More RGB Transactions (Showing ${rgbTransactions.length} of ${totalRgbTransactions})`}
+                    </Button>
+                  </div>
+                )}
               </div>
             )
           )}
@@ -527,4 +675,3 @@ export const AdminBillsPage: React.FC = () => {
     </Layout>
   );
 };
-

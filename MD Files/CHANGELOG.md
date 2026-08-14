@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## Table of Contents
+- [[2.6.0] - 2026-08-14](#260---2026-08-14)
 - [[2.5.0] - 2026-08-14](#250---2026-08-14)
 - [[2.4.0] - 2026-08-13](#240---2026-08-13)
 - [[2.3.0] - 2026-07-17](#230---2026-07-17)
@@ -18,7 +19,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [2.5.0] - 2026-08-14
+## [2.6.0] - 2026-08-14
+
+### Added
+- **Single-Bill Creation for RGB-Only Sales**: Updated `createBill` in `bill.service.ts` so all checkout sales (whether product-only, mixed, or RGB-only crate exchanges) generate a single unified `Bill` record with `total: 0` and `status: 'paid'`, linking both crate issue (`ISSUE`) and return (`RETURN`) transactions to `saleId: bill.id`.
+- **Grouped RGB History View on Worker Site**: Implemented memoized grouping (`groupedWorkerRgbHistory`) in `SalesPage.tsx` so sales with dual crate exchanges (Give and Return) display as a single combined row with `Given ↓ X` and `Returned ↑ Y` badges under `Linked to Sale`, matching the admin view.
+- **Paginated Bills and RGB Lists**: Added limit/offset pagination to `billsService.list()` and `rgbService.getTransactions()`, adding "Load More Bills" and "Load More RGB Transactions" buttons with total count headers in `AdminBillsPage.tsx`.
+
+### Changed
+- **High-Contrast Grey Theme & Outlines**: Standardized global styling in `index.css`, `Layout`, `Modal`, and `RetailerDetailPage` to feature a medium grey background (`bg-gray-200/80`), crisp white card containers (`bg-white`), and defined outline borders (`border border-gray-300`).
+- **Expenses Page Direct Backend Querying**: Initialized `period` state to `null` by default on `ExpensesPage.tsx` to load full historical expense records newest-first. Presets ('Today', 'This Week', 'This Month') now trigger fresh date-bounded backend queries (`expensesService.getAll({ dateFrom, dateTo })`) and act as toggle buttons.
+- **Dynamic Category Charts**: Rebound Bar Chart and Pie Chart in `ExpensesPage.tsx` to dynamically recalculate category breakdown totals from the active filtered expense dataset.
+
+### Fixed
+- **RGB Return `saleId` Link**: Added `saleId?: string` to `ReturnRGBInput` in `rgb.service.ts` and updated `createBill` in `bill.service.ts` to pass `saleId: bill.id` to `returnRGB()`, preventing crate return legs from becoming orphaned/unlinked.
+- **Worker Sales Double-Submission Guard**: Added a synchronous `isSubmittingRef = useRef(false)` guard at the start of `handleCreateBill()` in `SalesPage.tsx` to prevent rapid double-clicks from creating duplicate bill records.
+- **Admin Bills Sort Order**: Removed `.reverse()` from `filteredBills` in `AdminBillsPage.tsx` to preserve the backend's native newest-to-oldest (`createdAt desc`) order.
+- **Admin Bills Grouped RGB Rows**: Grouped `filteredRgbTransactions` by `saleId` + `rgbItemId` so Give and Return legs of a sale render as a single combined row linked to the parent bill.
+
+---
 
 ### Added
 - **Retailer Detail Page**: Built a dedicated `/admin/retailers/:id` page featuring shop profile info, net outstanding debt, RGB balances, and paginated double-entry ledger audit statement table with full pagination controls.
