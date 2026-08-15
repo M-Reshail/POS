@@ -80,6 +80,8 @@ This document provides a comprehensive list of all functional features implement
 
 ### 👥 Profiles & Accounting
 - **Retailer Profile:** Shop name, owner name, contact number, address, and delivery location notes.
+- **Dedicated Retailer Detail View:** View page (`/admin/retailers/:id`) featuring complete shop details, total outstanding debt, itemized RGB bottle balances, and paginated double-entry financial ledger statement with controls.
+- **Edit Retailer Profile Modal:** Interactive pop-up modal on the detail view for editing shop details, owner info, contact info, and delivery locations with live validation.
 - **Automatic Double-Entry Ledger:** Bill creations and payment logs automatically write matching debits and credits to the retailer ledger table, tracking outstanding debt cleanly.
 
 ---

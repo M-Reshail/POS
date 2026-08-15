@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ---
 
 ## Table of Contents
+- [[2.7.0] - 2026-08-15](#270---2026-08-15)
 - [[2.6.0] - 2026-08-14](#260---2026-08-14)
 - [[2.5.0] - 2026-08-14](#250---2026-08-14)
 - [[2.4.0] - 2026-08-13](#240---2026-08-13)
@@ -16,6 +17,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - [[2.0.0] - 2026-06-26](#200---2026-06-26)
 - [[1.1.0] - 2026-06-19](#110---2026-06-19)
 - [[1.0.0] - 2026-02-19](#100---2026-02-19)
+
+---
+
+## [2.7.0] - 2026-08-15
+
+### Added
+- **Dedicated Retailer Profile & Financial Ledger View**: Clicking "View" on any retailer profile now opens a dedicated Retailer Detail dashboard. This view displays overall shop details, total outstanding debt, itemized empty bottle/crate balances, and a full double-entry financial ledger statement with page-by-page navigation.
+- **Edit Retailer Profile Modal**: Added an interactive pop-up form on the Retailer Detail view allowing administrators to edit and update retailer contact details, shop names, owner information, and delivery locations with instant validation.
+
+### Fixed
+- **Automatic High-Precision Number Formatting**: Fixed an issue where monetary amounts and high-precision numbers returned by the server were being treated as text strings instead of numeric values. The central server response system now automatically formats all numeric fields, ensuring clean financial displays and calculations throughout the system.
+- **Sales Bill Linkage for Returned Bottles**: Fixed an issue where empty bottles or crates returned by retailers during a checkout sale were not being linked to the resulting sales bill. Bottle returns during checkout sales are now directly tied to their parent bill statement.
+- **Double-Submission Prevention on Checkout**: Resolved a bug on the worker checkout page where rapidly double-clicking the complete sale button could generate duplicate bill records in the database. A submission lock now immediately blocks redundant clicks while an invoice is processing.
+- **Admin Bills Sorting, Pagination, and Bottle Display**: Corrected list ordering on the Admin Bills page so newest bills appear first rather than last, introduced an incremental "Load More" button to view historical bills beyond initial caps, and grouped bottle give and return actions into a single consolidated row per sale.
+- **Full Expenses History & Direct Server Filters**: Fixed the Expenses management view so all historical expenses load by default instead of restricting display to the active period, and ensured custom date range filters query the server database directly to pull complete historical expense records.
 
 ---
 

@@ -333,6 +333,11 @@ App.tsx (Vite root router)
 │       │   ├── RetailersTable
 │       │   ├── AddRetailerModal
 │       │   └── LedgerSummary
+│       ├── RetailerDetailPage
+│       │   ├── RetailerProfileCard
+│       │   ├── RGBBalancesCard
+│       │   ├── PaginatedLedgerTable
+│       │   └── EditRetailerModal
 │       └── ReportsPage (Sales, Product performance, Worker accountability, Price variance)
 └── Notifications (Global toast context)
 ```
