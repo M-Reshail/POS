@@ -31,6 +31,7 @@ import workerRoutes from './modules/workers/worker.routes';
 import expenseRoutes from './modules/expenses/expense.routes';
 import rgbRoutes from './modules/rgb/rgb.routes';
 import brandRoutes from './modules/brands/brand.routes';
+import reminderRoutes from './modules/reminders/reminder.routes';
 
 
 // Prisma client (imported here to ensure singleton is initialized)
@@ -88,6 +89,7 @@ app.use('/api/workers',   workerRoutes);
 app.use('/api/expenses',  expenseRoutes);
 app.use('/api/rgb',       rgbRoutes);
 app.use('/api/brands',    brandRoutes);
+app.use('/api/reminders', reminderRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 
@@ -128,6 +130,7 @@ const server = app.listen(env.PORT, () => {
   console.log(`    /api/ledger     — Ledger overview & payments`);
   console.log(`    /api/workers    — Worker management (admin)`);
   console.log(`    /api/expenses   — Expense tracking (admin)`);
+  console.log(`    /api/reminders  — Payment reminders`);
   console.log('\n    Waiting for requests...\n');
 });
 

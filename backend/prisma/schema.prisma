@@ -69,6 +69,13 @@ enum RGBTransactionType {
   RETURN
 }
 
+enum ReminderStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 // ----------------------------------------------------------------------------
@@ -95,6 +102,7 @@ model User {
   priceChanges     PriceHistory[]    @relation("AdminPriceChanges")
   voidedBillLogs   VoidedBillLog[]   @relation("WorkerVoids")
   expensesCreated  Expense[]         @relation("ExpenseCreator")
+  paymentReminders PaymentReminder[] @relation("ReminderCreator")
 
   @@map("users")
 }
@@ -206,9 +214,10 @@ model Retailer {
   createdAt        DateTime  @default(now()) @map("created_at")
 
   // Relations
-  bills         Bill[]
-  ledgerEntries LedgerEntry[]
-  rgbBalances   RGBRetailerBalance[]
+  bills            Bill[]
+  ledgerEntries    LedgerEntry[]
+  rgbBalances      RGBRetailerBalance[]
+  paymentReminders PaymentReminder[]
 
   @@map("retailers")
 }
@@ -427,4 +436,33 @@ model RGBTransaction {
   @@index([retailerId])
   @@index([rgbItemId])
   @@map("rgb_transactions")
+}
+
+// ----------------------------------------------------------------------------
+// PaymentReminder — A promised future payment logged against a retailer
+// Retailers often pay bills partially and promise the balance on a specific
+// date. This model tracks those promises for dashboard alerting.
+// onDelete: Restrict on retailer — a retailer with open reminders cannot be
+// deleted without first resolving or cancelling them (prevents orphaned alerts).
+// createdById references User — the single auth model for both admin & worker.
+// ----------------------------------------------------------------------------
+model PaymentReminder {
+  id          String         @id @default(cuid())
+  retailerId  String         @map("retailer_id")
+  amount      Decimal        @db.Decimal(12, 2)
+  dueDate     DateTime       @map("due_date")
+  note        String?
+  status      ReminderStatus @default(PENDING)
+  createdById String         @map("created_by_id")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt       @map("updated_at")
+
+  // Relations
+  // onDelete: Restrict — prevents deleting a retailer who still has open reminders
+  retailer  Retailer @relation(fields: [retailerId], references: [id], onDelete: Restrict)
+  createdBy User     @relation("ReminderCreator", fields: [createdById], references: [id])
+
+  @@index([retailerId])
+  @@index([dueDate, status])
+  @@map("payment_reminders")
 }
