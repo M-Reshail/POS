@@ -121,6 +121,32 @@ export interface StockAdjustment {
   createdAt: Date;
 }
 
+// Payment Reminder Types
+export type ReminderStatus = 'PENDING' | 'PAID' | 'CANCELLED';
+
+export interface PaymentReminder {
+  id: string;
+  retailerId: string;
+  amount: number;
+  dueDate: string | Date;
+  note?: string | null;
+  status: ReminderStatus;
+  createdById: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  retailer?: {
+    id: string;
+    shopName: string;
+    ownerName: string;
+    mobileNumber?: string | null;
+  };
+  createdBy?: {
+    id: string;
+    name: string;
+    role: string;
+  };
+}
+
 // Retailer Types
 export interface Retailer {
   id: string;

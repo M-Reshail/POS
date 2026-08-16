@@ -1,16 +1,19 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout, PageContainer } from '../../components/Layout';
 import { useStore } from '../../store';
 import {
   BarChart3, Users, Package, TrendingUp, AlertTriangle, Boxes,
   CreditCard, DollarSign, Clock, Plus, FileText,
-  CheckCircle2, Layers, ArrowRight, ShieldAlert, Sparkles, RefreshCw, Activity
+  CheckCircle2, Layers, ArrowRight, ShieldAlert, Sparkles, RefreshCw, Activity, BellRing
 } from 'lucide-react';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
+import { DueRemindersWidget } from '../../components/reminders/DueRemindersWidget';
+import { AddReminderModal } from '../../components/reminders/AddReminderModal';
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const [isAddReminderModalOpen, setIsAddReminderModalOpen] = useState(false);
   const bills = useStore((state) => state.bills);
   const products = useStore((state) => state.products);
   const retailers = useStore((state) => state.retailers);
@@ -63,6 +66,9 @@ export const AdminDashboard: React.FC = () => {
   return (
     <Layout sidebarItems={ADMIN_SIDEBAR}>
       <PageContainer>
+        {/* Due Payment Reminders Alert Banner (Always visible at the top when reminders are due) */}
+        <DueRemindersWidget />
+
         {/* Welcome Header Banner */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 sm:p-6 md:p-8 text-white shadow-xl mb-6 sm:mb-8 border border-slate-800">
           <div className="absolute -top-12 -right-12 w-64 h-64 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
@@ -90,6 +96,12 @@ export const AdminDashboard: React.FC = () => {
                 <Plus size={16} /> New Sale
               </button>
               <button
+                onClick={() => setIsAddReminderModalOpen(true)}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700 text-xs md:text-sm font-semibold px-3.5 sm:px-4 py-2.5 rounded-xl transition-all hover:bg-slate-700"
+              >
+                <BellRing size={16} className="text-red-400" /> Add Reminder
+              </button>
+              <button
                 onClick={() => navigate('/admin/inventory')}
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700 text-xs md:text-sm font-semibold px-3.5 sm:px-4 py-2.5 rounded-xl transition-all"
               >
@@ -106,6 +118,12 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
         </div>
+
+        <AddReminderModal
+          isOpen={isAddReminderModalOpen}
+          onClose={() => setIsAddReminderModalOpen(false)}
+          onSuccess={() => fetchInitialData()}
+        />
 
         {/* ── Key Business Performance Cards ───────────────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5 mb-6 sm:mb-8">

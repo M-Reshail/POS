@@ -89,3 +89,20 @@ body {
   from { opacity: 0; transform: translateY(-12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* Gentle glowing pulse animation for due payment reminders banner */
+@keyframes reminderPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35);
+    border-color: rgba(239, 68, 68, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 16px 3px rgba(239, 68, 68, 0.25);
+    border-color: rgba(220, 38, 38, 1);
+  }
+}
+
+.animate-reminder-pulse {
+  animation: reminderPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
