@@ -1,5 +1,5 @@
 import { api } from './api';
-import { Bill } from '../types';
+import { Bill, AllocationPlan, UdhaarAllocationMode } from '../types';
 
 export const billsService = {
   list: async (params?: {
@@ -15,9 +15,9 @@ export const billsService = {
   },
   create: async (billData: any): Promise<any> => {
     // Backend createBill returns: created(res, result)
-    // result is { bill, priceVariances } or { isRgbOnly: true, bill: null, ... }
+    // result is { bill, priceVariances, allocationPlan, otherPendingBills } or { isRgbOnly: true, bill: null, ... }
     const response: any = await api.post('/bills', billData);
-    return response.data.bill ?? response.data;
+    return response.data;
   },
   getById: async (id: string): Promise<Bill> => {
     const response: any = await api.get(`/bills/${id}`);
@@ -28,5 +28,19 @@ export const billsService = {
   },
   voidBill: async (id: string, reason: string): Promise<void> => {
     await api.post(`/bills/${id}/void`, { reason });
-  }
+  },
+  /**
+   * Preview udhaar payment allocation without touching the DB.
+   * Returns how much of `paymentAmount` goes to each old pending bill and/or the new bill.
+   */
+  previewAllocation: async (params: {
+    retailerId: string;
+    newBillTotal: number;
+    newBillPaid?: number;
+    paymentAmount: number;
+    mode: UdhaarAllocationMode;
+  }): Promise<AllocationPlan> => {
+    const response: any = await api.post('/bills/preview-udhaar-allocation', params);
+    return response.data.plan;
+  },
 };

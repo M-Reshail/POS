@@ -56,7 +56,7 @@ interface Store {
   // Current Bill (for building)
   currentBill: Partial<Bill> | null;
   setCurrentBill: (bill: Partial<Bill> | null) => void;
-  checkoutBill: (billData: any) => Promise<void>;
+  checkoutBill: (billData: any) => Promise<any>;
 
   // Notifications
   notifications: Array<{
@@ -176,14 +176,15 @@ export const useStore = create<Store>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
       const response: any = await billsService.create(billData);
+      const bill = response?.bill ?? response;
 
       if (response && response.isRgbOnly) {
         set({ currentBill: null, isLoading: false });
         get().addNotification('success', 'RGB crate exchange recorded successfully');
       } else {
-        // Optimistic update for regular bills
+        // Optimistic update for regular bills: prepend newest bill to maintain newest-first order
         set((state) => ({
-          bills: response?.id ? [...state.bills, response] : state.bills,
+          bills: bill?.id ? [bill, ...state.bills.filter((b) => b.id !== bill.id)] : state.bills,
           currentBill: null,
           isLoading: false,
         }));
@@ -195,6 +196,8 @@ export const useStore = create<Store>((set, get) => ({
       get().fetchRetailers();
       get().fetchRGBItems();
       get().fetchBills();
+
+      return response;
     } catch (err: any) {
       set({ error: err.response?.data?.message || err.message || 'Failed to process request', isLoading: false });
       get().addNotification('error', err.response?.data?.message || 'Failed to process request');

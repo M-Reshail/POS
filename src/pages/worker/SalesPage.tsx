@@ -6,7 +6,7 @@ import {
   ShoppingCart, Trash2, Droplet, Edit2, Check, Search, X,
   History, UserPlus, ChevronLeft, Minus, Plus, RotateCcw,
 } from 'lucide-react';
-import { Bill, BillItem, RGBRetailerBalance, RGBTransactionRecord } from '../../types';
+import { Bill, BillItem, RGBRetailerBalance, RGBTransactionRecord, AllocationPlan, UdhaarAllocationMode } from '../../types';
 import { retailersService } from '../../services/retailers';
 import { billsService } from '../../services/bills';
 import { rgbService } from '../../services/rgb';
@@ -51,7 +51,12 @@ export const SalesPage: React.FC = () => {
   const [selectedRetailer, setSelectedRetailer] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [amountReceived, setAmountReceived] = useState('');
-  const [manualPendingAmount, setManualPendingAmount] = useState('');
+  // Udhaar payment toward old/new pending bills — does NOT inflate this bill's total
+  const [udhaarPaymentAmount, setUdhaarPaymentAmount] = useState('');
+  const [udhaarPaymentMode, setUdhaarPaymentMode] = useState<UdhaarAllocationMode>('old_first');
+  const [allocationPreview, setAllocationPreview] = useState<AllocationPlan | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cartDiscountType, setCartDiscountType] = useState<'percent' | 'fixed'>('fixed');
   const [cartDiscountValue, setCartDiscountValue] = useState('');
   const [pendingReceiptBill, setPendingReceiptBill] = useState<Bill | null>(null);
@@ -369,8 +374,9 @@ export const SalesPage: React.FC = () => {
     ? Math.max(0, subtotal - itemDiscounts) * cartDiscountValueNum / 100
     : cartDiscountValueNum;
   const totalDiscounts = itemDiscounts + cartDiscountAmount;
-  const manualPendingNum = parseFloat(manualPendingAmount) || 0;
-  const total = subtotal - totalDiscounts + manualPendingNum;
+  const udhaarPaymentNum = parseFloat(udhaarPaymentAmount) || 0;
+  // FIXED: new bill total = products only. Udhaar payment is applied to OLD bills, not this total.
+  const total = subtotal - totalDiscounts;
   const amountReceivedNum = parseFloat(amountReceived) || 0;
   const changeAmount = Math.max(0, amountReceivedNum - total);
   const udhariAmount = Math.max(0, total - amountReceivedNum);
@@ -406,9 +412,7 @@ export const SalesPage: React.FC = () => {
         return;
       }
 
-      const isPaid = paymentMethod === 'cash' && amountReceivedNum >= total;
       const paidAmt = paymentMethod === 'generate-only' ? 0 : amountReceivedNum;
-      const pendingAmt = paymentMethod === 'generate-only' ? total : udhariAmount;
 
       // Build rgbExchanges array (only entries with at least one non-zero value)
       const rgbExchangesPayload = Object.entries(rgbExchanges)
@@ -430,32 +434,21 @@ export const SalesPage: React.FC = () => {
         discount: totalDiscounts,
         paymentMode: paymentMethod,
         paidAmount: paidAmt,
-        previousPendingAdded: manualPendingNum || undefined,
+        // Udhaar payment: applied to old/new bills — NOT added to total (was the bug)
+        ...(udhaarPaymentNum > 0 ? {
+          udhaarPaymentAmount: udhaarPaymentNum,
+          udhaarPaymentMode: udhaarPaymentMode,
+        } : {}),
         rgbExchanges: rgbExchangesPayload,
       };
 
-      await store.checkoutBill(billPayload);
-      if (cartItems.length > 0) {
-        const billForReceipt: Bill = {
-          id: Date.now().toString(),
-          billNumber: `BILL-${Date.now()}`,
-          retailerId: selectedRetailer,
-          workerId: store.currentUser?.id || '',
-          items: cartItems,
-          subtotal,
-          discount: totalDiscounts,
-          total,
-          paidAmount: paidAmt,
-          pendingAmount: pendingAmt,
-          paymentMode: paymentMethod,
-          previousPendingAdded: manualPendingNum,
-          paymentHistory: [],
-          status: isPaid ? 'paid' : paymentMethod === 'cash' && amountReceivedNum > 0 ? 'partial' : 'pending',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        setPendingReceiptBill(billForReceipt);
-        setReceiptPendingBills(retailerPendingBills);
+      const result: any = await store.checkoutBill(billPayload);
+      const createdBill: Bill = result?.bill ?? result;
+      const otherPending: Bill[] = result?.otherPendingBills ?? [];
+
+      if (cartItems.length > 0 && createdBill) {
+        setPendingReceiptBill(createdBill);
+        setReceiptPendingBills(otherPending);
       } else {
         // RGB-only exchange: no product receipt needed, reset form fields cleanly
         resetForm();
@@ -484,7 +477,9 @@ export const SalesPage: React.FC = () => {
     setItemDiscountInputs({});
     setSelectedRetailer('');
     setAmountReceived('');
-    setManualPendingAmount('');
+    setUdhaarPaymentAmount('');
+    setUdhaarPaymentMode('old_first');
+    setAllocationPreview(null);
     setPaymentMethod('cash');
     setCartDiscountType('fixed');
     setCartDiscountValue('');
@@ -496,16 +491,24 @@ export const SalesPage: React.FC = () => {
     setRetailerRGBBalances([]);
   };
 
-  const generateAndPrintReceipt = (bill: Bill, otherPendingBills: Bill[] = []) => {
-    const retailer = retailers.find((r) => r.id === bill.retailerId);
+  const generateAndPrintReceipt = (
+    bill: Bill,
+    otherPendingBills: Bill[] = [],
+    includeOtherPending: boolean = true
+  ) => {
+    const retailer = retailers.find((r) => r.id === bill.retailerId) || bill.retailer;
     const itemsText = bill.items
       .map((item) => {
-        const name = (item as CartItem).productName || item.productId;
-        return `${name} | Qty: ${item.quantity} | Price: ₨${item.price} | Total: ₨${item.total.toFixed(2)}`;
+        const name = (item as CartItem).productName || (item.product ? `${item.product.brand} ${item.product.variant}` : item.productId);
+        return `${name} | Qty: ${item.quantity} | Price: ₨${Number(item.price).toFixed(2)} | Total: ₨${Number(item.total).toFixed(2)}`;
       })
       .join('\n');
 
-    const otherPendingText = otherPendingBills.length > 0
+    const hasOtherPending = includeOtherPending && otherPendingBills.length > 0;
+    const totalOtherPending = otherPendingBills.reduce((s, b) => s + Number(b.pendingAmount), 0);
+    const grandTotalOutstanding = totalOtherPending + Number(bill.pendingAmount || 0);
+
+    const otherPendingText = hasOtherPending
       ? `────────────────────────────────────────
 OTHER PENDING BILLS
 ────────────────────────────────────────
@@ -514,8 +517,8 @@ ${otherPendingBills.map((b) => {
   return `${b.billNumber} | ${billDate} | ₨${Number(b.pendingAmount).toFixed(0)}`;
 }).join('\n')}
 ────────────────────────────────────────
-Total Other Pending:  ₨${otherPendingBills.reduce((s, b) => s + Number(b.pendingAmount), 0).toFixed(0)}
-Grand Total Outstanding: ₨${(otherPendingBills.reduce((s, b) => s + Number(b.pendingAmount), 0) + (bill.pendingAmount || 0)).toFixed(0)}
+Total Other Pending:  ₨${totalOtherPending.toFixed(0)}
+Grand Total Outstanding: ₨${grandTotalOutstanding.toFixed(0)}
 `
       : '';
 
@@ -536,13 +539,13 @@ ITEMS
 ${itemsText}
 
 ────────────────────────────────────────
-Subtotal:     ₨${bill.subtotal.toFixed(2)}
-${bill.discount ? `Discount:     ₨${bill.discount.toFixed(2)}\n` : ''}${bill.previousPendingAdded ? `Prev Pending: ₨${bill.previousPendingAdded.toFixed(2)}\n` : ''}Total:        ₨${bill.total.toFixed(2)}
-Paid:         ₨${bill.paidAmount.toFixed(2)}
-${bill.pendingAmount > 0 ? `Udhari:       ₨${bill.pendingAmount.toFixed(2)}\n` : ''}Status:       ${bill.status.toUpperCase()}
+Subtotal:     ₨${Number(bill.subtotal).toFixed(2)}
+${bill.discount && Number(bill.discount) > 0 ? `Discount:     ₨${Number(bill.discount).toFixed(2)}\n` : ''}Total:        ₨${Number(bill.total).toFixed(2)}
+Paid:         ₨${Number(bill.paidAmount).toFixed(2)}
+${Number(bill.pendingAmount) > 0 ? `Udhari:       ₨${Number(bill.pendingAmount).toFixed(2)}\n` : ''}Status:       ${bill.status.toUpperCase()}
+${bill.oldPendingPaymentApplied && Number(bill.oldPendingPaymentApplied) > 0 ? `\n────────────────────────────────────────\nUDHAAR PAYMENT APPLIED: ₨${Number(bill.oldPendingPaymentApplied).toFixed(0)}\n────────────────────────────────────────` : ''}
 
-${otherPendingText}
-Thank you for your business!
+${otherPendingText}Thank you for your business!
 ════════════════════════════════════════
     `;
 
@@ -552,9 +555,6 @@ Thank you for your business!
       w.document.write(`<html><head><title>Bill Receipt</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{white-space:pre;}</style></head><body><pre>${content}</pre><script>window.print();window.close();</script></body></html>`);
       w.document.close();
     }
-    // No notification here — window.print() gives no signal whether the user
-    // printed or cancelled the OS dialog. The accurate 'Bill created successfully'
-    // notification already fires from store.checkoutBill() at DB save time.
   };
 
   const handleAddRetailer = async () => {
@@ -601,18 +601,22 @@ Thank you for your business!
     }
   };
 
-  const filteredHistoryBills = bills.filter((bill) => {
-    const retailer = retailers.find((r) => r.id === bill.retailerId);
-    const s = historySearchTerm.toLowerCase();
-    const matchSearch =
-      !s ||
-      bill.billNumber.toLowerCase().includes(s) ||
-      (retailer?.shopName || '').toLowerCase().includes(s) ||
-      (retailer?.ownerName || '').toLowerCase().includes(s);
-    const billDate = new Date(bill.createdAt).toISOString().split('T')[0];
-    const matchDate = !historyDateFilter || billDate === historyDateFilter;
-    return matchSearch && matchDate;
-  });
+  const filteredHistoryBills = useMemo(() => {
+    return bills
+      .filter((bill) => {
+        const retailer = retailers.find((r) => r.id === bill.retailerId);
+        const s = historySearchTerm.toLowerCase();
+        const matchSearch =
+          !s ||
+          bill.billNumber.toLowerCase().includes(s) ||
+          (retailer?.shopName || '').toLowerCase().includes(s) ||
+          (retailer?.ownerName || '').toLowerCase().includes(s);
+        const billDate = new Date(bill.createdAt).toISOString().split('T')[0];
+        const matchDate = !historyDateFilter || billDate === historyDateFilter;
+        return matchSearch && matchDate;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [bills, retailers, historySearchTerm, historyDateFilter]);
 
   // ── Sidebar ───────────────────────────────────────────────────────────────────
   const isAdmin = currentUser?.role === 'admin';
@@ -719,12 +723,18 @@ Thank you for your business!
               <Card title="✅ Bill Created Successfully">
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between"><span className="text-gray-500">Bill#</span><span className="font-mono font-bold">{pendingReceiptBill.billNumber}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Total</span><span className="font-bold text-lg">₨{pendingReceiptBill.total.toFixed(0)}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Paid</span><span className="text-green-600 font-semibold">₨{pendingReceiptBill.paidAmount.toFixed(0)}</span></div>
-                  {pendingReceiptBill.pendingAmount > 0 && (
-                    <div className="flex justify-between"><span className="text-gray-500">Udhari</span><span className="text-orange-600 font-semibold">₨{pendingReceiptBill.pendingAmount.toFixed(0)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Total</span><span className="font-bold text-lg">₨{Number(pendingReceiptBill.total).toFixed(0)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Paid</span><span className="text-green-600 font-semibold">₨{Number(pendingReceiptBill.paidAmount).toFixed(0)}</span></div>
+                  {Number(pendingReceiptBill.pendingAmount) > 0 && (
+                    <div className="flex justify-between"><span className="text-gray-500">Udhari</span><span className="text-orange-600 font-semibold">₨{Number(pendingReceiptBill.pendingAmount).toFixed(0)}</span></div>
                   )}
                   <div className="flex justify-between"><span className="text-gray-500">Status</span><span className={`font-semibold capitalize ${pendingReceiptBill.status === 'paid' ? 'text-green-600' : 'text-orange-600'}`}>{pendingReceiptBill.status}</span></div>
+                  {pendingReceiptBill.oldPendingPaymentApplied && Number(pendingReceiptBill.oldPendingPaymentApplied) > 0 && (
+                    <div className="flex justify-between text-blue-600 font-medium pt-2 border-t border-gray-100">
+                      <span>Udhaar Payment Applied</span>
+                      <span>₨{Number(pendingReceiptBill.oldPendingPaymentApplied).toFixed(0)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {receiptPendingBills.length > 0 && (
@@ -742,21 +752,40 @@ Thank you for your business!
                         <span>Total Other Pending</span>
                         <span className="text-orange-600">₨{receiptPendingBills.reduce((s, b) => s + Number(b.pendingAmount), 0).toFixed(0)}</span>
                       </div>
-                      {pendingReceiptBill.pendingAmount > 0 && (
+                      {Number(pendingReceiptBill.pendingAmount) > 0 && (
                         <div className="flex justify-between font-bold text-gray-900">
                           <span>Grand Total Outstanding</span>
-                          <span className="text-orange-600">₨{(receiptPendingBills.reduce((s, b) => s + Number(b.pendingAmount), 0) + pendingReceiptBill.pendingAmount).toFixed(0)}</span>
+                          <span className="text-orange-600">₨{(receiptPendingBills.reduce((s, b) => s + Number(b.pendingAmount), 0) + Number(pendingReceiptBill.pendingAmount)).toFixed(0)}</span>
                         </div>
                       )}
                     </div>
                   </div>
                 )}
 
-                <div className="flex gap-3 mt-5">
-                  <Button onClick={() => { generateAndPrintReceipt(pendingReceiptBill, receiptPendingBills); resetForm(); }} className="flex-1">
-                    🖨 Print & Close
+                <div className="flex flex-col sm:flex-row gap-2 mt-5">
+                  <Button
+                    onClick={() => {
+                      generateAndPrintReceipt(pendingReceiptBill, receiptPendingBills, false);
+                      resetForm();
+                    }}
+                    className="flex-1 text-xs"
+                  >
+                    🖨 Print New Bill Only
                   </Button>
-                  <Button variant="secondary" onClick={resetForm} className="flex-1">
+                  <Button
+                    onClick={() => {
+                      generateAndPrintReceipt(pendingReceiptBill, receiptPendingBills, true);
+                      resetForm();
+                    }}
+                    className="flex-1 text-xs bg-indigo-600 hover:bg-indigo-700 text-white"
+                  >
+                    🖨 Print + Old Pending
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={resetForm}
+                    className="sm:w-20 text-xs"
+                  >
                     Close
                   </Button>
                 </div>
@@ -1323,29 +1352,123 @@ Thank you for your business!
                           <span>−₨{totalDiscounts.toFixed(0)}</span>
                         </div>
                       )}
-                      {manualPendingNum > 0 && (
-                        <div className="flex justify-between text-orange-600">
-                          <span>Added Pending</span>
-                          <span>+₨{manualPendingNum.toFixed(0)}</span>
-                        </div>
-                      )}
                       <div className="flex justify-between font-bold text-gray-900 text-base border-t border-gray-200 pt-1.5">
                         <span>Total</span>
                         <span>₨{total.toFixed(0)}</span>
                       </div>
                     </div>
 
-                    {/* Optional: add previous pending */}
+                    {/* Udhaar Payment — applied to OLD bills, does NOT inflate this bill's total */}
                     <div className="mb-3">
-                      <label className="text-xs font-semibold text-gray-600 block mb-1">Add Previous Pending (₨)</label>
+                      <label className="text-xs font-semibold text-gray-700 block mb-1">
+                        💳 Apply Payment to Udhaar (₨)
+                      </label>
                       <input
                         type="number"
                         min="0"
-                        value={manualPendingAmount}
-                        onChange={(e) => setManualPendingAmount(e.target.value)}
+                        value={udhaarPaymentAmount}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setUdhaarPaymentAmount(val);
+                          setAllocationPreview(null);
+                          if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+                          const amt = parseFloat(val) || 0;
+                          if (amt > 0 && selectedRetailer) {
+                            setPreviewLoading(true);
+                            previewTimerRef.current = setTimeout(async () => {
+                              try {
+                                const plan = await billsService.previewAllocation({
+                                  retailerId: selectedRetailer,
+                                  newBillTotal: total,
+                                  newBillPaid: paymentMethod === 'cash' ? (parseFloat(amountReceived) || 0) : 0,
+                                  paymentAmount: amt,
+                                  mode: udhaarPaymentMode,
+                                });
+                                setAllocationPreview(plan);
+                              } catch { /* silently ignore preview errors */ }
+                              finally { setPreviewLoading(false); }
+                            }, 600);
+                          }
+                        }}
                         placeholder="0"
                         className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-blue-400 focus:outline-none"
                       />
+                      {/* Allocation mode selector */}
+                      {udhaarPaymentNum > 0 && (
+                        <div className="mt-1.5 flex gap-2">
+                          {(['old_first', 'current_first'] as const).map((m) => (
+                            <button
+                              key={m}
+                              onClick={() => {
+                                setUdhaarPaymentMode(m);
+                                setAllocationPreview(null);
+                                if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+                                const amt = parseFloat(udhaarPaymentAmount) || 0;
+                                if (amt > 0 && selectedRetailer) {
+                                  setPreviewLoading(true);
+                                  previewTimerRef.current = setTimeout(async () => {
+                                    try {
+                                      const plan = await billsService.previewAllocation({
+                                        retailerId: selectedRetailer,
+                                        newBillTotal: total,
+                                        newBillPaid: paymentMethod === 'cash' ? (parseFloat(amountReceived) || 0) : 0,
+                                        paymentAmount: amt,
+                                        mode: m,
+                                      });
+                                      setAllocationPreview(plan);
+                                    } catch { /* ignore */ }
+                                    finally { setPreviewLoading(false); }
+                                  }, 100);
+                                }
+                              }}
+                              className={`flex-1 py-1 text-[10px] font-semibold rounded border transition-all ${
+                                udhaarPaymentMode === m
+                                  ? 'bg-blue-600 text-white border-blue-600'
+                                  : 'border-gray-200 text-gray-500 hover:border-blue-300'
+                              }`}
+                            >
+                              {m === 'old_first' ? 'Old bills first ✓' : 'This bill first'}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {/* Allocation Preview Panel */}
+                      {udhaarPaymentNum > 0 && (
+                        <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 p-2 text-[10px]">
+                          {previewLoading ? (
+                            <p className="text-blue-500 text-center py-1">Calculating allocation…</p>
+                          ) : allocationPreview ? (
+                            <>
+                              <p className="font-semibold text-blue-700 mb-1">Allocation Preview</p>
+                              {allocationPreview.entries.map((e) => (
+                                <div key={e.billId} className="flex justify-between text-gray-700 py-0.5 border-b border-blue-100 last:border-0">
+                                  <span className="truncate mr-1">{e.billNumber}</span>
+                                  <span className="shrink-0">
+                                    −₨{e.amountApplied.toFixed(0)}
+                                    {' → '}
+                                    <span className={e.newStatus === 'paid' ? 'text-green-600 font-bold' : 'text-orange-600'}>
+                                      {e.newStatus === 'paid' ? 'PAID' : `₨${e.pendingAfter.toFixed(0)}`}
+                                    </span>
+                                  </span>
+                                </div>
+                              ))}
+                              <div className="flex justify-between font-semibold text-blue-700 mt-1 pt-1 border-t border-blue-200">
+                                <span>Total Applied</span>
+                                <span>₨{allocationPreview.totalApplied.toFixed(0)}</span>
+                              </div>
+                              {allocationPreview.excessAmount > 0 && (
+                                <p className="mt-1 text-orange-600 font-medium">
+                                  ⚠ ₨{allocationPreview.excessAmount.toFixed(0)} exceeds all pending — will not be applied
+                                </p>
+                              )}
+                            </>
+                          ) : selectedRetailer ? (
+                            <p className="text-gray-400 text-center py-1">Enter an amount to preview</p>
+                          ) : (
+                            <p className="text-gray-400 text-center py-1">Select a retailer first</p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Payment method — Cash and Bill Only only (Udhaar removed) */}
@@ -1441,7 +1564,7 @@ Thank you for your business!
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredHistoryBills.slice().reverse().map((bill) => {
+                    {filteredHistoryBills.map((bill) => {
                       const retailer = retailers.find((r) => r.id === bill.retailerId);
                       const isExpanded = selectedBillForDetails === bill.id;
                       const statusColors: Record<string, string> = {

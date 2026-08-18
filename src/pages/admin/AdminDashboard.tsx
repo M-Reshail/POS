@@ -62,8 +62,11 @@ export const AdminDashboard: React.FC = () => {
     }));
   }, [products]);
 
-  // Recent 6 bills
-  const recentBills = useMemo(() => [...bills].reverse().slice(0, 6), [bills]);
+  // Recent 6 bills (newest first)
+  const recentBills = useMemo(
+    () => [...bills].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 6),
+    [bills]
+  );
 
   return (
     <Layout sidebarItems={ADMIN_SIDEBAR}>

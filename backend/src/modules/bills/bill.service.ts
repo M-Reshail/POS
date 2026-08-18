@@ -14,12 +14,21 @@
  *  7. Timestamped Accountability — every mutation tied to a user ID
  *  8. RGB-Only Bills Allowed — empty product cart is valid if rgbExchanges has at
  *     least one non-zero entry (e.g. a retailer dropping off crates with no purchase)
+ *  9. Udhaar Payment Allocation — optional udhaarPaymentAmount entered at bill
+ *     creation applies against old pending bills (LIFO) and/or the new bill,
+ *     creating per-bill PaymentRecord and LedgerEntry rows atomically.
  */
 
 import { prisma } from '../../lib/prisma';
 import { BillPaymentMode, BillStatus, LedgerEntryType, Prisma } from '@prisma/client';
 import { deductStockFIFO, getProductCurrentSalePrice } from '../inventory/inventory.service';
 import { issueRGB, returnRGB } from '../rgb/rgb.service';
+import {
+  allocateUdhaarPayment,
+  UdhaarAllocationMode,
+  BillSnapshot,
+  AllocationPlan,
+} from '../../lib/udhaarAllocator';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,19 +49,33 @@ export interface CreateBillInput {
   retailerId: string;
   workerId: string;
   items: CreateBillItemInput[];
-  discount?: number;       // Bill-level discount
+  discount?: number;              // Bill-level discount
   paymentMode?: BillPaymentMode;
   paidAmount?: number;
+  /** @deprecated Use udhaarPaymentAmount instead. Kept for backward compat with old data. */
   previousPendingAdded?: number;
   oldPendingPaymentApplied?: number;
   notes?: string;
   rgbExchanges?: RGBExchangeInput[]; // Standalone crate exchanges for this sale
+  /** Amount the retailer is paying toward old (and/or new) pending bills. */
+  udhaarPaymentAmount?: number;
+  /** Allocation strategy. Default: 'old_first' (old bills paid before new bill). */
+  udhaarPaymentMode?: UdhaarAllocationMode;
 }
 
 export interface AddPaymentInput {
   amount: number;
   paymentMode: BillPaymentMode;
   notes?: string;
+}
+
+/** Input for the read-only allocation preview (no DB writes). */
+export interface PreviewUdhaarAllocationInput {
+  retailerId: string;
+  newBillTotal: number;   // total of the new bill being composed
+  newBillPaid?: number;   // cash already paid on the new bill
+  paymentAmount: number;
+  mode: UdhaarAllocationMode;
 }
 
 // ── Bill Number Generator ─────────────────────────────────────────────────────
@@ -91,7 +114,8 @@ interface PriceVarianceFlag {
 
 /**
  * Create a new bill.
- * Atomic transaction: stock deduction + bill creation + ledger entry.
+ * Atomic transaction: stock deduction + bill creation + ledger entry
+ * + optional udhaar payment allocation against old pending bills.
  */
 export const createBill = async (input: CreateBillInput) => {
   const hasProducts = input.items.length > 0;
@@ -146,6 +170,8 @@ export const createBill = async (input: CreateBillInput) => {
     }
 
     // 4. Calculate bill totals ─────────────────────────────────────────────────
+    // NOTE: udhaarPaymentAmount is NOT added to the total. It is a payment
+    // against old/new pending bills — it does NOT inflate the new sale amount.
     const subtotal = input.items.reduce((sum, item) => {
       const lineTotal = item.quantity * item.price - (item.discount ?? 0);
       return sum + lineTotal;
@@ -159,10 +185,9 @@ export const createBill = async (input: CreateBillInput) => {
     const status: BillStatus =
       pendingAmount <= 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'pending';
 
-    // 5. Determine new credit balance ─────────────────────────────────────────
+    // 5. Determine new credit balance after this bill ─────────────────────────
     const newBalance = currentBalance + pendingAmount;
 
-    // Soft credit check — allow partial over-limit with warning (already hard-blocked above)
     // 6. Create the bill ───────────────────────────────────────────────────────
     const billNumber = await generateBillNumber(tx);
 
@@ -177,36 +202,35 @@ export const createBill = async (input: CreateBillInput) => {
       data: {
         billNumber,
         retailerId: input.retailerId,
-        workerId: input.workerId,
-        subtotal: new Prisma.Decimal(subtotal),
-        discount: new Prisma.Decimal(billDiscount),
-        total: new Prisma.Decimal(total),
+        workerId:   input.workerId,
+        subtotal:   new Prisma.Decimal(subtotal),
+        discount:   new Prisma.Decimal(billDiscount),
+        total:      new Prisma.Decimal(total),
         paidAmount: new Prisma.Decimal(paidAmount),
         pendingAmount: new Prisma.Decimal(pendingAmount),
-        paymentMode: input.paymentMode,
-        previousPendingAdded: input.previousPendingAdded
-          ? new Prisma.Decimal(input.previousPendingAdded)
-          : null,
-        oldPendingPaymentApplied: input.oldPendingPaymentApplied
-          ? new Prisma.Decimal(input.oldPendingPaymentApplied)
-          : null,
+        paymentMode:  input.paymentMode,
+        // previousPendingAdded is kept for backward-compat display of old bills only;
+        // new bills always null here — allocation tracked via oldPendingPaymentApplied.
+        previousPendingAdded: null,
+        // Will be updated below after allocation runs
+        oldPendingPaymentApplied: null,
         status,
         items: {
           create: persistableItems.map((item) => ({
             productId: item.productId,
-            quantity: item.quantity,
-            price: new Prisma.Decimal(item.price),
-            discount: new Prisma.Decimal(item.discount ?? 0),
-            total: new Prisma.Decimal(
+            quantity:  item.quantity,
+            price:     new Prisma.Decimal(item.price),
+            discount:  new Prisma.Decimal(item.discount ?? 0),
+            total:     new Prisma.Decimal(
               item.quantity * item.price - (item.discount ?? 0)
             ),
           })),
         },
       },
       include: {
-        items: { include: { product: true } },
+        items:    { include: { product: true } },
         retailer: { select: { shopName: true } },
-        worker: { select: { name: true } },
+        worker:   { select: { name: true } },
       },
     });
 
@@ -224,54 +248,226 @@ export const createBill = async (input: CreateBillInput) => {
         if (exchange.cratesGiven > 0) {
           await issueRGB(tx, {
             retailerId: input.retailerId,
-            rgbItemId: exchange.rgbItemId,
-            quantity: exchange.cratesGiven,
-            saleId: bill.id,
-            workerId: input.workerId,
+            rgbItemId:  exchange.rgbItemId,
+            quantity:   exchange.cratesGiven,
+            saleId:     bill.id,
+            workerId:   input.workerId,
           });
         }
         if (exchange.cratesReturned > 0) {
           await returnRGB(tx, {
             retailerId: input.retailerId,
-            rgbItemId: exchange.rgbItemId,
-            quantity: exchange.cratesReturned,
-            saleId: bill.id,
-            workerId: input.workerId,
+            rgbItemId:  exchange.rgbItemId,
+            quantity:   exchange.cratesReturned,
+            saleId:     bill.id,
+            workerId:   input.workerId,
           });
         }
       }
     }
 
-    // 8. Record upfront payment ───────────────────────────────────────────────
+    // 8. Record upfront payment on the NEW bill ────────────────────────────────
     if (paidAmount > 0 && input.paymentMode) {
       await tx.paymentRecord.create({
         data: {
-          billId: bill.id,
-          amount: new Prisma.Decimal(paidAmount),
+          billId:      bill.id,
+          amount:      new Prisma.Decimal(paidAmount),
           paymentMode: input.paymentMode,
-          notes: input.notes,
+          notes:       input.notes,
         },
       });
     }
 
-    // 9. Create ledger entry ───────────────────────────────────────────────────
+    // 9. Create sale ledger entry for the new bill ─────────────────────────────
     if (pendingAmount > 0) {
       await tx.ledgerEntry.create({
         data: {
           retailerId: input.retailerId,
-          billId: bill.id,
-          entryType: LedgerEntryType.sale,
-          amount: new Prisma.Decimal(total),
-          balance: new Prisma.Decimal(newBalance),
+          billId:     bill.id,
+          entryType:  LedgerEntryType.sale,
+          amount:     new Prisma.Decimal(total),
+          balance:    new Prisma.Decimal(newBalance),
         },
       });
     }
 
+    // 10. Udhaar payment allocation ───────────────────────────────────────────
+    // If a udhaarPaymentAmount is provided, allocate it across old pending bills
+    // and/or the new bill, then write the per-bill PaymentRecord + LedgerEntry.
+    let allocationPlan: AllocationPlan | null = null;
+
+    if (input.udhaarPaymentAmount && input.udhaarPaymentAmount > 0) {
+      const mode: UdhaarAllocationMode = input.udhaarPaymentMode ?? 'old_first';
+
+      // Fetch all PENDING/PARTIAL bills for this retailer EXCLUDING the new bill
+      const oldPendingRows = await tx.bill.findMany({
+        where: {
+          retailerId:    input.retailerId,
+          id:            { not: bill.id },
+          pendingAmount: { gt: 0 },
+          voidLog:       { is: null }, // exclude voided bills
+        },
+        select: {
+          id:            true,
+          billNumber:    true,
+          pendingAmount: true,
+          createdAt:     true,
+        },
+        orderBy: { createdAt: 'desc' }, // LIFO — allocator re-sorts, but give it newest-first
+      });
+
+      const oldSnapshots: BillSnapshot[] = oldPendingRows.map((b) => ({
+        id:            b.id,
+        billNumber:    b.billNumber,
+        pendingAmount: Number(b.pendingAmount),
+        createdAt:     b.createdAt,
+      }));
+
+      // New bill snapshot — only include if it still has pending amount
+      const newBillSnapshot: BillSnapshot | null = pendingAmount > 0
+        ? { id: bill.id, billNumber, pendingAmount, createdAt: bill.createdAt }
+        : null;
+
+      allocationPlan = allocateUdhaarPayment(
+        oldSnapshots,
+        newBillSnapshot,
+        input.udhaarPaymentAmount,
+        mode
+      );
+
+      // Running ledger balance after this allocation (chain from newBalance)
+      let runningBalance = newBalance;
+
+      for (const entry of allocationPlan.entries) {
+        const isNewBill = entry.billId === bill.id;
+
+        // a) Update the bill's paid/pending/status
+        const newPaidAmount = isNewBill
+          ? paidAmount + entry.amountApplied
+          : Number((await tx.bill.findUnique({
+              where: { id: entry.billId },
+              select: { paidAmount: true },
+            }))!.paidAmount) + entry.amountApplied;
+
+        await tx.bill.update({
+          where: { id: entry.billId },
+          data: {
+            paidAmount:    new Prisma.Decimal(newPaidAmount),
+            pendingAmount: new Prisma.Decimal(entry.pendingAfter),
+            status:        entry.newStatus,
+          },
+        });
+
+        // b) Create a PaymentRecord for this specific bill
+        await tx.paymentRecord.create({
+          data: {
+            billId:      entry.billId,
+            amount:      new Prisma.Decimal(entry.amountApplied),
+            // Udhaar allocation payments are recorded as cash mode by default;
+            // the cash was collected at the time of the new sale.
+            paymentMode: input.paymentMode ?? 'cash',
+            notes:       `Udhaar allocation from bill ${billNumber}`,
+          },
+        });
+
+        // c) Create a LedgerEntry (payment type) with chained running balance
+        runningBalance = Math.max(0, runningBalance - entry.amountApplied);
+        await tx.ledgerEntry.create({
+          data: {
+            retailerId: input.retailerId,
+            billId:     entry.billId,
+            entryType:  LedgerEntryType.payment,
+            amount:     new Prisma.Decimal(entry.amountApplied),
+            balance:    new Prisma.Decimal(runningBalance),
+            notes:      `Udhaar allocation from bill ${billNumber}`,
+          },
+        });
+      }
+
+      // d) Record totalApplied on the new bill for receipt display
+      if (allocationPlan.totalApplied > 0) {
+        await tx.bill.update({
+          where: { id: bill.id },
+          data:  { oldPendingPaymentApplied: new Prisma.Decimal(allocationPlan.totalApplied) },
+        });
+      }
+    }
+
+    // 11. Fetch post-allocation bill state and remaining other pending bills ──
+    const finalBill = await tx.bill.findUnique({
+      where: { id: bill.id },
+      include: {
+        items:    { include: { product: true } },
+        retailer: { select: { id: true, shopName: true, ownerName: true, mobileNumber: true } },
+        worker:   { select: { id: true, name: true } },
+      },
+    });
+
+    const otherPendingBills = await tx.bill.findMany({
+      where: {
+        retailerId:    input.retailerId,
+        id:            { not: bill.id },
+        pendingAmount: { gt: 0 },
+        voidLog:       { is: null },
+      },
+      select: {
+        id:            true,
+        billNumber:    true,
+        total:         true,
+        paidAmount:    true,
+        pendingAmount: true,
+        status:        true,
+        createdAt:     true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
     return {
-      bill,
-      priceVariances, // Flagged for caller — frontend can display warnings
+      bill: finalBill ?? bill,
+      priceVariances,   // Flagged for caller — frontend can display warnings
+      allocationPlan,   // null if no udhaar payment was requested
+      otherPendingBills, // truly updated post-allocation pending bills for this retailer
     };
   });
+};
+
+/**
+ * Preview how a udhaar payment would be allocated — NO DB writes.
+ * Called by the frontend to show the worker the allocation breakdown before submitting.
+ */
+export const previewUdhaarAllocation = async (
+  input: PreviewUdhaarAllocationInput
+): Promise<AllocationPlan> => {
+  // Fetch current pending bills for this retailer
+  const pendingRows = await prisma.bill.findMany({
+    where: {
+      retailerId:    input.retailerId,
+      pendingAmount: { gt: 0 },
+      voidLog:       { is: null },
+    },
+    select: {
+      id:            true,
+      billNumber:    true,
+      pendingAmount: true,
+      createdAt:     true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const oldSnapshots: BillSnapshot[] = pendingRows.map((b) => ({
+    id:            b.id,
+    billNumber:    b.billNumber,
+    pendingAmount: Number(b.pendingAmount),
+    createdAt:     b.createdAt,
+  }));
+
+  // Synthesise a snapshot for the new bill (not yet in DB)
+  const newBillPending = Math.max(0, input.newBillTotal - (input.newBillPaid ?? 0));
+  const newBillSnapshot: BillSnapshot | null = newBillPending > 0
+    ? { id: '__new__', billNumber: '(this bill)', pendingAmount: newBillPending, createdAt: new Date() }
+    : null;
+
+  return allocateUdhaarPayment(oldSnapshots, newBillSnapshot, input.paymentAmount, input.mode);
 };
 
 /** List bills — Admin sees all, Worker sees only their own */
