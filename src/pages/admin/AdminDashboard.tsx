@@ -10,6 +10,8 @@ import {
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import { DueRemindersWidget } from '../../components/reminders/DueRemindersWidget';
 import { AddReminderModal } from '../../components/reminders/AddReminderModal';
+import { UpcomingCollectionsCard } from '../../components/reminders/UpcomingCollectionsCard';
+import { PushNotificationToggle } from '../../components/reminders/PushNotificationToggle';
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -115,6 +117,8 @@ export const AdminDashboard: React.FC = () => {
               >
                 <RefreshCw size={16} className={isLoading ? 'animate-spin text-indigo-400' : ''} />
               </button>
+              {/* Push notification toggle — sits naturally beside reminder controls */}
+              <PushNotificationToggle />
             </div>
           </div>
         </div>
@@ -124,6 +128,9 @@ export const AdminDashboard: React.FC = () => {
           onClose={() => setIsAddReminderModalOpen(false)}
           onSuccess={() => fetchInitialData()}
         />
+
+        {/* ── Upcoming Collections Summary Card ─────────────────────────────────── */}
+        <UpcomingCollectionsCard />
 
         {/* ── Key Business Performance Cards ───────────────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-5 mb-6 sm:mb-8">

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modal, Button } from '../common';
 import { useStore } from '../../store';
 import { remindersService } from '../../services/reminders';
-import { Calendar, DollarSign, Store, FileText } from 'lucide-react';
+import { Calendar, DollarSign, Store, FileText, CreditCard } from 'lucide-react';
 
 interface AddReminderModalProps {
   isOpen: boolean;
@@ -33,6 +33,20 @@ export const AddReminderModal: React.FC<AddReminderModalProps> = ({
     dueDate?: string;
     form?: string;
   }>({});
+
+  const selectedRetailer = useMemo(() => {
+    return retailers.find((r) => r.id === retailerId);
+  }, [retailers, retailerId]);
+
+  const selectedPendingBalance = useMemo(() => {
+    if (!retailerId) return 0;
+    if (typeof selectedRetailer?.outstanding === 'number' && selectedRetailer.outstanding > 0) {
+      return selectedRetailer.outstanding;
+    }
+    return store.bills
+      .filter((b) => b.retailerId === retailerId)
+      .reduce((sum, b) => sum + (Number(b.pendingAmount) || 0), 0);
+  }, [retailerId, selectedRetailer, store.bills]);
 
   useEffect(() => {
     if (isOpen && retailers.length === 0) {
@@ -151,6 +165,26 @@ export const AddReminderModal: React.FC<AddReminderModalProps> = ({
           </select>
           {errors.retailerId && (
             <p className="text-red-500 text-xs mt-1">{errors.retailerId}</p>
+          )}
+
+          {/* Selected Retailer Total Pending Payment Display */}
+          {retailerId && selectedRetailer && (
+            <div className="mt-2.5 p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <CreditCard size={14} />
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-slate-600">Total Pending Balance</span>
+                  <p className="text-[11px] text-slate-400">Current unpaid debt for this retailer</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-extrabold text-slate-900">
+                  PKR {selectedPendingBalance.toLocaleString('en-PK')}
+                </span>
+              </div>
+            </div>
           )}
         </div>
 
