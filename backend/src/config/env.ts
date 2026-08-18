@@ -47,6 +47,11 @@ export const env = {
 
   CORS_ORIGIN: optionalEnv('CORS_ORIGIN', 'http://localhost:5173'),
 
+  // ── Web Push (VAPID) ──────────────────────────────────────────────────────
+  VAPID_PUBLIC_KEY:  requireEnv('VAPID_PUBLIC_KEY'),
+  VAPID_PRIVATE_KEY: requireEnv('VAPID_PRIVATE_KEY'),
+  VAPID_SUBJECT:     requireEnv('VAPID_SUBJECT'),
+
   get isProduction() {
     return this.NODE_ENV === 'production';
   },

@@ -125,6 +125,13 @@ export const updateReminder = async (
   }
   if (data.dueDate !== undefined) {
     updateData.dueDate = new Date(data.dueDate);
+    // ── notificationSent reset ────────────────────────────────────────────────
+    // If the due date is being changed and the reminder already fired a push
+    // (notificationSent = true), reset it to false so a fresh push fires on
+    // the new due date instead of silently skipping it next cycle.
+    if (existing.notificationSent) {
+      updateData.notificationSent = false; // ← line that resets notificationSent
+    }
   }
   if (data.note !== undefined) {
     updateData.note = data.note;

@@ -32,6 +32,11 @@ import expenseRoutes from './modules/expenses/expense.routes';
 import rgbRoutes from './modules/rgb/rgb.routes';
 import brandRoutes from './modules/brands/brand.routes';
 import reminderRoutes from './modules/reminders/reminder.routes';
+import pushRoutes     from './modules/push/push.routes';
+
+// Notification scheduler
+import { notifyDueReminders } from './lib/reminderNotifier';
+import { webPushDeliver }     from './lib/pushNotifications';
 
 
 // Prisma client (imported here to ensure singleton is initialized)
@@ -90,6 +95,7 @@ app.use('/api/expenses',  expenseRoutes);
 app.use('/api/rgb',       rgbRoutes);
 app.use('/api/brands',    brandRoutes);
 app.use('/api/reminders', reminderRoutes);
+app.use('/api/push',      pushRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 
@@ -131,14 +137,34 @@ const server = app.listen(env.PORT, () => {
   console.log(`    /api/workers    — Worker management (admin)`);
   console.log(`    /api/expenses   — Expense tracking (admin)`);
   console.log(`    /api/reminders  — Payment reminders`);
+  console.log(`    /api/push       — Web Push subscriptions`);
   console.log('\n    Waiting for requests...\n');
 });
+
+// ── Reminder Push Notification Scheduler ─────────────────────────────────────
+// Checks for due reminders every 60s and sends web push notifications.
+// webPushDeliver is the concrete transport; swap for Electron/FCM without
+// touching the detection logic in reminderNotifier.ts.
+
+const NOTIFIER_INTERVAL_MS = 60_000;
+
+const notifierInterval = setInterval(async () => {
+  try {
+    await notifyDueReminders(webPushDeliver);
+  } catch (err) {
+    console.error('[notifier] Unexpected error in notification cycle:', err);
+  }
+}, NOTIFIER_INTERVAL_MS);
+
+console.log(`[notifier] Reminder push scheduler started (every ${NOTIFIER_INTERVAL_MS / 1000}s)`);
 
 
 // ── Graceful Shutdown ─────────────────────────────────────────────────────────
 
 const shutdown = async (signal: string) => {
   console.log(`\n⚠️   ${signal} received. Shutting down gracefully...`);
+
+  clearInterval(notifierInterval);
 
   server.close(async () => {
     await prisma.$disconnect();

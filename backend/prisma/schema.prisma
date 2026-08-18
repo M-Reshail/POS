@@ -97,12 +97,13 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at")
 
   // Relations
-  stockAdjustments StockAdjustment[] @relation("AdminAdjustments")
-  billsCreated     Bill[]            @relation("WorkerBills")
-  priceChanges     PriceHistory[]    @relation("AdminPriceChanges")
-  voidedBillLogs   VoidedBillLog[]   @relation("WorkerVoids")
-  expensesCreated  Expense[]         @relation("ExpenseCreator")
-  paymentReminders PaymentReminder[] @relation("ReminderCreator")
+  stockAdjustments  StockAdjustment[]  @relation("AdminAdjustments")
+  billsCreated      Bill[]             @relation("WorkerBills")
+  priceChanges      PriceHistory[]     @relation("AdminPriceChanges")
+  voidedBillLogs    VoidedBillLog[]    @relation("WorkerVoids")
+  expensesCreated   Expense[]          @relation("ExpenseCreator")
+  paymentReminders  PaymentReminder[]  @relation("ReminderCreator")
+  pushSubscriptions PushSubscription[]
 
   @@map("users")
 }
@@ -447,15 +448,16 @@ model RGBTransaction {
 // createdById references User — the single auth model for both admin & worker.
 // ----------------------------------------------------------------------------
 model PaymentReminder {
-  id          String         @id @default(cuid())
-  retailerId  String         @map("retailer_id")
-  amount      Decimal        @db.Decimal(12, 2)
-  dueDate     DateTime       @map("due_date")
-  note        String?
-  status      ReminderStatus @default(PENDING)
-  createdById String         @map("created_by_id")
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt       @map("updated_at")
+  id               String         @id @default(cuid())
+  retailerId       String         @map("retailer_id")
+  amount           Decimal        @db.Decimal(12, 2)
+  dueDate          DateTime       @map("due_date")
+  note             String?
+  status           ReminderStatus @default(PENDING)
+  notificationSent Boolean        @default(false) @map("notification_sent")
+  createdById      String         @map("created_by_id")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt       @map("updated_at")
 
   // Relations
   // onDelete: Restrict — prevents deleting a retailer who still has open reminders
@@ -465,4 +467,24 @@ model PaymentReminder {
   @@index([retailerId])
   @@index([dueDate, status])
   @@map("payment_reminders")
+}
+
+// ----------------------------------------------------------------------------
+// PushSubscription — Browser Web Push subscription per user/device
+// endpoint is unique — re-subscribing from the same browser upserts the row.
+// onDelete: Cascade — deleting a User removes all their push subscriptions.
+// p256dh + auth are the browser-generated encryption keys for the subscription.
+// ----------------------------------------------------------------------------
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
