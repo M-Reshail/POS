@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Button, Card } from '../../components/common';
+import { Button, Card, InfiniteScrollTrigger } from '../../components/common';
 import { useStore } from '../../store';
 import {
   ShoppingCart, Trash2, Droplet, Edit2, Check, Search, X,
@@ -11,6 +11,7 @@ import { retailersService } from '../../services/retailers';
 import { billsService } from '../../services/bills';
 import { rgbService } from '../../services/rgb';
 import { ADMIN_SIDEBAR, WORKER_SIDEBAR } from '../../constants/navigation';
+import { ExpandableBillRow } from '../../components/bills/ExpandableBillRow';
 
 interface CartItem extends BillItem {
   isEditingPrice?: boolean;
@@ -35,7 +36,7 @@ export const SalesPage: React.FC = () => {
   const store = useStore();
   const retailers = store.retailers;
   const products = store.products;
-  const { bills, stockBatches, rgbItems } = store;
+  const { stockBatches, rgbItems } = store;
 
   // View switch: 'create' | 'history' | 'rgbHistory'
   const [viewMode, setViewMode] = useState<'create' | 'history' | 'rgbHistory'>('create');
@@ -67,15 +68,20 @@ export const SalesPage: React.FC = () => {
   const [rgbExchanges, setRgbExchanges] = useState<Record<string, { cratesGiven: number; cratesReturned: number }>>({});
   const [retailerRGBBalances, setRetailerRGBBalances] = useState<RGBRetailerBalance[]>([]);
 
-  // History
+  // History tab (Server-side paginated)
   const [historySearchTerm, setHistorySearchTerm] = useState('');
   const [historyDateFilter, setHistoryDateFilter] = useState('');
   const [selectedBillForDetails, setSelectedBillForDetails] = useState<string | null>(null);
-  const [additionalPaymentAmount, setAdditionalPaymentAmount] = useState('');
+  const [historyBills, setHistoryBills] = useState<Bill[]>([]);
+  const [totalHistoryBills, setTotalHistoryBills] = useState(0);
+  const [historyBillsLoading, setHistoryBillsLoading] = useState(false);
+  const [loadingMoreHistoryBills, setLoadingMoreHistoryBills] = useState(false);
 
-  // RGB History tab
+  // RGB History tab (Server-side paginated)
   const [rgbHistory, setRgbHistory] = useState<RGBTransactionRecord[]>([]);
+  const [totalRgbHistory, setTotalRgbHistory] = useState(0);
   const [rgbHistoryLoading, setRgbHistoryLoading] = useState(false);
+  const [loadingMoreRgbHistory, setLoadingMoreRgbHistory] = useState(false);
 
   // Add Retailer Modal
   const [showAddRetailerModal, setShowAddRetailerModal] = useState(false);
@@ -101,6 +107,67 @@ export const SalesPage: React.FC = () => {
       .then(setRetailerRGBBalances)
       .catch(() => setRetailerRGBBalances([]));
   }, [selectedRetailer]);
+
+  const loadHistoryBills = async (count?: number) => {
+    const limitToFetch = count ?? Math.max(10, historyBills.length);
+    setHistoryBillsLoading(true);
+    try {
+      const res = await billsService.list({ limit: limitToFetch, offset: 0 });
+      setHistoryBills(res.bills || []);
+      setTotalHistoryBills(res.total || 0);
+    } catch (err) {
+      console.error('Failed to load history bills:', err);
+    } finally {
+      setHistoryBillsLoading(false);
+    }
+  };
+
+  const handleLoadMoreHistoryBills = async () => {
+    if (loadingMoreHistoryBills || historyBills.length >= totalHistoryBills) return;
+    setLoadingMoreHistoryBills(true);
+    try {
+      const nextOffset = historyBills.length;
+      const res = await billsService.list({ limit: 10, offset: nextOffset });
+      if (res.bills?.length) {
+        setHistoryBills((prev) => [...prev, ...res.bills]);
+        setTotalHistoryBills(res.total || totalHistoryBills);
+      }
+    } catch (err) {
+      console.error('Failed to load more history bills:', err);
+    } finally {
+      setLoadingMoreHistoryBills(false);
+    }
+  };
+
+  const loadRgbHistory = async () => {
+    setRgbHistoryLoading(true);
+    try {
+      const res = await rgbService.getTransactions({ limit: 10, offset: 0 });
+      setRgbHistory(res.transactions || []);
+      setTotalRgbHistory(res.total || 0);
+    } catch (err) {
+      console.error('Failed to load RGB history:', err);
+    } finally {
+      setRgbHistoryLoading(false);
+    }
+  };
+
+  const handleLoadMoreRgbHistory = async () => {
+    if (loadingMoreRgbHistory || rgbHistory.length >= totalRgbHistory) return;
+    setLoadingMoreRgbHistory(true);
+    try {
+      const nextOffset = rgbHistory.length;
+      const res = await rgbService.getTransactions({ limit: 10, offset: nextOffset });
+      if (res.transactions?.length) {
+        setRgbHistory((prev) => [...prev, ...res.transactions]);
+        setTotalRgbHistory(res.total || totalRgbHistory);
+      }
+    } catch (err) {
+      console.error('Failed to load more RGB history:', err);
+    } finally {
+      setLoadingMoreRgbHistory(false);
+    }
+  };
 
   // ── Derived products from inventory ──────────────────────────────────────────
   const inventoryProducts = useMemo(() => {
@@ -460,18 +527,6 @@ export const SalesPage: React.FC = () => {
     }
   };
 
-  const loadRgbHistory = async () => {
-    setRgbHistoryLoading(true);
-    try {
-      const data = await rgbService.getTransactions();
-      setRgbHistory(data.transactions || []);
-    } catch {
-      store.addNotification('error', 'Failed to load RGB history');
-    } finally {
-      setRgbHistoryLoading(false);
-    }
-  };
-
   const resetForm = () => {
     setCartItems([]);
     setItemDiscountInputs({});
@@ -587,22 +642,8 @@ ${otherPendingText}Thank you for your business!
   };
 
 
-  const updateBillPayment = async (billId: string, amount: number) => {
-    const bill = bills.find((b) => b.id === billId);
-    if (!bill) return;
-    try {
-      await billsService.addPayment(billId, { amount, paymentMode: 'cash' });
-      store.fetchBills();
-      store.addNotification('success', `Payment of ₨${amount} recorded`);
-      setSelectedBillForDetails(null);
-      setAdditionalPaymentAmount('');
-    } catch (err: any) {
-      store.addNotification('error', err.response?.data?.message || 'Failed to add payment');
-    }
-  };
-
   const filteredHistoryBills = useMemo(() => {
-    return bills
+    return historyBills
       .filter((bill) => {
         const retailer = retailers.find((r) => r.id === bill.retailerId);
         const s = historySearchTerm.toLowerCase();
@@ -616,7 +657,7 @@ ${otherPendingText}Thank you for your business!
         return matchSearch && matchDate;
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [bills, retailers, historySearchTerm, historyDateFilter]);
+  }, [historyBills, retailers, historySearchTerm, historyDateFilter]);
 
   // ── Sidebar ───────────────────────────────────────────────────────────────────
   const isAdmin = currentUser?.role === 'admin';
@@ -638,7 +679,7 @@ ${otherPendingText}Thank you for your business!
               <ShoppingCart size={14} /> Create Sale
             </button>
             <button
-              onClick={() => { setViewMode('history'); store.fetchBills(); }}
+              onClick={() => { setViewMode('history'); loadHistoryBills(); }}
               className={`px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
                 viewMode === 'history' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'
               }`}
@@ -1555,115 +1596,46 @@ ${otherPendingText}Thank you for your business!
                     <tr className="border-b border-gray-100 text-gray-500">
                       <th className="text-left py-2 px-2">Bill#</th>
                       <th className="text-left py-2 px-2">Retailer</th>
+                      <th className="text-left py-2 px-2">Worker</th>
                       <th className="text-right py-2 px-2">Total</th>
                       <th className="text-right py-2 px-2">Paid</th>
                       <th className="text-right py-2 px-2">Udhari</th>
+                      <th className="text-right py-2 px-2">Discount</th>
+                      <th className="text-center py-2 px-2">Mode</th>
                       <th className="text-center py-2 px-2">Status</th>
                       <th className="text-left py-2 px-2">Date</th>
                       <th className="py-2 px-2"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredHistoryBills.map((bill) => {
-                      const retailer = retailers.find((r) => r.id === bill.retailerId);
-                      const isExpanded = selectedBillForDetails === bill.id;
-                      const statusColors: Record<string, string> = {
-                        paid: 'bg-green-100 text-green-700',
-                        pending: 'bg-orange-100 text-orange-700',
-                        partial: 'bg-yellow-100 text-yellow-700',
-                      };
-                      return (
-                        <React.Fragment key={bill.id}>
-                          <tr className="border-b border-gray-50 hover:bg-gray-50">
-                            <td className="py-2 px-2 font-mono text-gray-600">{bill.billNumber}</td>
-                            <td className="py-2 px-2 font-medium">{retailer?.shopName || '—'}</td>
-                            <td className="py-2 px-2 text-right font-semibold">₨{Number(bill.total).toFixed(0)}</td>
-                            <td className="py-2 px-2 text-right text-green-700">₨{Number(bill.paidAmount).toFixed(0)}</td>
-                            <td className="py-2 px-2 text-right text-orange-600">₨{Number(bill.pendingAmount).toFixed(0)}</td>
-                            <td className="py-2 px-2 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusColors[bill.status]}`}>
-                                {bill.status}
-                              </span>
-                            </td>
-                            <td className="py-2 px-2 text-gray-400">{new Date(bill.createdAt).toLocaleDateString()}</td>
-                            <td className="py-2 px-2">
-                              <button
-                                onClick={() => setSelectedBillForDetails(isExpanded ? null : bill.id)}
-                                className="text-blue-600 hover:text-blue-700"
-                              >
-                                {isExpanded ? 'Close' : 'View'}
-                              </button>
-                            </td>
-                          </tr>
-                          {isExpanded && (
-                            <tr>
-                              <td colSpan={8} className="bg-blue-50 px-4 py-3">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                  <div>
-                                    <p className="font-semibold text-xs text-gray-700 mb-1">Items</p>
-                                    {bill.items.length === 0 && !bill.rgbExchanges?.length && (
-                                      <p className="text-xs text-gray-400 italic">No product items</p>
-                                    )}
-                                    {bill.items.map((item, idx) => (
-                                      <div key={idx} className="flex justify-between text-xs py-0.5">
-                                        <span className="text-gray-600">{item.product ? `${item.product.brand} ${item.product.variant}` : item.productId} ×{item.quantity}</span>
-                                        <span>₨{Number(item.total).toFixed(0)}</span>
-                                      </div>
-                                    ))}
-                                    {/* RGB exchange entries */}
-                                    {bill.rgbExchanges && bill.rgbExchanges.length > 0 && (
-                                      <div className="mt-1.5 pt-1.5 border-t border-teal-100">
-                                        <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wide mb-0.5 flex items-center gap-1">
-                                          📦 Crate Exchanges
-                                        </p>
-                                        {bill.rgbExchanges.map((ex) => (
-                                          <div key={ex.id} className="flex items-center justify-between text-xs py-0.5">
-                                            <span className={`font-medium ${ex.type === 'issue' ? 'text-amber-700' : 'text-teal-700'}`}>
-                                              {ex.type === 'issue' ? '📦↓ ' : '📦↑ '}
-                                              {ex.itemName} — {ex.type === 'issue' ? 'Given' : 'Returned'}
-                                            </span>
-                                            <span className={`font-bold ${ex.type === 'issue' ? 'text-amber-700' : 'text-teal-700'}`}>
-                                              {ex.quantity} crates
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {Number(bill.pendingAmount) > 0 && (
-                                    <div>
-                                      <p className="font-semibold text-xs text-gray-700 mb-1">Add Payment</p>
-                                      <div className="flex gap-2">
-                                        <input
-                                          type="number"
-                                          value={additionalPaymentAmount}
-                                          onChange={(e) => setAdditionalPaymentAmount(e.target.value)}
-                                          placeholder="Amount"
-                                          className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none"
-                                        />
-                                        <Button
-                                          size="sm"
-                                          onClick={() =>
-                                            updateBillPayment(bill.id, parseFloat(additionalPaymentAmount) || 0)
-                                          }
-                                        >
-                                          Pay
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
+                    {filteredHistoryBills.map((bill) => (
+                      <ExpandableBillRow
+                        key={bill.id}
+                        bill={bill}
+                        showRetailer={true}
+                        showWorker={true}
+                        colSpan={11}
+                        isExpanded={selectedBillForDetails === bill.id}
+                        onToggleExpand={() =>
+                          setSelectedBillForDetails((prev) => (prev === bill.id ? null : bill.id))
+                        }
+                        onPaymentSuccess={async () => {
+                          await Promise.all([loadHistoryBills(), store.fetchInitialData()]);
+                        }}
+                        viewMode="admin-bills"
+                      />
+                    ))}
                   </tbody>
                 </table>
+                {/* Reliable Infinite Scroll Trigger */}
+                <InfiniteScrollTrigger
+                  onLoadMore={handleLoadMoreHistoryBills}
+                  hasMore={historyBills.length < totalHistoryBills}
+                />
                 {filteredHistoryBills.length === 0 && (
-                  <p className="text-center text-gray-400 py-8 text-sm">No bills found</p>
+                  <p className="text-center text-gray-400 py-8 text-sm">
+                    {historyBillsLoading ? 'Loading bills...' : 'No bills found'}
+                  </p>
                 )}
               </div>
             </Card>
@@ -1732,6 +1704,12 @@ ${otherPendingText}Thank you for your business!
                       ))}
                     </tbody>
                   </table>
+                  {/* Reliable Infinite Scroll Trigger */}
+                  <InfiniteScrollTrigger
+                    onLoadMore={handleLoadMoreRgbHistory}
+                    hasMore={rgbHistory.length < totalRgbHistory}
+                    color="text-teal-600"
+                  />
                   {groupedWorkerRgbHistory.length === 0 && (
                     <p className="text-center text-gray-400 py-8 text-sm">No RGB activity recorded yet</p>
                   )}

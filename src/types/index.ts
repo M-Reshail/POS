@@ -219,6 +219,24 @@ export interface PaymentRecord {
   notes?: string;
 }
 
+// Udhaar Payment Allocation Types
+export type UdhaarAllocationMode = 'old_first' | 'current_first';
+
+export interface AllocationEntry {
+  billId: string;
+  billNumber: string;
+  amountApplied: number;
+  pendingBefore: number;
+  pendingAfter: number;
+  newStatus: 'paid' | 'partial' | 'pending';
+}
+
+export interface AllocationPlan {
+  entries: AllocationEntry[];
+  totalApplied: number;
+  excessAmount: number; // > 0 means payment exceeded all pending — capped, not stored
+}
+
 export interface Bill {
   id: string;
   billNumber: string;
@@ -231,8 +249,12 @@ export interface Bill {
   paidAmount: number;
   pendingAmount: number;
   paymentMode?: 'cash' | 'credit' | 'udhar' | 'generate-only';
+  /** @deprecated Shown on old bills for display only. New bills use oldPendingPaymentApplied. */
   previousPendingAdded?: number;
+  /** Total udhaar payment applied against previous dues at the time this bill was created. */
   oldPendingPaymentApplied?: number;
+  /** Udhaar payment applied towards this bill after creation. */
+  udhaarPaymentApplied?: number;
   paymentHistory: PaymentRecord[];
   status: 'pending' | 'paid' | 'partial';
   retailer?: { id: string; shopName: string; ownerName: string; mobileNumber?: string };

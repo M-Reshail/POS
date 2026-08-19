@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Button, Card } from '../../components/common';
+import { Button, Card, InfiniteScrollTrigger } from '../../components/common';
 import { useStore } from '../../store';
 import { billsService } from '../../services/bills';
 import { rgbService } from '../../services/rgb';
@@ -8,12 +8,7 @@ import { Search, ChevronDown, ChevronUp, Filter, RotateCcw } from 'lucide-react'
 
 import { Bill, RGBTransactionRecord } from '../../types';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
-
-const STATUS_COLORS: Record<string, string> = {
-  paid: 'bg-green-100 text-green-700',
-  pending: 'bg-orange-100 text-orange-700',
-  partial: 'bg-yellow-100 text-yellow-700',
-};
+import { ExpandableBillRow } from '../../components/bills/ExpandableBillRow';
 
 type PeriodPreset = 'today' | 'week' | 'month' | null;
 
@@ -120,13 +115,14 @@ export const AdminBillsPage: React.FC = () => {
   const { retailers, fetchInitialData } = useStore();
   const store = useStore();
 
-  // Full dataset loaded from backend to compute accurate revenue cards & support period expansion
+  // Server-side paginated bills and RGB transactions
   const [bills, setBills] = useState<Bill[]>([]);
+  const [totalBills, setTotalBills] = useState(0);
   const [rgbTransactions, setRgbTransactions] = useState<RGBTransactionRecord[]>([]);
+  const [totalRgb, setTotalRgb] = useState(0);
 
-  // Pagination display limit for normal view (starts at 10)
-  const [visibleBillCount, setVisibleBillCount] = useState<number>(10);
-  const [visibleRgbCount, setVisibleRgbCount] = useState<number>(10);
+  const [loadingMoreBills, setLoadingMoreBills] = useState(false);
+  const [loadingMoreRgb, setLoadingMoreRgb] = useState(false);
 
   const [workers, setWorkers] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -153,13 +149,15 @@ export const AdminBillsPage: React.FC = () => {
   const loadBills = async () => {
     setLoading(true);
     try {
-      // Fetch full bill dataset so preset revenue cards calculate 100% accurate totals on initial load
+      // Initial page of 10 bills & 10 RGB transactions
       const [billsRes, rgbRes] = await Promise.all([
-        billsService.list({ limit: 10000, offset: 0 }),
-        rgbService.getTransactions({ limit: 10000, offset: 0 }),
+        billsService.list({ limit: 10, offset: 0 }),
+        rgbService.getTransactions({ limit: 10, offset: 0 }),
       ]);
       setBills(billsRes.bills || []);
+      setTotalBills(billsRes.total || 0);
       setRgbTransactions(rgbRes.transactions || []);
+      setTotalRgb(rgbRes.total || 0);
 
       // Extract unique workers from bills and RGB transactions
       const workerMap = new Map<string, string>();
@@ -177,6 +175,55 @@ export const AdminBillsPage: React.FC = () => {
       store.addNotification('error', 'Failed to load bills');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Refresh bills without setting loading=true (keeps scroll position & expanded bill state intact)
+  const refreshBillsQuietly = async () => {
+    try {
+      const currentLoadedCount = Math.max(10, bills.length);
+      const res = await billsService.list({ limit: currentLoadedCount, offset: 0 });
+      if (res.bills?.length) {
+        setBills(res.bills);
+        setTotalBills(res.total || 0);
+      }
+      await store.fetchRetailers();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleLoadMoreBills = async () => {
+    if (loadingMoreBills || bills.length >= totalBills) return;
+    setLoadingMoreBills(true);
+    try {
+      const nextOffset = bills.length;
+      const res = await billsService.list({ limit: 10, offset: nextOffset });
+      if (res.bills?.length) {
+        setBills((prev) => [...prev, ...res.bills]);
+        setTotalBills(res.total || totalBills);
+      }
+    } catch {
+      store.addNotification('error', 'Failed to load more bills');
+    } finally {
+      setLoadingMoreBills(false);
+    }
+  };
+
+  const handleLoadMoreRgb = async () => {
+    if (loadingMoreRgb || rgbTransactions.length >= totalRgb) return;
+    setLoadingMoreRgb(true);
+    try {
+      const nextOffset = rgbTransactions.length;
+      const res = await rgbService.getTransactions({ limit: 10, offset: nextOffset });
+      if (res.transactions?.length) {
+        setRgbTransactions((prev) => [...prev, ...res.transactions]);
+        setTotalRgb(res.total || totalRgb);
+      }
+    } catch {
+      store.addNotification('error', 'Failed to load more RGB transactions');
+    } finally {
+      setLoadingMoreRgb(false);
     }
   };
 
@@ -223,8 +270,6 @@ export const AdminBillsPage: React.FC = () => {
       setPeriod(null);
       setDateFrom('');
       setDateTo('');
-      setVisibleBillCount(10);
-      setVisibleRgbCount(10);
     } else {
       setPeriod(selectedPeriod);
       const { todayStr, weekStr, monthStr } = getPresetRanges();
@@ -249,8 +294,6 @@ export const AdminBillsPage: React.FC = () => {
     setDateFrom('');
     setDateTo('');
     setStatusFilter('');
-    setVisibleBillCount(10);
-    setVisibleRgbCount(10);
   };
 
   const isFilterActive =
@@ -287,13 +330,7 @@ export const AdminBillsPage: React.FC = () => {
     });
   }, [bills, retailers, searchTerm, retailerFilter, workerFilter, statusFilter, dateFrom, dateTo]);
 
-  // If a period/date filter is selected, expand ALL matching bills. If normal view, slice to visibleBillCount.
-  const displayedBills = useMemo(() => {
-    if (period !== null || Boolean(dateFrom) || Boolean(dateTo)) {
-      return filteredBills;
-    }
-    return filteredBills.slice(0, visibleBillCount);
-  }, [filteredBills, period, dateFrom, dateTo, visibleBillCount]);
+  const displayedBills = filteredBills;
 
   const filteredRgbTransactions = useMemo(() => {
     return rgbTransactions.filter((tx) => {
@@ -383,12 +420,7 @@ export const AdminBillsPage: React.FC = () => {
     return groups;
   }, [filteredRgbTransactions]);
 
-  const displayedGroupedRgbTransactions = useMemo(() => {
-    if (period !== null || Boolean(dateFrom) || Boolean(dateTo)) {
-      return groupedRgbTransactions;
-    }
-    return groupedRgbTransactions.slice(0, visibleRgbCount);
-  }, [groupedRgbTransactions, period, dateFrom, dateTo, visibleRgbCount]);
+  const displayedGroupedRgbTransactions = groupedRgbTransactions;
 
   const totalRevenue = filteredBills.reduce((s, b) => s + Number(b.total), 0);
   const totalPaid = filteredBills.reduce((s, b) => s + Number(b.paidAmount), 0);
@@ -604,70 +636,28 @@ export const AdminBillsPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {displayedBills.map((bill: Bill) => {
-                        const retailer = retailers.find((r) => r.id === bill.retailerId);
-                        const workerName = (bill as any).worker?.name || bill.workerId.slice(0, 8);
-                        const isExpanded = expandedBill === bill.id;
-                        return (
-                          <React.Fragment key={bill.id}>
-                            <tr className="border-b border-gray-50 hover:bg-gray-50">
-                              <td className="py-2 px-2 font-mono text-gray-600">{bill.billNumber}</td>
-                              <td className="py-2 px-2">
-                                <div className="font-medium text-gray-900">{retailer?.shopName || '—'}</div>
-                                <div className="text-gray-400">{retailer?.ownerName}</div>
-                              </td>
-                              <td className="py-2 px-2 text-gray-700">{workerName}</td>
-                              <td className="py-2 px-2 text-right font-bold text-gray-900">₨{Number(bill.total).toFixed(0)}</td>
-                              <td className="py-2 px-2 text-right text-green-700">₨{Number(bill.paidAmount).toFixed(0)}</td>
-                              <td className="py-2 px-2 text-right text-orange-600">₨{Number(bill.pendingAmount).toFixed(0)}</td>
-                              <td className="py-2 px-2 text-right text-purple-600">
-                                {Number(bill.discount) > 0 ? `₨${Number(bill.discount).toFixed(0)}` : '—'}
-                              </td>
-                              <td className="py-2 px-2 text-center capitalize text-gray-500">
-                                {bill.paymentMode?.replace('-', ' ') || '—'}
-                              </td>
-                              <td className="py-2 px-2 text-center">
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_COLORS[bill.status]}`}>
-                                  {bill.status}
-                                </span>
-                              </td>
-                              <td className="py-2 px-2 text-gray-400">{new Date(bill.createdAt).toLocaleDateString()}</td>
-                              <td className="py-2 px-2">
-                                <button
-                                  onClick={() => setExpandedBill(isExpanded ? null : bill.id)}
-                                  className="text-blue-500 hover:text-blue-700"
-                                >
-                                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                </button>
-                              </td>
-                            </tr>
-                            {isExpanded && (
-                              <tr>
-                                <td colSpan={11} className="bg-blue-50 px-4 py-3">
-                                  <RenderBillDetails bill={bill} />
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
+                      {displayedBills.map((bill: Bill) => (
+                        <ExpandableBillRow
+                          key={bill.id}
+                          bill={bill}
+                          showRetailer={true}
+                          showWorker={true}
+                          colSpan={11}
+                          isExpanded={expandedBill === bill.id}
+                          onToggleExpand={() => setExpandedBill((prev) => (prev === bill.id ? null : bill.id))}
+                          onPaymentSuccess={refreshBillsQuietly}
+                          viewMode="admin-bills"
+                        />
+                      ))}
                     </tbody>
                   </table>
                 </div>
 
-                {/* Load More Bills Button (shown ONLY in normal view when more bills remain) */}
-                {period === null && !dateFrom && !dateTo && displayedBills.length < filteredBills.length && (
-                  <div className="text-center pt-4 mt-2 border-t border-gray-100">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => setVisibleBillCount((prev) => prev + 10)}
-                      className="px-6"
-                    >
-                      Load More Bills (Showing {displayedBills.length} of {filteredBills.length})
-                    </Button>
-                  </div>
-                )}
+                {/* Reliable Infinite Scroll Trigger */}
+                <InfiniteScrollTrigger
+                  onLoadMore={handleLoadMoreBills}
+                  hasMore={bills.length < totalBills}
+                />
               </div>
             )
           ) : (
@@ -768,19 +758,12 @@ export const AdminBillsPage: React.FC = () => {
                   </table>
                 </div>
 
-                {/* Load More RGB Transactions Button */}
-                {period === null && !dateFrom && !dateTo && displayedGroupedRgbTransactions.length < groupedRgbTransactions.length && (
-                  <div className="text-center pt-4 mt-2 border-t border-gray-100">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => setVisibleRgbCount((prev) => prev + 10)}
-                      className="px-6"
-                    >
-                      Load More RGB Transactions (Showing {displayedGroupedRgbTransactions.length} of {groupedRgbTransactions.length})
-                    </Button>
-                  </div>
-                )}
+                {/* Reliable Infinite Scroll Trigger */}
+                <InfiniteScrollTrigger
+                  onLoadMore={handleLoadMoreRgb}
+                  hasMore={rgbTransactions.length < totalRgb}
+                  color="text-teal-600"
+                />
               </div>
             )
           )}

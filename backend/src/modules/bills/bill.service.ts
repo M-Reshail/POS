@@ -65,7 +65,7 @@ export interface CreateBillInput {
 
 export interface AddPaymentInput {
   amount: number;
-  paymentMode: BillPaymentMode;
+  paymentMode?: BillPaymentMode;
   notes?: string;
 }
 
@@ -614,7 +614,7 @@ export const addPayment = async (billId: string, input: AddPaymentInput) => {
       data: {
         billId,
         amount: new Prisma.Decimal(input.amount),
-        paymentMode: input.paymentMode,
+        paymentMode: input.paymentMode ?? BillPaymentMode.cash,
         notes: input.notes,
       },
     });

@@ -37,6 +37,10 @@ const createBillSchema = z.object({
     cratesGiven:    z.number().int().min(0).default(0),
     cratesReturned: z.number().int().min(0).default(0),
   })).optional().default([]),
+  /** Amount the retailer is paying toward old/new udhaar. NOT added to bill total. */
+  udhaarPaymentAmount: z.number().min(0).optional(),
+  /** Allocation mode. Defaults to 'old_first' on backend if omitted. */
+  udhaarPaymentMode: z.enum(['old_first', 'current_first']).optional(),
 }).superRefine((data, ctx) => {
   // A bill must have at least one product item OR at least one non-zero RGB exchange.
   const hasProducts = data.items.length > 0;
@@ -55,13 +59,13 @@ const createBillSchema = z.object({
 const listBillsSchema = z.object({
   retailerId: z.string().uuid().optional(),
   status: z.nativeEnum(BillStatus).optional(),
-  limit: z.coerce.number().int().min(1).max(10000).default(50),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
 
 const addPaymentSchema = z.object({
   amount: z.number().positive('Payment amount must be positive.'),
-  paymentMode: z.nativeEnum(BillPaymentMode),
+  paymentMode: z.nativeEnum(BillPaymentMode).default(BillPaymentMode.cash).optional(),
   notes: z.string().trim().optional(),
 });
 
@@ -151,6 +155,23 @@ export const addPayment = async (req: Request, res: Response): Promise<void> => 
   try {
     const result = await billService.addPayment(req.params.id, parsed.data);
     ok(res, result);
+  } catch (error) { handleServiceError(res, error, ERROR_MAP); }
+};
+
+/** POST /api/bills/preview-udhaar-allocation — No DB writes; returns allocation plan */
+export const previewUdhaarAllocation = async (req: Request, res: Response): Promise<void> => {
+  const schema = z.object({
+    retailerId:   z.string().uuid('Invalid retailer ID.'),
+    newBillTotal: z.number().min(0),
+    newBillPaid:  z.number().min(0).optional().default(0),
+    paymentAmount: z.number().positive('Payment amount must be positive.'),
+    mode: z.enum(['old_first', 'current_first']).default('old_first'),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { badRequest(res, 'Validation failed.', parsed.error.flatten().fieldErrors); return; }
+  try {
+    const plan = await billService.previewUdhaarAllocation(parsed.data);
+    ok(res, { plan });
   } catch (error) { handleServiceError(res, error, ERROR_MAP); }
 };
 

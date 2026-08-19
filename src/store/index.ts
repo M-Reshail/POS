@@ -123,8 +123,18 @@ export const useStore = create<Store>((set, get) => ({
   bills: [],
   fetchBills: async () => {
     try {
-      const data = await billsService.list();
-      set({ bills: Array.isArray(data) ? data : data.bills });
+      const data = await billsService.list({ limit: 100 });
+      const list: Bill[] = Array.isArray(data) ? data : data.bills || [];
+      // Deduplicate by ID and ensure sorted newest-first
+      const seen = new Set<string>();
+      const deduped = list
+        .filter((b) => {
+          if (!b?.id || seen.has(b.id)) return false;
+          seen.add(b.id);
+          return true;
+        })
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      set({ bills: deduped });
     } catch (err: any) {
       get().addNotification('error', 'Failed to load bills');
     }
@@ -176,26 +186,23 @@ export const useStore = create<Store>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
       const response: any = await billsService.create(billData);
-      const bill = response?.bill ?? response;
 
       if (response && response.isRgbOnly) {
         set({ currentBill: null, isLoading: false });
         get().addNotification('success', 'RGB crate exchange recorded successfully');
       } else {
-        // Optimistic update for regular bills: prepend newest bill to maintain newest-first order
-        set((state) => ({
-          bills: bill?.id ? [bill, ...state.bills.filter((b) => b.id !== bill.id)] : state.bills,
-          currentBill: null,
-          isLoading: false,
-        }));
+        set({ currentBill: null, isLoading: false });
         get().addNotification('success', 'Bill created successfully');
       }
 
-      // Re-fetch updated data (inventory, retailers, RGB stock, and bills)
-      get().fetchInventory();
-      get().fetchRetailers();
-      get().fetchRGBItems();
-      get().fetchBills();
+      // Re-fetch all updated data synchronously before resolving checkout
+      // so any consumer/page navigating immediately sees authoritative, deduplicated data
+      await Promise.all([
+        get().fetchInventory(),
+        get().fetchRetailers(),
+        get().fetchRGBItems(),
+        get().fetchBills(),
+      ]);
 
       return response;
     } catch (err: any) {

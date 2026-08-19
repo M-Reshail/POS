@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Card, Button, Modal } from '../../components/common';
+import { Card, Button, Modal, InfiniteScrollTrigger } from '../../components/common';
 import { useStore } from '../../store';
 import {
   ArrowLeft,
@@ -12,8 +12,6 @@ import {
   CreditCard,
   Boxes,
   Calendar,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   ChevronUp,
   RefreshCw,
@@ -25,6 +23,7 @@ import {
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import { retailersService } from '../../services/retailers';
 import { Retailer, LedgerEntry } from '../../types';
+import { ExpandableBillRow } from '../../components/bills/ExpandableBillRow';
 
 const ENTRY_TYPE_BADGES: Record<string, { bg: string; text: string; label: string }> = {
   sale: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Sale' },
@@ -62,8 +61,6 @@ interface GroupedLedgerTransaction {
   rawEntries: LedgerEntry[];
 }
 
-const PAGE_SIZE = 15;
-
 interface RetailerEditForm {
   shopName: string;
   ownerName: string;
@@ -85,7 +82,7 @@ export const RetailerDetailPage: React.FC = () => {
   const [loadingRetailer, setLoadingRetailer] = useState(true);
   const [loadingLedger, setLoadingLedger] = useState(true);
   const [error, setError] = useState('');
-  const [page, setPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Friendly Grouped View vs Raw Audit Log View
   const [ledgerViewMode, setLedgerViewMode] = useState<'friendly' | 'detailed'>('friendly');
@@ -131,13 +128,12 @@ export const RetailerDetailPage: React.FC = () => {
       .finally(() => setLoadingRetailer(false));
   }, [id]);
 
-  // Load paginated ledger entries
+  // Initial load: First page of 10 ledger entries
   useEffect(() => {
     if (!id) return;
     setLoadingLedger(true);
-    const offset = (page - 1) * PAGE_SIZE;
     retailersService
-      .getLedger(id, PAGE_SIZE, offset)
+      .getLedger(id, 10, 0)
       .then((data) => {
         setLedgerEntries(data.entries || []);
         setTotalEntries(data.pagination?.total || 0);
@@ -149,7 +145,48 @@ export const RetailerDetailPage: React.FC = () => {
         console.error('Failed to fetch ledger:', err);
       })
       .finally(() => setLoadingLedger(false));
-  }, [id, page]);
+  }, [id]);
+
+  // Incremental server-side pagination on scroll
+  const handleLoadMore = async () => {
+    if (loadingMore || ledgerEntries.length >= totalEntries) return;
+    setLoadingMore(true);
+    try {
+      const nextOffset = ledgerEntries.length;
+      const data = await retailersService.getLedger(id!, 10, nextOffset);
+      if (data.entries?.length) {
+        setLedgerEntries((prev) => [...prev, ...data.entries]);
+        setTotalEntries(data.pagination?.total || totalEntries);
+      }
+    } catch (err) {
+      console.error('Failed to fetch next ledger page:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const refreshRetailerData = async () => {
+    if (!id) return;
+    try {
+      const currentLoadedCount = Math.max(10, ledgerEntries.length);
+      const [updatedRetailer, ledgerData] = await Promise.all([
+        retailersService.getById(id),
+        retailersService.getLedger(id, currentLoadedCount, 0),
+      ]);
+      setRetailer(updatedRetailer);
+      if (typeof updatedRetailer.outstanding === 'number') {
+        setOutstanding(updatedRetailer.outstanding);
+      }
+      setLedgerEntries(ledgerData.entries || []);
+      setTotalEntries(ledgerData.pagination?.total || 0);
+      if (typeof ledgerData.outstanding === 'number') {
+        setOutstanding(ledgerData.outstanding);
+      }
+      store.fetchRetailers();
+    } catch (err) {
+      console.error('Failed to refresh retailer data after payment:', err);
+    }
+  };
 
   const openEditModal = () => {
     if (!retailer) return;
@@ -217,36 +254,18 @@ export const RetailerDetailPage: React.FC = () => {
       if (processedEntryIds.has(entry.id)) continue;
 
       const originFromNotes = extractOriginBill(entry.notes);
-      let targetOriginBill = originFromNotes;
-
-      if (!targetOriginBill && entry.entryType === 'sale' && entry.bill?.billNumber) {
-        const hasLinkedPayments = ledgerEntries.some(
-          (other) =>
-            other.id !== entry.id &&
-            extractOriginBill(other.notes) === entry.bill?.billNumber
-        );
-        if (hasLinkedPayments) {
-          targetOriginBill = entry.bill.billNumber;
-        }
-      }
+      const targetOriginBill = originFromNotes || entry.bill?.billNumber;
 
       if (targetOriginBill) {
-        const entryTime = new Date(entry.createdAt).getTime();
+        // Cluster ALL ledger entries referencing this bill (at creation or paid later)
         const cluster = ledgerEntries.filter((candidate) => {
           if (processedEntryIds.has(candidate.id)) return false;
-          const candTime = new Date(candidate.createdAt).getTime();
-          if (Math.abs(candTime - entryTime) > 120000) return false;
-
           const candidateOrigin = extractOriginBill(candidate.notes);
-          const isOriginSale =
-            candidate.entryType === 'sale' &&
-            candidate.bill?.billNumber === targetOriginBill;
-          const isOriginPayment = candidateOrigin === targetOriginBill;
-
-          return isOriginSale || isOriginPayment;
+          const candidateBillNum = candidate.bill?.billNumber;
+          return candidateBillNum === targetOriginBill || candidateOrigin === targetOriginBill;
         });
 
-        if (cluster.length > 1) {
+        if (cluster.length > 0) {
           cluster.forEach((c) => processedEntryIds.add(c.id));
 
           const saleEntry = cluster.find((c) => c.entryType === 'sale');
@@ -258,8 +277,15 @@ export const RetailerDetailPage: React.FC = () => {
           const newestEntry = [...cluster].sort(
             (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           )[0];
-          const finalBalance = Number(newestEntry.balance);
+          const oldestEntry = [...cluster].sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          )[0];
 
+          const originTimestamp = saleEntry
+            ? new Date(saleEntry.createdAt)
+            : new Date(oldestEntry.createdAt);
+
+          const finalBalance = Number(newestEntry.balance);
           const netChange = saleAmount - totalPaid;
           const startingBalance = finalBalance - netChange;
 
@@ -277,12 +303,12 @@ export const RetailerDetailPage: React.FC = () => {
           });
 
           groups.push({
-            id: `group-${targetOriginBill}-${newestEntry.id}`,
-            createdAt: new Date(newestEntry.createdAt),
+            id: `group-${targetOriginBill}`,
+            createdAt: originTimestamp,
             isGrouped: true,
-            type: 'sale_with_allocation',
+            type: totalPaid > 0 && saleAmount > 0 ? 'sale_with_allocation' : saleEntry ? 'sale' : 'payment',
             billNumber: targetOriginBill,
-            billId: saleEntry?.billId || undefined,
+            billId: saleEntry?.billId || cluster.find((c) => c.billId)?.billId,
             paymentMode: saleEntry?.paymentMode || paymentEntries[0]?.paymentMode || 'cash',
             saleAmount: saleAmount > 0 ? saleAmount : undefined,
             paidAmount: totalPaid,
@@ -290,7 +316,7 @@ export const RetailerDetailPage: React.FC = () => {
             netChange,
             runningBalance: finalBalance,
             startingBalance,
-            notes: saleEntry?.notes || `Udhaar allocation across ${paymentEntries.length} bills`,
+            notes: saleEntry?.notes || `Payments totaling ₨${totalPaid.toLocaleString('en-PK')} across ${paymentEntries.length} record(s)`,
             allocations,
             rawEntries: cluster,
           });
@@ -313,6 +339,8 @@ export const RetailerDetailPage: React.FC = () => {
         billNumber: entry.bill?.billNumber,
         billId: entry.billId || undefined,
         paymentMode: entry.paymentMode || undefined,
+        saleAmount: isSale ? amount : undefined,
+        paidAmount: isPayment ? amount : 0,
         amount,
         netChange,
         runningBalance: Number(entry.balance),
@@ -323,10 +351,9 @@ export const RetailerDetailPage: React.FC = () => {
       });
     }
 
-    return groups;
+    // Sort stably by ORIGINAL bill / transaction date (newest first)
+    return groups.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [ledgerEntries, ledgerViewMode]);
-
-  const totalPages = Math.ceil(totalEntries / PAGE_SIZE) || 1;
 
   if (loadingRetailer) {
     return (
@@ -554,10 +581,11 @@ export const RetailerDetailPage: React.FC = () => {
                       <th className="py-3 px-4">Date & Time</th>
                       <th className="py-3 px-4">Transaction Type</th>
                       <th className="py-3 px-4">Bill Ref</th>
-                      <th className="py-3 px-4 text-right">Sale / Paid</th>
+                      <th className="py-3 px-4 text-right">Sale Total</th>
                       <th className="py-3 px-4 text-center">Debt Impact</th>
+                      <th className="py-3 px-4 text-right font-bold text-emerald-700">Paid Amount</th>
                       <th className="py-3 px-4 text-right">Running Balance</th>
-                      <th className="py-3 px-4 text-center">Breakdown</th>
+                      <th className="py-3 px-4 text-center">Breakdown & Pay</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
@@ -604,29 +632,16 @@ export const RetailerDetailPage: React.FC = () => {
                                 {group.billNumber ? `#${group.billNumber}` : '—'}
                               </td>
 
-                              {/* Sale / Paid Amounts */}
-                              <td className="py-3 px-4 text-right">
-                                {group.isGrouped ? (
-                                  <div className="space-y-0.5">
-                                    {group.saleAmount !== undefined && (
-                                      <div className="text-gray-900 font-bold">
-                                        Sale: ₨{group.saleAmount.toLocaleString('en-PK')}
-                                      </div>
-                                    )}
-                                    {group.paidAmount !== undefined && group.paidAmount > 0 && (
-                                      <div className="text-emerald-700 font-semibold text-[11px]">
-                                        Paid: ₨{group.paidAmount.toLocaleString('en-PK')}
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="font-bold text-gray-900">
-                                    ₨{group.amount.toLocaleString('en-PK')}
-                                  </span>
-                                )}
+                              {/* Sale Total Amount */}
+                              <td className="py-3 px-4 text-right font-bold text-gray-900">
+                                {group.saleAmount !== undefined
+                                  ? `₨${group.saleAmount.toLocaleString('en-PK')}`
+                                  : group.type === 'sale'
+                                  ? `₨${group.amount.toLocaleString('en-PK')}`
+                                  : '—'}
                               </td>
 
-                              {/* Debt Impact Badge */}
+                              {/* Debt Impact Badge (5th Column) */}
                               <td className="py-3 px-4 text-center whitespace-nowrap">
                                 {group.netChange < 0 ? (
                                   <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -641,6 +656,11 @@ export const RetailerDetailPage: React.FC = () => {
                                     ₨0 (Net Cleared)
                                   </span>
                                 )}
+                              </td>
+
+                              {/* Paid Amount Column (6th Column - MOVED AFTER DEBT IMPACT per user request) */}
+                              <td className="py-3 px-4 text-right font-bold text-emerald-700">
+                                ₨{(group.paidAmount || (group.type === 'payment' ? group.amount : 0)).toLocaleString('en-PK')}
                               </td>
 
                               {/* Running Balance */}
@@ -673,8 +693,8 @@ export const RetailerDetailPage: React.FC = () => {
                             {/* ── EXPANDED BREAKDOWN ACCORDION ── */}
                             {isExpanded && group.isGrouped && (
                               <tr>
-                                <td colSpan={7} className="p-0 border-b border-blue-200 bg-blue-50/40">
-                                  <div className="p-4 sm:p-5 space-y-4">
+                                <td colSpan={8} className="p-0 border-b border-blue-200 bg-blue-50/30">
+                                  <div className="p-3 space-y-2.5">
                                     {/* Header Banner */}
                                     <div className="flex items-center justify-between border-b border-blue-200/80 pb-2.5">
                                       <div className="flex items-center gap-2">
@@ -790,6 +810,39 @@ export const RetailerDetailPage: React.FC = () => {
                                         </div>
                                       </div>
                                     </div>
+
+                                    {/* Reusable ExpandableBillRow for Payment Records & Inline Add Payment */}
+                                    {group.billId && (
+                                      <div className="mt-3 pt-3 border-t border-blue-200">
+                                        <table className="w-full">
+                                          <tbody>
+                                            <ExpandableBillRow
+                                              bill={{
+                                                id: group.billId,
+                                                billNumber: group.billNumber || '',
+                                                retailerId: id!,
+                                                workerId: '',
+                                                items: [],
+                                                subtotal: group.saleAmount || group.amount,
+                                                total: group.saleAmount || group.amount,
+                                                paidAmount: group.paidAmount || 0,
+                                                pendingAmount: Math.max(0, (group.saleAmount || group.amount) - (group.paidAmount || 0)),
+                                                paymentHistory: [],
+                                                status: (group.paidAmount || 0) >= (group.saleAmount || group.amount) ? 'paid' : (group.paidAmount || 0) > 0 ? 'partial' : 'pending',
+                                                createdAt: group.createdAt,
+                                                updatedAt: group.createdAt,
+                                              }}
+                                              isExpanded={true}
+                                              onToggleExpand={() => {}}
+                                              onPaymentSuccess={refreshRetailerData}
+                                              colSpan={8}
+                                              showRetailer={false}
+                                              showWorker={false}
+                                            />
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -799,7 +852,7 @@ export const RetailerDetailPage: React.FC = () => {
                       })
                     ) : (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-gray-500 italic">
+                        <td colSpan={8} className="py-8 text-center text-gray-500 italic">
                           {loadingLedger ? 'Loading statement…' : 'No ledger transactions recorded yet.'}
                         </td>
                       </tr>
@@ -872,40 +925,11 @@ export const RetailerDetailPage: React.FC = () => {
               )}
             </div>
 
-            {/* Pagination Controls */}
-            {totalEntries > 0 && (
-              <div className="flex items-center justify-between pt-4 mt-4 border-t border-gray-300 text-xs">
-                <p className="text-gray-600 font-medium">
-                  Showing <span className="font-bold text-gray-800">{(page - 1) * PAGE_SIZE + 1}</span> to{' '}
-                  <span className="font-bold text-gray-800">{Math.min(page * PAGE_SIZE, totalEntries)}</span> of{' '}
-                  <span className="font-bold text-gray-800">{totalEntries}</span> entries
-                </p>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setPage((p) => Math.max(p - 1, 1))}
-                    disabled={page === 1 || loadingLedger}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-gray-700 shadow-2xs"
-                  >
-                    <ChevronLeft size={14} />
-                    Previous
-                  </button>
-
-                  <span className="px-2 font-bold text-gray-700">
-                    Page {page} of {totalPages}
-                  </span>
-
-                  <button
-                    onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
-                    disabled={page >= totalPages || loadingLedger}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-gray-700 shadow-2xs"
-                  >
-                    Next
-                    <ChevronRight size={14} />
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Reliable Infinite Scroll Trigger */}
+            <InfiniteScrollTrigger
+              onLoadMore={handleLoadMore}
+              hasMore={ledgerEntries.length < totalEntries}
+            />
           </Card>
         </div>
       </PageContainer>

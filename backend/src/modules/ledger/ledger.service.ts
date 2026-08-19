@@ -97,7 +97,7 @@ export const getRetailerLedgerEntries = async (
   const retailer = await prisma.retailer.findUnique({ where: { id: retailerId } });
   if (!retailer) throw new Error('RETAILER_NOT_FOUND');
 
-  const [entries, total] = await Promise.all([
+  const [entries, total, lastEntry] = await Promise.all([
     prisma.ledgerEntry.findMany({
       where: { retailerId },
       orderBy: { createdAt: 'desc' },
@@ -108,9 +108,14 @@ export const getRetailerLedgerEntries = async (
       },
     }),
     prisma.ledgerEntry.count({ where: { retailerId } }),
+    prisma.ledgerEntry.findFirst({
+      where: { retailerId },
+      orderBy: { createdAt: 'desc' },
+      select: { balance: true },
+    }),
   ]);
 
-  const outstanding = entries[0] ? Number(entries[0].balance) : 0;
+  const outstanding = lastEntry ? Number(lastEntry.balance) : 0;
 
   return {
     retailer: {
