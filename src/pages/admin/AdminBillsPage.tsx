@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
 import { Button, Card, InfiniteScrollTrigger } from '../../components/common';
 import { useStore } from '../../store';
@@ -141,17 +141,21 @@ export const AdminBillsPage: React.FC = () => {
   const [dateTo, setDateTo] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  useEffect(() => {
-    fetchInitialData();
-    loadBills();
-  }, []);
+  // Active server-side filter params — stored in ref so handleLoadMoreBills closure always reads the latest
+  const activeServerFilters = useRef<{ status?: string; retailerId?: string }>({});
 
-  const loadBills = async () => {
+  /** Fetch bills from offset=0 with given server-side filters — resets the bill list */
+  const fetchBillsServerSide = useCallback(async (filters: { status?: string; retailerId?: string }) => {
+    activeServerFilters.current = filters;
     setLoading(true);
     try {
-      // Initial page of 10 bills & 10 RGB transactions
       const [billsRes, rgbRes] = await Promise.all([
-        billsService.list({ limit: 10, offset: 0 }),
+        billsService.list({
+          limit: 10,
+          offset: 0,
+          status: filters.status || undefined,
+          retailerId: filters.retailerId || undefined,
+        }),
         rgbService.getTransactions({ limit: 10, offset: 0 }),
       ]);
       setBills(billsRes.bills || []);
@@ -159,16 +163,14 @@ export const AdminBillsPage: React.FC = () => {
       setRgbTransactions(rgbRes.transactions || []);
       setTotalRgb(rgbRes.total || 0);
 
-      // Extract unique workers from bills and RGB transactions
+      // Extract unique workers from loaded bills
       const workerMap = new Map<string, string>();
       (billsRes.bills || []).forEach((b) => {
         const workerName = (b as any).worker?.name || b.workerId;
         if (workerName) workerMap.set(b.workerId, workerName);
       });
       (rgbRes.transactions || []).forEach((tx) => {
-        if (tx.workerId && tx.workerName) {
-          workerMap.set(tx.workerId, tx.workerName);
-        }
+        if (tx.workerId && tx.workerName) workerMap.set(tx.workerId, tx.workerName);
       });
       setWorkers(Array.from(workerMap.entries()).map(([id, name]) => ({ id, name })));
     } catch {
@@ -176,13 +178,26 @@ export const AdminBillsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchInitialData();
+    fetchBillsServerSide({});
+  }, []);
+
+  const loadBills = () => fetchBillsServerSide(activeServerFilters.current);
 
   // Refresh bills without setting loading=true (keeps scroll position & expanded bill state intact)
   const refreshBillsQuietly = async () => {
     try {
       const currentLoadedCount = Math.max(10, bills.length);
-      const res = await billsService.list({ limit: currentLoadedCount, offset: 0 });
+      const filters = activeServerFilters.current;
+      const res = await billsService.list({
+        limit: currentLoadedCount,
+        offset: 0,
+        status: filters.status || undefined,
+        retailerId: filters.retailerId || undefined,
+      });
       if (res.bills?.length) {
         setBills(res.bills);
         setTotalBills(res.total || 0);
@@ -198,7 +213,13 @@ export const AdminBillsPage: React.FC = () => {
     setLoadingMoreBills(true);
     try {
       const nextOffset = bills.length;
-      const res = await billsService.list({ limit: 10, offset: nextOffset });
+      const filters = activeServerFilters.current;
+      const res = await billsService.list({
+        limit: 10,
+        offset: nextOffset,
+        status: filters.status || undefined,
+        retailerId: filters.retailerId || undefined,
+      });
       if (res.bills?.length) {
         setBills((prev) => [...prev, ...res.bills]);
         setTotalBills(res.total || totalBills);
@@ -289,11 +310,13 @@ export const AdminBillsPage: React.FC = () => {
   const handleClearFilters = () => {
     setPeriod(null);
     setSearchTerm('');
-    setRetailerFilter('');
     setWorkerFilter('');
     setDateFrom('');
     setDateTo('');
+    // Reset server-side filters and re-fetch from scratch
     setStatusFilter('');
+    setRetailerFilter('');
+    // fetchBillsServerSide will be triggered by the useEffects below
   };
 
   const isFilterActive =
@@ -305,7 +328,21 @@ export const AdminBillsPage: React.FC = () => {
     Boolean(workerFilter) ||
     Boolean(statusFilter);
 
+  // Server-side filter triggers: when status or retailer changes, fetch fresh from offset=0.
+  // Skip the first render (handled by the initial fetchBillsServerSide({}) in the mount effect).
+  const isMounted = useRef(false);
+  useEffect(() => {
+    if (!isMounted.current) { isMounted.current = true; return; }
+    fetchBillsServerSide({
+      status: statusFilter || undefined,
+      retailerId: retailerFilter || undefined,
+    });
+  }, [statusFilter, retailerFilter]);
+
+
   // Newest-first order matching backend
+  // Note: searchTerm, workerFilter, and date range remain client-side filters
+  // applied on top of the server-filtered page. Status & retailer are server-side.
   const filteredBills = useMemo(() => {
     return bills.filter((bill) => {
       const retailer = retailers.find((r) => r.id === bill.retailerId);
@@ -318,17 +355,15 @@ export const AdminBillsPage: React.FC = () => {
         (retailer?.ownerName || '').toLowerCase().includes(s) ||
         workerName.toLowerCase().includes(s);
 
-      const matchRetailer = !retailerFilter || bill.retailerId === retailerFilter;
       const matchWorker = !workerFilter || bill.workerId === workerFilter;
-      const matchStatus = !statusFilter || bill.status === statusFilter;
 
       const billDate = new Date(bill.createdAt).toISOString().split('T')[0];
       const matchFrom = !dateFrom || billDate >= dateFrom;
       const matchTo = !dateTo || billDate <= dateTo;
 
-      return matchSearch && matchRetailer && matchWorker && matchStatus && matchFrom && matchTo;
+      return matchSearch && matchWorker && matchFrom && matchTo;
     });
-  }, [bills, retailers, searchTerm, retailerFilter, workerFilter, statusFilter, dateFrom, dateTo]);
+  }, [bills, retailers, searchTerm, workerFilter, dateFrom, dateTo]);
 
   const displayedBills = filteredBills;
 
