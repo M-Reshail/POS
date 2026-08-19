@@ -381,10 +381,10 @@ export const SalesPage: React.FC = () => {
   const changeAmount = Math.max(0, amountReceivedNum - total);
   const udhariAmount = Math.max(0, total - amountReceivedNum);
 
-  const retailerPendingBills = bills
-    .filter((b) => b.retailerId === selectedRetailer && Number(b.pendingAmount) > 0);
-  const existingPendingForRetailer = retailerPendingBills
-    .reduce((s, b) => s + Number(b.pendingAmount), 0);
+  // Use the ledger-sourced outstanding from store.retailers (authoritative)
+  // — previously used store.bills aggregation which was unreliable (pagination + stale state)
+  const existingPendingForRetailer =
+    Number(retailers.find((r) => r.id === selectedRetailer)?.outstanding ?? 0);
 
   // Synchronous submission guard preventing double-clicks/rapid re-submits
   const isSubmittingRef = useRef(false);

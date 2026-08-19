@@ -91,9 +91,10 @@ export const WorkerRetailersPage: React.FC = () => {
     }
   };
 
-  // Outstanding per retailer from bills
-  const outstandingMap = store.bills.reduce((acc, b) => {
-    acc[b.retailerId] = (acc[b.retailerId] || 0) + Number(b.pendingAmount);
+  // Use ledger-sourced outstanding from the local retailers state (from retailersService.getAll())
+  // — previously used store.bills aggregation which was unreliable (pagination + stale state)
+  const outstandingMap = retailers.reduce((acc, r) => {
+    acc[r.id] = Number(r.outstanding ?? 0);
     return acc;
   }, {} as Record<string, number>);
 

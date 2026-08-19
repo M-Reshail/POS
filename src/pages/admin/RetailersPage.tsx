@@ -66,16 +66,8 @@ export const RetailersPage: React.FC = () => {
     }
   };
 
-  // Compute ledger dynamically from bills
-  const retailerLedger = mockRetailers.reduce((acc, retailer) => {
-    const retailerBills = store.bills.filter(b => b.retailerId === retailer.id);
-    acc[retailer.id] = {
-      outstanding: retailerBills.reduce((sum, b) => sum + b.pendingAmount, 0),
-      paid: retailerBills.reduce((sum, b) => sum + b.paidAmount, 0),
-      rgbBalance: 0,
-    };
-    return acc;
-  }, {} as Record<string, { outstanding: number; paid: number; rgbBalance: number }>);
+  // outstanding comes directly from the API on each retailer object (ledger-sourced running balance)
+  // — no longer computed from store.bills (unreliable: pagination + stale state)
 
   const handleAddRetailer = async () => {
     const errors: Partial<Record<keyof RetailerForm, string>> = {};
@@ -306,7 +298,7 @@ export const RetailersPage: React.FC = () => {
           <Card>
             <p className="text-gray-600 text-xs sm:text-sm">Total Outstanding Credit</p>
             <p className="text-xl sm:text-2xl font-bold mt-1 sm:mt-2 text-orange-600">
-              ₨{Object.values(retailerLedger).reduce((sum, l) => sum + Number(l.outstanding), 0).toFixed(0)}
+              ₨{mockRetailers.reduce((sum, r) => sum + Number(r.outstanding ?? 0), 0).toFixed(0)}
             </p>
           </Card>
         </div>
@@ -327,8 +319,7 @@ export const RetailersPage: React.FC = () => {
               </thead>
               <tbody>
                 {mockRetailers.map((retailer) => {
-                  const ledger = retailerLedger[retailer.id] || { outstanding: 0, paid: 0, rgbBalance: 0 };
-                  const outstanding = Number(ledger.outstanding) || 0;
+                  const outstanding = Number(retailer.outstanding ?? 0);
                   const totalCratesPending = retailer.rgbBalances?.reduce((sum, b) => sum + (b.balance || 0), 0) || 0;
 
                   return (
