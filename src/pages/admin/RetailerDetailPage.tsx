@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout, PageContainer } from '../../components/Layout';
 import { Card, Button, Modal } from '../../components/common';
@@ -14,8 +14,13 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   RefreshCw,
   Pencil,
+  Package,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import { retailersService } from '../../services/retailers';
@@ -26,7 +31,36 @@ const ENTRY_TYPE_BADGES: Record<string, { bg: string; text: string; label: strin
   payment: { bg: 'bg-green-100', text: 'text-green-800', label: 'Payment' },
   return: { bg: 'bg-purple-100', text: 'text-purple-800', label: 'Return' },
   adjustment: { bg: 'bg-amber-100', text: 'text-amber-800', label: 'Adjustment' },
+  sale_with_allocation: { bg: 'bg-indigo-100', text: 'text-indigo-800', label: 'Sale + Udhaar Paid' },
 };
+
+interface AllocationDetail {
+  billNumber?: string;
+  billId?: string;
+  amount: number;
+  notes?: string;
+  balance: number;
+  isNewBill?: boolean;
+}
+
+interface GroupedLedgerTransaction {
+  id: string;
+  createdAt: Date;
+  isGrouped: boolean;
+  type: 'sale_with_allocation' | 'sale' | 'payment' | 'return' | 'adjustment';
+  billNumber?: string;
+  billId?: string;
+  paymentMode?: string;
+  saleAmount?: number;
+  paidAmount?: number;
+  amount: number;
+  netChange: number;
+  runningBalance: number;
+  startingBalance: number;
+  notes?: string;
+  allocations: AllocationDetail[];
+  rawEntries: LedgerEntry[];
+}
 
 const PAGE_SIZE = 15;
 
@@ -52,6 +86,19 @@ export const RetailerDetailPage: React.FC = () => {
   const [loadingLedger, setLoadingLedger] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
+
+  // Friendly Grouped View vs Raw Audit Log View
+  const [ledgerViewMode, setLedgerViewMode] = useState<'friendly' | 'detailed'>('friendly');
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+
+  const toggleExpandGroup = (groupId: string) => {
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
 
   // Edit Retailer Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -151,6 +198,133 @@ export const RetailerDetailPage: React.FC = () => {
       setSubmittingEdit(false);
     }
   };
+
+  // ── Smart Grouping of Ledger Transactions (Friendly View) ──────────────────
+  const groupedTransactions = useMemo(() => {
+    if (ledgerViewMode === 'detailed') return [];
+
+    const extractOriginBill = (notes?: string | null): string | null => {
+      if (!notes) return null;
+      const match = notes.match(/Udhaar allocation from bill (BL-[^\s,]+)/i);
+      return match ? match[1] : null;
+    };
+
+    const groups: GroupedLedgerTransaction[] = [];
+    const processedEntryIds = new Set<string>();
+
+    for (let i = 0; i < ledgerEntries.length; i++) {
+      const entry = ledgerEntries[i];
+      if (processedEntryIds.has(entry.id)) continue;
+
+      const originFromNotes = extractOriginBill(entry.notes);
+      let targetOriginBill = originFromNotes;
+
+      if (!targetOriginBill && entry.entryType === 'sale' && entry.bill?.billNumber) {
+        const hasLinkedPayments = ledgerEntries.some(
+          (other) =>
+            other.id !== entry.id &&
+            extractOriginBill(other.notes) === entry.bill?.billNumber
+        );
+        if (hasLinkedPayments) {
+          targetOriginBill = entry.bill.billNumber;
+        }
+      }
+
+      if (targetOriginBill) {
+        const entryTime = new Date(entry.createdAt).getTime();
+        const cluster = ledgerEntries.filter((candidate) => {
+          if (processedEntryIds.has(candidate.id)) return false;
+          const candTime = new Date(candidate.createdAt).getTime();
+          if (Math.abs(candTime - entryTime) > 120000) return false;
+
+          const candidateOrigin = extractOriginBill(candidate.notes);
+          const isOriginSale =
+            candidate.entryType === 'sale' &&
+            candidate.bill?.billNumber === targetOriginBill;
+          const isOriginPayment = candidateOrigin === targetOriginBill;
+
+          return isOriginSale || isOriginPayment;
+        });
+
+        if (cluster.length > 1) {
+          cluster.forEach((c) => processedEntryIds.add(c.id));
+
+          const saleEntry = cluster.find((c) => c.entryType === 'sale');
+          const paymentEntries = cluster.filter((c) => c.entryType === 'payment');
+
+          const saleAmount = saleEntry ? Number(saleEntry.amount) : 0;
+          const totalPaid = paymentEntries.reduce((sum, p) => sum + Number(p.amount), 0);
+
+          const newestEntry = [...cluster].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )[0];
+          const finalBalance = Number(newestEntry.balance);
+
+          const netChange = saleAmount - totalPaid;
+          const startingBalance = finalBalance - netChange;
+
+          const allocations: AllocationDetail[] = paymentEntries.map((p) => {
+            const billNum = p.bill?.billNumber || '—';
+            const isNewBill = billNum === targetOriginBill;
+            return {
+              billNumber: billNum,
+              billId: p.billId || undefined,
+              amount: Number(p.amount),
+              notes: p.notes || undefined,
+              balance: Number(p.balance),
+              isNewBill,
+            };
+          });
+
+          groups.push({
+            id: `group-${targetOriginBill}-${newestEntry.id}`,
+            createdAt: new Date(newestEntry.createdAt),
+            isGrouped: true,
+            type: 'sale_with_allocation',
+            billNumber: targetOriginBill,
+            billId: saleEntry?.billId || undefined,
+            paymentMode: saleEntry?.paymentMode || paymentEntries[0]?.paymentMode || 'cash',
+            saleAmount: saleAmount > 0 ? saleAmount : undefined,
+            paidAmount: totalPaid,
+            amount: saleAmount > 0 ? saleAmount : totalPaid,
+            netChange,
+            runningBalance: finalBalance,
+            startingBalance,
+            notes: saleEntry?.notes || `Udhaar allocation across ${paymentEntries.length} bills`,
+            allocations,
+            rawEntries: cluster,
+          });
+          continue;
+        }
+      }
+
+      // Standalone single entry
+      processedEntryIds.add(entry.id);
+      const isSale = entry.entryType === 'sale';
+      const isPayment = entry.entryType === 'payment';
+      const amount = Number(entry.amount);
+      const netChange = isSale ? amount : isPayment ? -amount : 0;
+
+      groups.push({
+        id: entry.id,
+        createdAt: new Date(entry.createdAt),
+        isGrouped: false,
+        type: entry.entryType as any,
+        billNumber: entry.bill?.billNumber,
+        billId: entry.billId || undefined,
+        paymentMode: entry.paymentMode || undefined,
+        amount,
+        netChange,
+        runningBalance: Number(entry.balance),
+        startingBalance: Number(entry.balance) - netChange,
+        notes: entry.notes || undefined,
+        allocations: [],
+        rawEntries: [entry],
+      });
+    }
+
+    return groups;
+  }, [ledgerEntries, ledgerViewMode]);
 
   const totalPages = Math.ceil(totalEntries / PAGE_SIZE) || 1;
 
@@ -326,80 +500,376 @@ export const RetailerDetailPage: React.FC = () => {
 
           {/* Ledger Entries Table Card */}
           <Card title="Ledger Audit Statement">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-xs text-gray-500">
-                Double-entry transaction audit log detailing sales, payments, and balance adjustments.
-              </p>
-              {loadingLedger && (
-                <div className="flex items-center gap-1.5 text-xs text-blue-600 font-medium">
-                  <RefreshCw size={12} className="animate-spin" />
-                  Refreshing…
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <p className="text-xs text-gray-500">
+                  {ledgerViewMode === 'friendly'
+                    ? 'Simplified transaction history with step-by-step udhaar payment breakdowns.'
+                    : 'Double-entry transaction audit log detailing every debit, credit, and running balance.'}
+                </p>
+              </div>
+
+              {/* View Switcher Controls */}
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                {loadingLedger && (
+                  <div className="flex items-center gap-1 text-xs text-blue-600 font-medium mr-2">
+                    <RefreshCw size={12} className="animate-spin" />
+                    <span className="hidden sm:inline">Refreshing…</span>
+                  </div>
+                )}
+                <div className="inline-flex p-0.5 bg-gray-100 border border-gray-300 rounded-lg text-xs font-semibold">
+                  <button
+                    onClick={() => setLedgerViewMode('friendly')}
+                    className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
+                      ledgerViewMode === 'friendly'
+                        ? 'bg-white text-blue-700 shadow-xs font-bold'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <Sparkles size={13} className="text-blue-600" />
+                    Friendly View
+                  </button>
+                  <button
+                    onClick={() => setLedgerViewMode('detailed')}
+                    className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
+                      ledgerViewMode === 'detailed'
+                        ? 'bg-white text-blue-700 shadow-xs font-bold'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <Layers size={13} className="text-gray-500" />
+                    Detailed Audit Log
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
 
+            {/* ── Table Container ── */}
             <div className="overflow-x-auto border border-gray-300 rounded-xl shadow-2xs">
-              <table className="w-full text-xs text-left">
-                <thead>
-                  <tr className="bg-gray-100 text-gray-700 uppercase border-b-2 border-gray-300 font-bold tracking-wider text-[11px]">
-                    <th className="py-3 px-4">Date & Time</th>
-                    <th className="py-3 px-4">Type</th>
-                    <th className="py-3 px-4">Bill Ref</th>
-                    <th className="py-3 px-4">Payment Mode</th>
-                    <th className="py-3 px-4 text-right">Amount</th>
-                    <th className="py-3 px-4 text-right">Running Balance</th>
-                    <th className="py-3 px-4">Notes</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {ledgerEntries.length > 0 ? (
-                    ledgerEntries.map((entry) => {
-                      const badge = ENTRY_TYPE_BADGES[entry.entryType.toLowerCase()] || {
-                        bg: 'bg-gray-100',
-                        text: 'text-gray-700',
-                        label: entry.entryType,
-                      };
-
-                      return (
-                        <tr key={entry.id} className="hover:bg-blue-50/40 transition-colors border-b border-gray-200">
-                          <td className="py-3 px-4 text-gray-700 font-medium whitespace-nowrap">
-                            {new Date(entry.createdAt).toLocaleString('en-PK', {
-                              dateStyle: 'medium',
-                              timeStyle: 'short',
-                            })}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md font-bold text-[11px] border border-gray-200 ${badge.bg} ${badge.text}`}>
-                              {badge.label}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-mono font-bold text-gray-800">
-                            {entry.bill?.billNumber ? `#${entry.bill.billNumber}` : '—'}
-                          </td>
-                          <td className="py-3 px-4 capitalize text-gray-700 font-medium">
-                            {entry.paymentMode ? entry.paymentMode.replace('_', ' ') : '—'}
-                          </td>
-                          <td className="py-3 px-4 text-right font-bold text-gray-900">
-                            ₨{Number(entry.amount).toLocaleString('en-PK', { minimumFractionDigits: 0 })}
-                          </td>
-                          <td className="py-3 px-4 text-right font-extrabold text-gray-900">
-                            ₨{Number(entry.balance).toLocaleString('en-PK', { minimumFractionDigits: 0 })}
-                          </td>
-                          <td className="py-3 px-4 text-gray-600 max-w-xs truncate">
-                            {entry.notes || '—'}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center text-gray-500 italic">
-                        {loadingLedger ? 'Loading statement…' : 'No ledger transactions recorded yet.'}
-                      </td>
+              {ledgerViewMode === 'friendly' ? (
+                /* ── 1. FRIENDLY GROUPED VIEW ── */
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="bg-gray-100 text-gray-700 uppercase border-b-2 border-gray-300 font-bold tracking-wider text-[11px]">
+                      <th className="py-3 px-4">Date & Time</th>
+                      <th className="py-3 px-4">Transaction Type</th>
+                      <th className="py-3 px-4">Bill Ref</th>
+                      <th className="py-3 px-4 text-right">Sale / Paid</th>
+                      <th className="py-3 px-4 text-center">Debt Impact</th>
+                      <th className="py-3 px-4 text-right">Running Balance</th>
+                      <th className="py-3 px-4 text-center">Breakdown</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {groupedTransactions.length > 0 ? (
+                      groupedTransactions.map((group) => {
+                        const isExpanded = expandedGroupIds.has(group.id);
+                        const badge = ENTRY_TYPE_BADGES[group.type] || {
+                          bg: 'bg-gray-100',
+                          text: 'text-gray-700',
+                          label: group.type,
+                        };
+
+                        return (
+                          <React.Fragment key={group.id}>
+                            <tr
+                              className={`transition-colors border-b border-gray-200 ${
+                                isExpanded ? 'bg-blue-50/50' : 'hover:bg-gray-50/80'
+                              }`}
+                            >
+                              {/* Date & Time */}
+                              <td className="py-3 px-4 text-gray-700 font-medium whitespace-nowrap">
+                                {group.createdAt.toLocaleString('en-PK', {
+                                  dateStyle: 'medium',
+                                  timeStyle: 'short',
+                                })}
+                              </td>
+
+                              {/* Type Badge */}
+                              <td className="py-3 px-4 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-md font-bold text-[11px] border border-gray-200 ${badge.bg} ${badge.text}`}
+                                >
+                                  {badge.label}
+                                </span>
+                                {group.isGrouped && (
+                                  <span className="block text-[10px] text-gray-500 mt-0.5 font-medium">
+                                    {group.allocations.length} bill allocations
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Bill Ref */}
+                              <td className="py-3 px-4 font-mono font-bold text-gray-800">
+                                {group.billNumber ? `#${group.billNumber}` : '—'}
+                              </td>
+
+                              {/* Sale / Paid Amounts */}
+                              <td className="py-3 px-4 text-right">
+                                {group.isGrouped ? (
+                                  <div className="space-y-0.5">
+                                    {group.saleAmount !== undefined && (
+                                      <div className="text-gray-900 font-bold">
+                                        Sale: ₨{group.saleAmount.toLocaleString('en-PK')}
+                                      </div>
+                                    )}
+                                    {group.paidAmount !== undefined && group.paidAmount > 0 && (
+                                      <div className="text-emerald-700 font-semibold text-[11px]">
+                                        Paid: ₨{group.paidAmount.toLocaleString('en-PK')}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="font-bold text-gray-900">
+                                    ₨{group.amount.toLocaleString('en-PK')}
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Debt Impact Badge */}
+                              <td className="py-3 px-4 text-center whitespace-nowrap">
+                                {group.netChange < 0 ? (
+                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    −₨{Math.abs(group.netChange).toLocaleString('en-PK')} (Reduced)
+                                  </span>
+                                ) : group.netChange > 0 ? (
+                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                    +₨{group.netChange.toLocaleString('en-PK')} (Added)
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                    ₨0 (Net Cleared)
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Running Balance */}
+                              <td className="py-3 px-4 text-right font-extrabold text-gray-900">
+                                ₨{group.runningBalance.toLocaleString('en-PK', { minimumFractionDigits: 0 })}
+                              </td>
+
+                              {/* Action / Dropdown Toggle */}
+                              <td className="py-3 px-4 text-center">
+                                {group.isGrouped ? (
+                                  <button
+                                    onClick={() => toggleExpandGroup(group.id)}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
+                                      isExpanded
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                                    }`}
+                                  >
+                                    <span>{isExpanded ? 'Hide' : 'Explain'}</span>
+                                    {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-400 text-xs truncate max-w-[120px] inline-block">
+                                    {group.notes || '—'}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+
+                            {/* ── EXPANDED BREAKDOWN ACCORDION ── */}
+                            {isExpanded && group.isGrouped && (
+                              <tr>
+                                <td colSpan={7} className="p-0 border-b border-blue-200 bg-blue-50/40">
+                                  <div className="p-4 sm:p-5 space-y-4">
+                                    {/* Header Banner */}
+                                    <div className="flex items-center justify-between border-b border-blue-200/80 pb-2.5">
+                                      <div className="flex items-center gap-2">
+                                        <div className="p-1.5 bg-blue-600 text-white rounded-lg">
+                                          <Package size={16} />
+                                        </div>
+                                        <div>
+                                          <h4 className="font-bold text-gray-900 text-xs sm:text-sm">
+                                            Step-by-Step Breakdown for Bill #{group.billNumber}
+                                          </h4>
+                                          <p className="text-[11px] text-gray-500">
+                                            Clear breakdown of sale charge, payment distribution, and net balance change.
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <span className="text-[11px] font-bold text-blue-800 bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-md">
+                                        Total Paid: ₨{group.paidAmount?.toLocaleString('en-PK')}
+                                      </span>
+                                    </div>
+
+                                    {/* 3 Step Timeline Cards */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                                      {/* Step 1: Sale */}
+                                      <div className="bg-white p-3.5 rounded-xl border border-blue-200 shadow-2xs flex flex-col justify-between">
+                                        <div>
+                                          <div className="flex items-center gap-1.5 text-blue-700 font-bold text-xs mb-1.5">
+                                            <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center text-[10px]">
+                                              1
+                                            </span>
+                                            New Purchase (Sale)
+                                          </div>
+                                          <p className="text-gray-700 text-xs">
+                                            Bill <span className="font-mono font-bold">#{group.billNumber}</span> was created for{' '}
+                                            <span className="font-bold text-gray-900">
+                                              ₨{group.saleAmount?.toLocaleString('en-PK')}
+                                            </span>.
+                                          </p>
+                                        </div>
+                                        <div className="mt-3 pt-2 border-t border-gray-100 text-[11px] text-gray-500">
+                                          Debt temporarily added (+₨{group.saleAmount?.toLocaleString('en-PK')})
+                                        </div>
+                                      </div>
+
+                                      {/* Step 2: Payment Distribution */}
+                                      <div className="bg-white p-3.5 rounded-xl border border-emerald-200 shadow-2xs flex flex-col justify-between">
+                                        <div>
+                                          <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-xs mb-1.5">
+                                            <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px]">
+                                              2
+                                            </span>
+                                            Payment Distributed
+                                          </div>
+                                          <div className="space-y-1.5 mt-1">
+                                            {group.allocations.map((alloc, idx) => (
+                                              <div
+                                                key={idx}
+                                                className="flex items-start justify-between gap-1 text-[11px] bg-emerald-50/60 p-1.5 rounded-lg border border-emerald-100"
+                                              >
+                                                <div>
+                                                  <span className="font-mono font-bold text-emerald-950">
+                                                    #{alloc.billNumber}
+                                                  </span>{' '}
+                                                  <span className="text-gray-500 text-[10px]">
+                                                    ({alloc.isNewBill ? 'This Bill' : 'Old Bill'})
+                                                  </span>
+                                                </div>
+                                                <span className="font-bold text-emerald-700 shrink-0">
+                                                  −₨{alloc.amount.toLocaleString('en-PK')}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                        <div className="mt-3 pt-2 border-t border-gray-100 text-[11px] text-emerald-700 font-semibold">
+                                          Total Applied: ₨{group.paidAmount?.toLocaleString('en-PK')}
+                                        </div>
+                                      </div>
+
+                                      {/* Step 3: Net Balance Result */}
+                                      <div className="bg-white p-3.5 rounded-xl border border-indigo-200 shadow-2xs flex flex-col justify-between">
+                                        <div>
+                                          <div className="flex items-center gap-1.5 text-indigo-700 font-bold text-xs mb-1.5">
+                                            <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-800 flex items-center justify-center text-[10px]">
+                                              3
+                                            </span>
+                                            Final Balance Result
+                                          </div>
+                                          <div className="space-y-1 text-xs">
+                                            <div className="flex justify-between text-gray-600 text-[11px]">
+                                              <span>Starting Balance:</span>
+                                              <span className="font-medium">₨{group.startingBalance.toLocaleString('en-PK')}</span>
+                                            </div>
+                                            <div className="flex justify-between text-gray-600 text-[11px]">
+                                              <span>Net Movement:</span>
+                                              <span className={group.netChange <= 0 ? 'text-emerald-600 font-bold' : 'text-amber-700 font-bold'}>
+                                                {group.netChange <= 0 ? '−' : '+'}₨{Math.abs(group.netChange).toLocaleString('en-PK')}
+                                              </span>
+                                            </div>
+                                            <div className="flex justify-between font-bold text-gray-900 border-t border-gray-100 pt-1 text-xs">
+                                              <span>Final Balance:</span>
+                                              <span className="text-blue-700 font-extrabold text-sm">
+                                                ₨{group.runningBalance.toLocaleString('en-PK')}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="mt-3 pt-2 border-t border-gray-100 text-[11px] text-gray-500">
+                                          {group.netChange < 0
+                                            ? `Net debt decreased by ₨${Math.abs(group.netChange).toLocaleString('en-PK')} ✅`
+                                            : group.netChange === 0
+                                            ? 'Bill paid in exact full (₨0 net debt change) ✅'
+                                            : `Debt increased by ₨${group.netChange.toLocaleString('en-PK')}`}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-gray-500 italic">
+                          {loadingLedger ? 'Loading statement…' : 'No ledger transactions recorded yet.'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              ) : (
+                /* ── 2. DETAILED AUDIT LOG (Raw Single Entries) ── */
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="bg-gray-100 text-gray-700 uppercase border-b-2 border-gray-300 font-bold tracking-wider text-[11px]">
+                      <th className="py-3 px-4">Date & Time</th>
+                      <th className="py-3 px-4">Type</th>
+                      <th className="py-3 px-4">Bill Ref</th>
+                      <th className="py-3 px-4">Payment Mode</th>
+                      <th className="py-3 px-4 text-right">Amount</th>
+                      <th className="py-3 px-4 text-right">Running Balance</th>
+                      <th className="py-3 px-4">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {ledgerEntries.length > 0 ? (
+                      ledgerEntries.map((entry) => {
+                        const badge = ENTRY_TYPE_BADGES[entry.entryType.toLowerCase()] || {
+                          bg: 'bg-gray-100',
+                          text: 'text-gray-700',
+                          label: entry.entryType,
+                        };
+
+                        return (
+                          <tr key={entry.id} className="hover:bg-blue-50/40 transition-colors border-b border-gray-200">
+                            <td className="py-3 px-4 text-gray-700 font-medium whitespace-nowrap">
+                              {new Date(entry.createdAt).toLocaleString('en-PK', {
+                                dateStyle: 'medium',
+                                timeStyle: 'short',
+                              })}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md font-bold text-[11px] border border-gray-200 ${badge.bg} ${badge.text}`}>
+                                {badge.label}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 font-mono font-bold text-gray-800">
+                              {entry.bill?.billNumber ? `#${entry.bill.billNumber}` : '—'}
+                            </td>
+                            <td className="py-3 px-4 capitalize text-gray-700 font-medium">
+                              {entry.paymentMode ? entry.paymentMode.replace('_', ' ') : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right font-bold text-gray-900">
+                              ₨{Number(entry.amount).toLocaleString('en-PK', { minimumFractionDigits: 0 })}
+                            </td>
+                            <td className="py-3 px-4 text-right font-extrabold text-gray-900">
+                              ₨{Number(entry.balance).toLocaleString('en-PK', { minimumFractionDigits: 0 })}
+                            </td>
+                            <td className="py-3 px-4 text-gray-600 max-w-xs truncate">
+                              {entry.notes || '—'}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-gray-500 italic">
+                          {loadingLedger ? 'Loading statement…' : 'No ledger transactions recorded yet.'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
             </div>
 
             {/* Pagination Controls */}
