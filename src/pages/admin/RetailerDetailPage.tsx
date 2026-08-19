@@ -19,6 +19,8 @@ import {
   Package,
   Layers,
   Sparkles,
+  Printer,
+  FileText,
 } from 'lucide-react';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import { retailersService } from '../../services/retailers';
@@ -89,6 +91,15 @@ export const RetailerDetailPage: React.FC = () => {
   const [recordPaymentAmount, setRecordPaymentAmount] = useState('');
   const [recordPaymentLoading, setRecordPaymentLoading] = useState(false);
 
+  // Consolidated Bill Generator Modal State
+  const [isConsolidatedModalOpen, setIsConsolidatedModalOpen] = useState(false);
+
+  // Date Range Report Modal State (Part C)
+  const [isDateReportModalOpen, setIsDateReportModalOpen] = useState(false);
+  const [dateReportStart, setDateReportStart] = useState('');
+  const [dateReportEnd, setDateReportEnd] = useState('');
+  const [dateReportLoading, setDateReportLoading] = useState(false);
+
   // Friendly Grouped View vs Raw Audit Log View
   const [ledgerViewMode, setLedgerViewMode] = useState<'friendly' | 'detailed'>('friendly');
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
@@ -100,6 +111,131 @@ export const RetailerDetailPage: React.FC = () => {
       else next.add(groupId);
       return next;
     });
+  };
+
+  // Print Consolidated Bill Thermal Statement
+  const handlePrintConsolidatedBill = (pendingGroups: GroupedLedgerTransaction[]) => {
+    if (!retailer) return;
+    const grandTotalPending = pendingGroups.reduce((sum, g) => sum + g.netChange, 0);
+
+    const billLines = pendingGroups
+      .map((g, idx) => {
+        const bNum = g.billNumber ? `#${g.billNumber}` : `Bill ${idx + 1}`;
+        const dateStr = new Date(g.createdAt).toLocaleDateString();
+        const totalStr = g.saleAmount ? `₨${g.saleAmount.toLocaleString('en-PK')}` : '—';
+        const paidStr = `₨${(g.paidAmount || 0).toLocaleString('en-PK')}`;
+        const pendingStr = `₨${g.netChange.toLocaleString('en-PK')}`;
+
+        return `${bNum.padEnd(16)} ${dateStr.padEnd(12)} ${pendingStr.padStart(10)}\n  (Sale: ${totalStr} | Paid: ${paidStr})`;
+      })
+      .join('\n────────────────────────────────────────\n');
+
+    const content = `
+╔════════════════════════════════════════╗
+║                ABDULHAQ                ║
+║      CONSOLIDATED PENDING STATEMENT     ║
+╚════════════════════════════════════════╝
+
+Date: ${new Date().toLocaleString()}
+
+RETAILER: ${retailer.shopName} (${retailer.ownerName})
+Phone:    ${retailer.mobileNumber || 'N/A'}
+Address:  ${retailer.address}
+
+────────────────────────────────────────
+PENDING BILLS BREAKDOWN (${pendingGroups.length} bills)
+────────────────────────────────────────
+${billLines}
+
+────────────────────────────────────────
+GRAND TOTAL COMBINED PENDING:
+₨${grandTotalPending.toLocaleString('en-PK')}
+────────────────────────────────────────
+
+This is a consolidated statement of all unpaid balances.
+Thank you for your business!
+════════════════════════════════════════
+    `;
+
+    navigator.clipboard.writeText(content).catch(() => {});
+    const w = window.open('', '', 'height=600,width=800');
+    if (w) {
+      w.document.write(
+        `<html><head><title>Consolidated Statement - ${retailer.shopName}</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{white-space:pre;}</style></head><body><pre>${content}</pre><script>window.print();window.close();</script></body></html>`
+      );
+      w.document.close();
+    }
+  };
+
+  // Print Date Range Statement (Part C)
+  const handlePrintDateReport = (
+    entries: LedgerEntry[],
+    startDate?: string,
+    endDate?: string
+  ) => {
+    if (!retailer) return;
+
+    const totalSales = entries
+      .filter((e) => e.entryType === 'sale')
+      .reduce((s, e) => s + Number(e.amount), 0);
+    const totalPaid = entries
+      .filter((e) => e.entryType === 'payment')
+      .reduce((s, e) => s + Number(e.amount), 0);
+    const netChange = totalSales - totalPaid;
+
+    const transactionLines = entries
+      .map((e) => {
+        const dStr = new Date(e.createdAt).toLocaleDateString();
+        const typeStr = e.entryType.toUpperCase().padEnd(7);
+        const bRef = e.bill?.billNumber ? `#${e.bill.billNumber}` : (e.notes ? e.notes.slice(0, 15) : '—');
+        const sign = e.entryType === 'sale' ? '+' : '−';
+        const amtStr = `${sign}₨${Number(e.amount).toLocaleString('en-PK')}`.padStart(10);
+        const balStr = `(Bal: ₨${Number(e.balance).toLocaleString('en-PK')})`;
+
+        return `${dStr.padEnd(11)} ${typeStr} ${bRef.padEnd(15)} ${amtStr}  ${balStr}`;
+      })
+      .join('\n');
+
+    const content = `
+╔════════════════════════════════════════╗
+║                ABDULHAQ                ║
+║           DATE RANGE REPORT            ║
+╚════════════════════════════════════════╝
+
+Period:    ${startDate || 'All Time'} to ${endDate || 'Today'}
+Generated: ${new Date().toLocaleString()}
+
+RETAILER: ${retailer.shopName} (${retailer.ownerName})
+Phone:    ${retailer.mobileNumber || 'N/A'}
+Address:  ${retailer.address}
+
+────────────────────────────────────────
+TRANSACTION HISTORY (${entries.length} records)
+────────────────────────────────────────
+${transactionLines || 'No transactions in selected period.'}
+
+────────────────────────────────────────
+PERIOD FINANCIAL SUMMARY
+────────────────────────────────────────
+Total Sales:        ₨${totalSales.toLocaleString('en-PK')}
+Total Payments:     ₨${totalPaid.toLocaleString('en-PK')}
+Net Period Change:  ${netChange >= 0 ? '+' : ''}₨${netChange.toLocaleString('en-PK')}
+Current Total Debt: ₨${(retailer.outstanding || 0).toLocaleString('en-PK')}
+────────────────────────────────────────
+
+This statement lists all account transactions in the period.
+Thank you for your business!
+════════════════════════════════════════
+    `;
+
+    navigator.clipboard.writeText(content).catch(() => {});
+    const w = window.open('', '', 'height=600,width=800');
+    if (w) {
+      w.document.write(
+        `<html><head><title>Date Range Report - ${retailer.shopName}</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{white-space:pre;}</style></head><body><pre>${content}</pre><script>window.print();window.close();</script></body></html>`
+      );
+      w.document.close();
+    }
   };
 
   // Edit Retailer Modal State
@@ -245,12 +381,6 @@ export const RetailerDetailPage: React.FC = () => {
   const groupedTransactions = useMemo(() => {
     if (ledgerViewMode === 'detailed') return [];
 
-    const extractOriginBill = (notes?: string | null): string | null => {
-      if (!notes) return null;
-      const match = notes.match(/Udhaar allocation from bill (BL-[^\s,]+)/i);
-      return match ? match[1] : null;
-    };
-
     const groups: GroupedLedgerTransaction[] = [];
     const processedEntryIds = new Set<string>();
 
@@ -258,16 +388,19 @@ export const RetailerDetailPage: React.FC = () => {
       const entry = ledgerEntries[i];
       if (processedEntryIds.has(entry.id)) continue;
 
-      const originFromNotes = extractOriginBill(entry.notes);
-      const targetOriginBill = originFromNotes || entry.bill?.billNumber;
+      // Always group by the entry's OWN bill (its billId / bill.billNumber).
+      // Never use notes-based origin as the grouping key — "Udhaar allocation from BL-XXXX"
+      // in notes means BL-XXXX funded this payment, NOT that this entry belongs to BL-XXXX.
+      const targetOriginBill = entry.bill?.billNumber;
 
       if (targetOriginBill) {
-        // Cluster ALL ledger entries referencing this bill (at creation or paid later)
+        // Cluster ALL ledger entries whose billId directly references this bill.
+        // Do NOT use candidateOrigin (notes-based attribution) — a payment entry's notes
+        // say "funded by BL-XXXX" but the entry itself belongs to the OLD bill that was paid.
         const cluster = ledgerEntries.filter((candidate) => {
           if (processedEntryIds.has(candidate.id)) return false;
-          const candidateOrigin = extractOriginBill(candidate.notes);
           const candidateBillNum = candidate.bill?.billNumber;
-          return candidateBillNum === targetOriginBill || candidateOrigin === targetOriginBill;
+          return candidateBillNum === targetOriginBill;
         });
 
         if (cluster.length > 0) {
@@ -357,7 +490,10 @@ export const RetailerDetailPage: React.FC = () => {
     }
 
     // Sort stably by ORIGINAL bill / transaction date (newest first)
-    return groups.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // PART A: Exclude fully-PAID bills (netChange <= 0) from Friendly View — only show active PENDING / PARTIAL bills
+    const activeGroups = groups.filter((g) => g.netChange > 0);
+
+    return activeGroups.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [ledgerEntries, ledgerViewMode]);
 
   if (loadingRetailer) {
@@ -631,14 +767,39 @@ export const RetailerDetailPage: React.FC = () => {
                 </p>
               </div>
 
-              {/* View Switcher Controls */}
-              <div className="flex items-center gap-2 self-end sm:self-auto">
+              {/* View Switcher Controls & Actions */}
+              <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
                 {loadingLedger && (
                   <div className="flex items-center gap-1 text-xs text-blue-600 font-medium mr-2">
                     <RefreshCw size={12} className="animate-spin" />
                     <span className="hidden sm:inline">Refreshing…</span>
                   </div>
                 )}
+
+                {/* Consolidated Bill Generator Button (Shown if 2+ pending bills) */}
+                {groupedTransactions.filter((g) => g.netChange > 0).length >= 2 && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setIsConsolidatedModalOpen(true)}
+                    className="flex items-center gap-1.5 text-xs border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 font-bold"
+                  >
+                    <FileText size={14} className="text-amber-700" />
+                    Generate Consolidated Bill
+                  </Button>
+                )}
+
+                {/* Date Range Report Button (Part C) */}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setIsDateReportModalOpen(true)}
+                  className="flex items-center gap-1.5 text-xs border border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100 font-bold"
+                >
+                  <Calendar size={14} className="text-blue-700" />
+                  Date Range Report
+                </Button>
+
                 <div className="inline-flex p-0.5 bg-gray-100 border border-gray-300 rounded-lg text-xs font-semibold">
                   <button
                     onClick={() => setLedgerViewMode('friendly')}
@@ -1124,6 +1285,223 @@ export const RetailerDetailPage: React.FC = () => {
               onChange={(e) => setEditForm({ ...editForm, deliveryLocation: e.target.value })}
               placeholder="e.g. Near Bus Stop"
             />
+          </div>
+        </div>
+      </Modal>
+      {/* ── CONSOLIDATED BILL MODAL ── */}
+      <Modal
+        isOpen={isConsolidatedModalOpen}
+        title="Consolidated Pending Bill Statement"
+        onClose={() => setIsConsolidatedModalOpen(false)}
+      >
+          <div className="space-y-4 text-xs">
+            <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+              <div className="flex items-center justify-between font-bold text-amber-900 mb-1">
+                <span>{retailer?.shopName}</span>
+                <span>{new Date().toLocaleDateString()}</span>
+              </div>
+              <p className="text-[11px] text-amber-800">
+                Owner: {retailer?.ownerName} • Contact: {retailer?.mobileNumber}
+              </p>
+            </div>
+
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-gray-100 font-bold text-gray-700 uppercase text-[10px]">
+                  <tr>
+                    <th className="p-2">Bill #</th>
+                    <th className="p-2">Date</th>
+                    <th className="p-2 text-right">Sale Total</th>
+                    <th className="p-2 text-right">Paid</th>
+                    <th className="p-2 text-right font-bold text-red-600">Pending</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {groupedTransactions
+                    .filter((g) => g.netChange > 0)
+                    .map((g) => (
+                      <tr key={g.id}>
+                        <td className="p-2 font-mono font-bold text-gray-900">
+                          {g.billNumber ? `#${g.billNumber}` : '—'}
+                        </td>
+                        <td className="p-2 text-gray-600 whitespace-nowrap">
+                          {new Date(g.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="p-2 text-right">
+                          ₨{(g.saleAmount || g.amount).toLocaleString('en-PK')}
+                        </td>
+                        <td className="p-2 text-right text-emerald-700">
+                          ₨{(g.paidAmount || 0).toLocaleString('en-PK')}
+                        </td>
+                        <td className="p-2 text-right font-bold text-red-600">
+                          ₨{g.netChange.toLocaleString('en-PK')}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+                <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
+                  <tr>
+                    <td colSpan={4} className="p-2.5 text-right uppercase text-[11px]">
+                      Grand Total Combined Pending:
+                    </td>
+                    <td className="p-2.5 text-right text-sm text-red-600">
+                      ₨{groupedTransactions
+                        .filter((g) => g.netChange > 0)
+                        .reduce((sum, g) => sum + g.netChange, 0)
+                        .toLocaleString('en-PK')}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsConsolidatedModalOpen(false)}
+              >
+                Close
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  const pendingGroups = groupedTransactions.filter((g) => g.netChange > 0);
+                  handlePrintConsolidatedBill(pendingGroups);
+                }}
+                className="flex items-center gap-1.5"
+              >
+                <Printer size={14} />
+                Print Consolidated Statement
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+      {/* ── DATE RANGE REPORT MODAL (Part C) ── */}
+      <Modal
+        isOpen={isDateReportModalOpen}
+        title="Date Range Transaction Report"
+        onClose={() => setIsDateReportModalOpen(false)}
+      >
+        <div className="space-y-4 text-xs">
+          <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+            <p className="font-bold text-blue-900 mb-1">{retailer?.shopName} — Statement Generator</p>
+            <p className="text-[11px] text-blue-800">
+              Generate a complete audit statement of all transactions (sales and payments, paid or pending) within a specific date window.
+            </p>
+          </div>
+
+          {/* Date Pickers */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-1">Start Date</label>
+              <input
+                type="date"
+                value={dateReportStart}
+                onChange={(e) => setDateReportStart(e.target.value)}
+                className="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-1">End Date</label>
+              <input
+                type="date"
+                value={dateReportEnd}
+                onChange={(e) => setDateReportEnd(e.target.value)}
+                className="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Quick Preset Buttons */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-gray-500 font-bold">Presets:</span>
+            <button
+              type="button"
+              onClick={() => {
+                const today = new Date().toISOString().split('T')[0];
+                setDateReportStart(today);
+                setDateReportEnd(today);
+              }}
+              className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-semibold cursor-pointer"
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const now = new Date();
+                const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+                const today = now.toISOString().split('T')[0];
+                setDateReportStart(firstDay);
+                setDateReportEnd(today);
+              }}
+              className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-semibold cursor-pointer"
+            >
+              This Month
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const d = new Date();
+                d.setDate(d.getDate() - 30);
+                setDateReportStart(d.toISOString().split('T')[0]);
+                setDateReportEnd(new Date().toISOString().split('T')[0]);
+              }}
+              className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-semibold cursor-pointer"
+            >
+              Last 30 Days
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDateReportStart('');
+                setDateReportEnd('');
+              }}
+              className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-semibold cursor-pointer"
+            >
+              All Time
+            </button>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsDateReportModalOpen(false)}
+            >
+              Close
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={async () => {
+                if (!id) return;
+                try {
+                  setDateReportLoading(true);
+                  const res = await retailersService.getLedger(
+                    id,
+                    200,
+                    0,
+                    dateReportStart || undefined,
+                    dateReportEnd || undefined
+                  );
+                  handlePrintDateReport(res.entries, dateReportStart, dateReportEnd);
+                } catch (err: any) {
+                  store.addNotification('error', 'Failed to generate report.');
+                } finally {
+                  setDateReportLoading(false);
+                }
+              }}
+              loading={dateReportLoading}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700"
+            >
+              <Printer size={14} />
+              Generate & Print Report
+            </Button>
           </div>
         </div>
       </Modal>
