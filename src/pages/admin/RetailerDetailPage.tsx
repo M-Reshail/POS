@@ -84,6 +84,11 @@ export const RetailerDetailPage: React.FC = () => {
   const [error, setError] = useState('');
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // Record Payment (retailer-level FIFO) state
+  const [showRecordPayment, setShowRecordPayment] = useState(false);
+  const [recordPaymentAmount, setRecordPaymentAmount] = useState('');
+  const [recordPaymentLoading, setRecordPaymentLoading] = useState(false);
+
   // Friendly Grouped View vs Raw Audit Log View
   const [ledgerViewMode, setLedgerViewMode] = useState<'friendly' | 'detailed'>('friendly');
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
@@ -476,17 +481,107 @@ export const RetailerDetailPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="bg-gray-50 p-4 rounded-xl border border-gray-300 text-center shadow-2xs">
-                  <p className="text-xs font-semibold text-gray-600 mb-1">Net Outstanding Balance</p>
-                  <p className={`text-2xl font-bold ${outstanding > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                    ₨{Number(outstanding).toLocaleString('en-PK', { minimumFractionDigits: 0 })}
-                  </p>
-                  <p className="text-[11px] text-gray-500 mt-1 font-medium">
-                    {outstanding > 0 ? 'Retailer owes pending balance' : 'No outstanding debt'}
-                  </p>
+                <div className="space-y-4">
+                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-300 text-center shadow-2xs">
+                    <p className="text-xs font-semibold text-gray-600 mb-1">Net Outstanding Balance</p>
+                    <p className={`text-2xl font-bold ${outstanding > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      ₨{Number(outstanding).toLocaleString('en-PK', { minimumFractionDigits: 0 })}
+                    </p>
+                    <p className="text-[11px] text-gray-500 mt-1 font-medium">
+                      {outstanding > 0 ? 'Retailer owes pending balance' : 'No outstanding debt'}
+                    </p>
+                  </div>
+
+                  {/* Compact Record Payment */}
+                  {outstanding > 0 && (
+                    <div className="border border-emerald-200 rounded-lg bg-emerald-50/60">
+                      {!showRecordPayment ? (
+                        <button
+                          onClick={() => {
+                            setShowRecordPayment(true);
+                            setRecordPaymentAmount('');
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 text-[12px] font-bold text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors"
+                        >
+                          <span className="text-base leading-none">+</span> Record Payment
+                        </button>
+                      ) : (
+                        <form
+                          className="p-2.5 space-y-2"
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            const amt = parseFloat(recordPaymentAmount);
+                            if (isNaN(amt) || amt <= 0) {
+                              store.addNotification('error', 'Enter a valid amount > 0');
+                              return;
+                            }
+                            setRecordPaymentLoading(true);
+                            try {
+                              const { plan } = await retailersService.recordPayment(id!, amt);
+                              const billsPaid = plan.entries.filter((e) => e.newStatus === 'paid').length;
+                              const billsPartial = plan.entries.filter((e) => e.newStatus === 'partial').length;
+                              const parts: string[] = [];
+                              if (billsPaid > 0) parts.push(`${billsPaid} bill${billsPaid > 1 ? 's' : ''} paid`);
+                              if (billsPartial > 0) parts.push(`${billsPartial} partially paid`);
+                              store.addNotification(
+                                'success',
+                                `₨${plan.totalApplied.toLocaleString('en-PK')} applied — ${parts.join(', ')}${
+                                  plan.excessAmount > 0 ? ` (₨${plan.excessAmount.toLocaleString('en-PK')} excess)` : ''
+                                }`,
+                              );
+                              setShowRecordPayment(false);
+                              setRecordPaymentAmount('');
+                              await refreshRetailerData();
+                            } catch (err: any) {
+                              const msg = err.response?.data?.message || err.message || 'Payment failed.';
+                              store.addNotification('error', msg);
+                            } finally {
+                              setRecordPaymentLoading(false);
+                            }
+                          }}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-bold text-emerald-900">Record Payment (FIFO)</span>
+                            <button
+                              type="button"
+                              onClick={() => setShowRecordPayment(false)}
+                              className="text-gray-400 hover:text-gray-600 text-[10px] font-semibold"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <input
+                              type="number"
+                              step="any"
+                              required
+                              value={recordPaymentAmount}
+                              onChange={(e) => setRecordPaymentAmount(e.target.value)}
+                              placeholder="Amount (₨)"
+                              className="flex-1 text-[11px] font-bold border border-emerald-300 rounded px-2 py-1 focus:outline-none bg-white"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setRecordPaymentAmount(String(outstanding))}
+                              className="px-2 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded font-semibold text-[10px] shrink-0"
+                            >
+                              Full
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={recordPaymentLoading}
+                              className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-bold px-3 py-1 rounded text-[11px] transition-colors shrink-0"
+                            >
+                              {recordPaymentLoading ? 'Saving…' : 'Save'}
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-emerald-700 italic">Oldest bills paid first (FIFO)</p>
+                        </form>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
             </Card>
 
             {/* RGB Crate Balances */}
@@ -572,20 +667,19 @@ export const RetailerDetailPage: React.FC = () => {
             </div>
 
             {/* ── Table Container ── */}
-            <div className="overflow-x-auto border border-gray-300 rounded-xl shadow-2xs">
+            <div className="overflow-auto max-h-[calc(100vh-270px)] min-h-[350px] border border-gray-300 rounded-xl shadow-2xs">
               {ledgerViewMode === 'friendly' ? (
                 /* ── 1. FRIENDLY GROUPED VIEW ── */
                 <table className="w-full text-xs text-left">
-                  <thead>
+                  <thead className="sticky top-0 z-20 shadow-xs">
                     <tr className="bg-gray-100 text-gray-700 uppercase border-b-2 border-gray-300 font-bold tracking-wider text-[11px]">
-                      <th className="py-3 px-4">Date & Time</th>
-                      <th className="py-3 px-4">Transaction Type</th>
-                      <th className="py-3 px-4">Bill Ref</th>
-                      <th className="py-3 px-4 text-right">Sale Total</th>
-                      <th className="py-3 px-4 text-center">Debt Impact</th>
-                      <th className="py-3 px-4 text-right font-bold text-emerald-700">Paid Amount</th>
-                      <th className="py-3 px-4 text-right">Running Balance</th>
-                      <th className="py-3 px-4 text-center">Breakdown & Pay</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4">Date & Time</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4">Transaction Type</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4">Bill Ref</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4 text-right">Sale Total</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4 text-right font-bold text-emerald-700">Paid Amount</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4 text-center">Remaining</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4 text-center">Breakdown & Pay</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
@@ -641,7 +735,12 @@ export const RetailerDetailPage: React.FC = () => {
                                   : '—'}
                               </td>
 
-                              {/* Debt Impact Badge (5th Column) */}
+                              {/* Paid Amount Column */}
+                              <td className="py-3 px-4 text-right font-bold text-emerald-700">
+                                ₨{(group.paidAmount || (group.type === 'payment' ? group.amount : 0)).toLocaleString('en-PK')}
+                              </td>
+
+                              {/* Remaining Badge Column */}
                               <td className="py-3 px-4 text-center whitespace-nowrap">
                                 {group.netChange < 0 ? (
                                   <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -656,16 +755,6 @@ export const RetailerDetailPage: React.FC = () => {
                                     ₨0 (Net Cleared)
                                   </span>
                                 )}
-                              </td>
-
-                              {/* Paid Amount Column (6th Column - MOVED AFTER DEBT IMPACT per user request) */}
-                              <td className="py-3 px-4 text-right font-bold text-emerald-700">
-                                ₨{(group.paidAmount || (group.type === 'payment' ? group.amount : 0)).toLocaleString('en-PK')}
-                              </td>
-
-                              {/* Running Balance */}
-                              <td className="py-3 px-4 text-right font-extrabold text-gray-900">
-                                ₨{group.runningBalance.toLocaleString('en-PK', { minimumFractionDigits: 0 })}
                               </td>
 
                               {/* Action / Dropdown Toggle */}
@@ -693,7 +782,7 @@ export const RetailerDetailPage: React.FC = () => {
                             {/* ── EXPANDED BREAKDOWN ACCORDION ── */}
                             {isExpanded && group.isGrouped && (
                               <tr>
-                                <td colSpan={8} className="p-0 border-b border-blue-200 bg-blue-50/30">
+                                <td colSpan={7} className="p-0 border-b border-blue-200 bg-blue-50/30">
                                   <div className="p-3 space-y-2.5">
                                     {/* Header Banner */}
                                     <div className="flex items-center justify-between border-b border-blue-200/80 pb-2.5">
@@ -862,15 +951,15 @@ export const RetailerDetailPage: React.FC = () => {
               ) : (
                 /* ── 2. DETAILED AUDIT LOG (Raw Single Entries) ── */
                 <table className="w-full text-xs text-left">
-                  <thead>
+                  <thead className="sticky top-0 z-20 shadow-xs">
                     <tr className="bg-gray-100 text-gray-700 uppercase border-b-2 border-gray-300 font-bold tracking-wider text-[11px]">
-                      <th className="py-3 px-4">Date & Time</th>
-                      <th className="py-3 px-4">Type</th>
-                      <th className="py-3 px-4">Bill Ref</th>
-                      <th className="py-3 px-4">Payment Mode</th>
-                      <th className="py-3 px-4 text-right">Amount</th>
-                      <th className="py-3 px-4 text-right">Running Balance</th>
-                      <th className="py-3 px-4">Notes</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4">Date & Time</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4">Type</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4">Bill Ref</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4">Payment Mode</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4 text-right">Amount</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4 text-right">Running Balance</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-4">Notes</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">

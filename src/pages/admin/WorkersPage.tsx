@@ -174,18 +174,18 @@ export const WorkersPage: React.FC = () => {
           </Card>
         ) : (
           <Card>
-            <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+            <div className="overflow-auto max-h-[calc(100vh-270px)] min-h-[350px] border border-gray-200 rounded-xl shadow-2xs">
               <table className="w-full text-sm min-w-[620px]">
-                <thead>
-                  <tr className="border-b border-gray-100 text-gray-500">
-                    <th className="text-left py-2 px-3">Name</th>
-                    <th className="text-left py-2 px-3">Email</th>
-                    <th className="text-left py-2 px-3">Phone</th>
-                    <th className="text-center py-2 px-3">Bills</th>
-                    <th className="text-right py-2 px-3">Revenue</th>
-                    <th className="text-right py-2 px-3">Outstanding</th>
-                    <th className="text-center py-2 px-3">Status</th>
-                    <th className="py-2 px-3"></th>
+                <thead className="sticky top-0 z-20 shadow-xs">
+                  <tr className="bg-gray-100 text-gray-700 font-bold uppercase tracking-wider text-[11px] border-b border-gray-300">
+                    <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Name</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Email</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Phone</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Bills</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Revenue</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Outstanding</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Status</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3"></th>
                   </tr>
                 </thead>
                 <tbody>

@@ -245,6 +245,31 @@ const InactivityTimer: React.FC = () => {
   return null;
 };
 
+// ── Global Number Input Scroll-Wheel Disable ──────────────────────────────────
+// Browser default behavior on <input type="number"> increments/decrements the
+// value when the mouse scroll wheel is moved over a focused number input.
+// This global listener unfocuses (blurs) any active number input on wheel scroll,
+// preventing accidental value corruption while allowing normal page scrolling.
+const GlobalNumberInputScrollHandler: React.FC = () => {
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLInputElement && activeEl.type === 'number') {
+        activeEl.blur();
+      }
+      const target = e.target;
+      if (target instanceof HTMLInputElement && target.type === 'number') {
+        target.blur();
+      }
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: true });
+    return () => window.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  return null;
+};
+
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const currentUser = useStore((s) => s.currentUser);
@@ -252,6 +277,7 @@ export default function App() {
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AuthGate>
+        <GlobalNumberInputScrollHandler />
         <SessionExpiredListener />
         <InactivityTimer />
         <SessionExpiredModal />

@@ -6,11 +6,11 @@
  * an AllocationPlan describing exactly how much goes to each bill.
  *
  * Two modes:
- *  - 'old_first'     (default): old pending bills consumed LIFO (newest-of-old first),
+ *  - 'old_first'     (default): old pending bills consumed FIFO (oldest-first),
  *                               then any remainder applied to the new bill.
- *  - 'current_first': new bill consumed first, then old bills LIFO.
+ *  - 'current_first': new bill consumed first, then old bills FIFO (oldest-first).
  *
- * LIFO = most-recent createdAt first (newest old bill paid before older ones).
+ * FIFO = oldest createdAt first (oldest old bill paid before newer ones).
  *
  * If the payment amount exceeds total pending across all bills, the excess is
  * reported as `excessAmount` and the applied amount is capped at total pending.
@@ -74,9 +74,9 @@ export function allocateUdhaarPayment(
     return { entries: [], totalApplied: 0, excessAmount: 0 };
   }
 
-  // Sort old bills LIFO (newest first)
+  // Sort old bills FIFO (oldest first — consistent with fifoPaymentAllocator)
   const sortedOld = [...oldBills].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
 
   // Build the ordered queue depending on mode

@@ -34,5 +34,25 @@ export const retailersService = {
     });
     return response.data;
   },
+  recordPayment: async (
+    id: string,
+    amount: number,
+  ): Promise<{
+    plan: {
+      entries: Array<{
+        billId: string;
+        billNumber: string;
+        amountApplied: number;
+        pendingBefore: number;
+        pendingAfter: number;
+        newStatus: 'paid' | 'partial' | 'pending';
+      }>;
+      totalApplied: number;
+      excessAmount: number;
+    };
+  }> => {
+    const response: any = await api.post(`/retailers/${id}/record-payment`, { amount });
+    return response.data;
+  },
 };
 

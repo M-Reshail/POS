@@ -313,7 +313,7 @@ export const createBill = async (input: CreateBillInput) => {
           pendingAmount: true,
           createdAt:     true,
         },
-        orderBy: { createdAt: 'desc' }, // LIFO — allocator re-sorts, but give it newest-first
+        orderBy: { createdAt: 'asc' }, // FIFO — allocator sorts oldest-first, pass asc for consistency
       });
 
       const oldSnapshots: BillSnapshot[] = oldPendingRows.map((b) => ({

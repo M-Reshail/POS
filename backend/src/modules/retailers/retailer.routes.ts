@@ -6,6 +6,7 @@
  * POST   /api/retailers                    → Create retailer
  * PUT    /api/retailers/:id                → Update retailer
  * GET    /api/retailers/:id/ledger         → Retailer ledger (paginated)
+ * POST   /api/retailers/:id/record-payment → Record FIFO payment across pending bills
  */
 
 import { Router } from 'express';
@@ -17,6 +18,7 @@ import {
   createRetailer,
   updateRetailer,
   getRetailerLedger,
+  recordRetailerPayment,
 } from './retailer.controller';
 
 const router = Router();
@@ -31,6 +33,7 @@ router.post('/', createRetailer);
 // Admin-only mutations
 router.put('/:id', requireRole('admin'), updateRetailer);
 router.get('/:id/ledger', requireRole('admin'), getRetailerLedger);
+router.post('/:id/record-payment', requireRole('admin'), recordRetailerPayment);
 
 export default router;
 

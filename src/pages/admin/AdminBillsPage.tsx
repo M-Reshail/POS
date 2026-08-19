@@ -37,8 +37,8 @@ const RenderBillDetails: React.FC<{ bill: Bill }> = ({ bill }) => {
       <div>
         <p className="text-xs font-bold text-gray-700 mb-2">Line Items</p>
         <table className="w-full text-xs">
-          <thead>
-            <tr className="text-gray-500 border-b border-gray-200">
+          <thead className="sticky top-0 z-10 bg-white">
+            <tr className="text-gray-500 border-b border-gray-200 bg-white">
               <th className="text-left pb-1">Product</th>
               <th className="text-center pb-1">Qty</th>
               <th className="text-right pb-1">Price</th>
@@ -618,21 +618,21 @@ export const AdminBillsPage: React.FC = () => {
               <div className="text-center py-10 text-gray-400 text-sm">No bills found. Try adjusting your filters.</div>
             ) : (
               <div>
-                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                <div className="overflow-auto max-h-[calc(100vh-270px)] min-h-[350px] border border-gray-200 rounded-xl shadow-2xs">
                   <table className="w-full text-xs min-w-[680px]">
-                    <thead>
-                      <tr className="border-b border-gray-100 text-gray-500">
-                        <th className="text-left py-2 px-2">Bill#</th>
-                        <th className="text-left py-2 px-2">Retailer</th>
-                        <th className="text-left py-2 px-2">Worker</th>
-                        <th className="text-right py-2 px-2">Total</th>
-                        <th className="text-right py-2 px-2">Paid</th>
-                        <th className="text-right py-2 px-2">Pending</th>
-                        <th className="text-right py-2 px-2">Discount</th>
-                        <th className="text-center py-2 px-2">Mode</th>
-                        <th className="text-center py-2 px-2">Status</th>
-                        <th className="text-left py-2 px-2">Date</th>
-                        <th className="py-2 px-2"></th>
+                    <thead className="sticky top-0 z-20 shadow-xs">
+                      <tr className="bg-gray-100 text-gray-700 font-bold uppercase tracking-wider text-[11px] border-b border-gray-300">
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Bill#</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Retailer</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Worker</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Total</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Paid</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Pending</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Discount</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Mode</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Status</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Date</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -651,13 +651,13 @@ export const AdminBillsPage: React.FC = () => {
                       ))}
                     </tbody>
                   </table>
-                </div>
 
-                {/* Reliable Infinite Scroll Trigger */}
-                <InfiniteScrollTrigger
-                  onLoadMore={handleLoadMoreBills}
-                  hasMore={bills.length < totalBills}
-                />
+                  {/* Reliable Infinite Scroll Trigger */}
+                  <InfiniteScrollTrigger
+                    onLoadMore={handleLoadMoreBills}
+                    hasMore={bills.length < totalBills}
+                  />
+                </div>
               </div>
             )
           ) : (
@@ -666,17 +666,17 @@ export const AdminBillsPage: React.FC = () => {
               <div className="text-center py-10 text-gray-400 text-sm">No RGB transactions found. Try adjusting your filters.</div>
             ) : (
               <div>
-                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                <div className="overflow-auto max-h-[calc(100vh-270px)] min-h-[350px] border border-gray-200 rounded-xl shadow-2xs">
                   <table className="w-full text-xs min-w-[680px]">
-                    <thead>
-                      <tr className="border-b border-gray-100 text-gray-500">
-                        <th className="text-left py-2 px-2">Date</th>
-                        <th className="text-left py-2 px-2">Retailer</th>
-                        <th className="text-left py-2 px-2">RGB Item</th>
-                        <th className="text-center py-2 px-2">Crate Exchange Activity</th>
-                        <th className="text-left py-2 px-2">Worker</th>
-                        <th className="text-center py-2 px-2">Bill Link</th>
-                        <th className="py-2 px-2"></th>
+                    <thead className="sticky top-0 z-20 shadow-xs">
+                      <tr className="bg-gray-100 text-gray-700 font-bold uppercase tracking-wider text-[11px] border-b border-gray-300">
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Date</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Retailer</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">RGB Item</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Crate Exchange Activity</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Worker</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Bill Link</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -690,7 +690,7 @@ export const AdminBillsPage: React.FC = () => {
                         return (
                           <React.Fragment key={group.key}>
                             <tr className="border-b border-gray-50 hover:bg-gray-50">
-                              <td className="py-2 px-2 text-gray-500 font-mono">
+                              <td className="py-2.5 px-3 text-gray-500 font-mono">
                                 {new Date(group.createdAt).toLocaleString('en-PK', {
                                   day: '2-digit',
                                   month: 'short',
@@ -699,12 +699,12 @@ export const AdminBillsPage: React.FC = () => {
                                   minute: '2-digit',
                                 })}
                               </td>
-                              <td className="py-2 px-2">
+                              <td className="py-2.5 px-3">
                                 <div className="font-medium text-gray-900">{retailerShop}</div>
                                 {retailerOwner && <div className="text-gray-400 text-[11px]">{retailerOwner}</div>}
                               </td>
-                              <td className="py-2 px-2 font-bold text-gray-800">{group.itemName}</td>
-                              <td className="py-2 px-2 text-center">
+                              <td className="py-2.5 px-3 font-bold text-gray-800">{group.itemName}</td>
+                              <td className="py-2.5 px-3 text-center">
                                 <div className="inline-flex items-center gap-1.5 flex-wrap justify-center">
                                   {group.cratesGiven > 0 && (
                                     <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
@@ -718,8 +718,8 @@ export const AdminBillsPage: React.FC = () => {
                                   )}
                                 </div>
                               </td>
-                              <td className="py-2 px-2 text-gray-600">{group.workerName || 'N/A'}</td>
-                              <td className="py-2 px-2 text-center">
+                              <td className="py-2.5 px-3 text-gray-600">{group.workerName || 'N/A'}</td>
+                              <td className="py-2.5 px-3 text-center">
                                 {linkedBill ? (
                                   <button
                                     onClick={() => setExpandedGroupKey(isExpanded ? null : group.key)}
@@ -732,7 +732,7 @@ export const AdminBillsPage: React.FC = () => {
                                   <span className="text-gray-400 font-normal">Standalone</span>
                                 )}
                               </td>
-                              <td className="py-2 px-2 text-center">
+                              <td className="py-2.5 px-3 text-center">
                                 {linkedBill && (
                                   <button
                                     onClick={() => setExpandedGroupKey(isExpanded ? null : group.key)}
@@ -746,7 +746,7 @@ export const AdminBillsPage: React.FC = () => {
                             </tr>
                             {isExpanded && linkedBill && (
                               <tr>
-                                <td colSpan={8} className="bg-blue-50 px-4 py-3">
+                                <td colSpan={7} className="bg-blue-50 px-4 py-3">
                                   <RenderBillDetails bill={linkedBill} />
                                 </td>
                               </tr>
@@ -756,14 +756,14 @@ export const AdminBillsPage: React.FC = () => {
                       })}
                     </tbody>
                   </table>
-                </div>
 
-                {/* Reliable Infinite Scroll Trigger */}
-                <InfiniteScrollTrigger
-                  onLoadMore={handleLoadMoreRgb}
-                  hasMore={rgbTransactions.length < totalRgb}
-                  color="text-teal-600"
-                />
+                  {/* Reliable Infinite Scroll Trigger for RGB */}
+                  <InfiniteScrollTrigger
+                    onLoadMore={handleLoadMoreRgb}
+                    hasMore={rgbTransactions.length < totalRgb}
+                    color="text-teal-600"
+                  />
+                </div>
               </div>
             )
           )}

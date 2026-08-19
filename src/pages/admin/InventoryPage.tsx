@@ -828,15 +828,15 @@ export const InventoryPage: React.FC = () => {
                   No outstanding RGB crate balances with any retailer.
                 </div>
               ) : (
-                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                <div className="overflow-auto max-h-[calc(100vh-270px)] min-h-[300px] border border-gray-200 rounded-xl shadow-2xs">
                   <table className="w-full text-sm min-w-[540px]">
-                    <thead>
-                      <tr className="border-b bg-gray-50 text-gray-600">
-                        <th className="text-left py-3 px-4">Retailer</th>
-                        <th className="text-left py-3 px-4">RGB Type</th>
-                        <th className="text-right py-3 px-4">Quantity Owed</th>
-                        <th className="text-right py-3 px-4">Last Transaction</th>
-                        <th className="text-center py-3 px-4">Action</th>
+                    <thead className="sticky top-0 z-20 shadow-xs">
+                      <tr className="bg-gray-100 text-gray-700 font-bold uppercase tracking-wider text-[11px] border-b border-gray-300">
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-4">Retailer</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-4">RGB Type</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-4">Quantity Owed</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-4">Last Transaction</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-4">Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -947,17 +947,17 @@ export const InventoryPage: React.FC = () => {
                   No RGB transactions recorded yet.
                 </div>
               ) : (
-                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                <div className="overflow-auto max-h-[calc(100vh-270px)] min-h-[300px] border border-gray-200 rounded-xl shadow-2xs">
                   <table className="w-full text-sm min-w-[540px]">
-                    <thead>
-                      <tr className="border-b bg-gray-50 text-gray-600">
-                        <th className="text-left py-3 px-4">Date</th>
-                        <th className="text-left py-3 px-4">Retailer</th>
-                        <th className="text-left py-3 px-4">RGB Item</th>
-                        <th className="text-center py-3 px-4">Type</th>
-                        <th className="text-right py-3 px-4">Quantity</th>
-                        <th className="text-left py-3 px-4">Recorded By</th>
-                        <th className="text-center py-3 px-4">Bill Link</th>
+                    <thead className="sticky top-0 z-20 shadow-xs">
+                      <tr className="bg-gray-100 text-gray-700 font-bold uppercase tracking-wider text-[11px] border-b border-gray-300">
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-4">Date</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-4">Retailer</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-4">RGB Item</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-4">Type</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-4">Quantity</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-4">Recorded By</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-4">Bill Link</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1168,8 +1168,8 @@ export const InventoryPage: React.FC = () => {
                     {isBrandOpen && (
                       <div className="bg-gray-50/50 p-3 border-t border-gray-100 overflow-x-auto">
                         <table className="w-full text-xs text-left border-collapse min-w-[700px]">
-                          <thead>
-                            <tr className="border-b border-gray-200 text-gray-500 font-semibold uppercase text-[11px] tracking-wider">
+                          <thead className="sticky top-0 z-10 bg-gray-50 shadow-xs">
+                            <tr className="border-b border-gray-200 text-gray-500 font-semibold uppercase text-[11px] tracking-wider bg-gray-50">
                               <th className="py-2 px-3">Variant</th>
                               <th className="py-2 px-3">Batch #</th>
                               <th className="py-2 px-3 text-right">Qty</th>

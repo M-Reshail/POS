@@ -403,17 +403,17 @@ export const ExpensesPage: React.FC = () => {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto border border-gray-300 rounded-xl shadow-2xs">
+            <div className="overflow-auto max-h-[calc(100vh-270px)] min-h-[350px] border border-gray-300 rounded-xl shadow-2xs">
               <table className="w-full text-xs text-left min-w-[540px]">
-                <thead>
+                <thead className="sticky top-0 z-20 shadow-xs">
                   <tr className="bg-gray-100 text-gray-700 uppercase border-b-2 border-gray-300 font-bold tracking-wider text-[11px]">
-                    <th className="py-3 px-3">Date</th>
-                    <th className="py-3 px-3">Title</th>
-                    <th className="py-3 px-3">Category</th>
-                    <th className="py-3 px-3">Description</th>
-                    <th className="py-3 px-3">By</th>
-                    <th className="py-3 px-3 text-right">Amount</th>
-                    <th className="py-3 px-3 text-center">Action</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3">Date</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3">Title</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3">Category</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3">Description</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3">By</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3 text-right">Amount</th>
+                    <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">

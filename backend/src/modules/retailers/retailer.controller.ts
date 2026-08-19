@@ -25,8 +25,14 @@ const ledgerQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+const recordPaymentSchema = z.object({
+  amount: z.number().positive('Payment amount must be positive.'),
+});
+
 const ERROR_MAP = {
   RETAILER_NOT_FOUND: { status: 404, message: 'Retailer not found.' },
+  INVALID_PAYMENT_AMOUNT: { status: 422, message: 'Payment amount must be greater than zero.' },
+  NO_PENDING_BILLS: { status: 409, message: 'This retailer has no pending bills to pay.' },
 };
 
 // ── Controllers ───────────────────────────────────────────────────────────────
@@ -71,5 +77,15 @@ export const getRetailerLedger = async (req: Request, res: Response): Promise<vo
       req.params.id, query.data.limit, query.data.offset
     );
     ok(res, ledger);
+  } catch (error) { handleServiceError(res, error, ERROR_MAP); }
+};
+
+/** POST /api/retailers/:id/record-payment — Admin records a FIFO payment across all pending bills */
+export const recordRetailerPayment = async (req: Request, res: Response): Promise<void> => {
+  const parsed = recordPaymentSchema.safeParse(req.body);
+  if (!parsed.success) { badRequest(res, 'Validation failed.', parsed.error.flatten().fieldErrors); return; }
+  try {
+    const plan = await retailerService.recordRetailerPayment(req.params.id, parsed.data.amount);
+    ok(res, { plan });
   } catch (error) { handleServiceError(res, error, ERROR_MAP); }
 };

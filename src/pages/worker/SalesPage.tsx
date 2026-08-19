@@ -1229,14 +1229,14 @@ ${otherPendingText}Thank you for your business!
                     </div>
                     <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
                       <table className="w-full text-xs min-w-[460px]">
-                        <thead>
-                          <tr className="border-b border-gray-100 text-gray-500">
-                            <th className="text-left py-1 pr-2">Item</th>
-                            <th className="text-center py-1 px-1">Qty</th>
-                            <th className="text-center py-1 px-1">Price</th>
-                            <th className="text-center py-1 px-1">Discount</th>
-                            <th className="text-right py-1 px-1">Total</th>
-                            <th className="py-1 px-1"></th>
+                        <thead className="sticky top-0 z-10 bg-white shadow-xs">
+                          <tr className="border-b border-gray-200 text-gray-600 bg-gray-50/95">
+                            <th className="text-left py-1.5 pr-2">Item</th>
+                            <th className="text-center py-1.5 px-1">Qty</th>
+                            <th className="text-center py-1.5 px-1">Price</th>
+                            <th className="text-center py-1.5 px-1">Discount</th>
+                            <th className="text-right py-1.5 px-1">Total</th>
+                            <th className="py-1.5 px-1"></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1590,21 +1590,21 @@ ${otherPendingText}Thank you for your business!
         {viewMode === 'history' && (
           <div>
             <Card>
-              <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+              <div className="overflow-auto max-h-[calc(100vh-270px)] min-h-[350px] border border-gray-200 rounded-xl shadow-2xs">
                 <table className="w-full text-xs min-w-[540px]">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-gray-500">
-                      <th className="text-left py-2 px-2">Bill#</th>
-                      <th className="text-left py-2 px-2">Retailer</th>
-                      <th className="text-left py-2 px-2">Worker</th>
-                      <th className="text-right py-2 px-2">Total</th>
-                      <th className="text-right py-2 px-2">Paid</th>
-                      <th className="text-right py-2 px-2">Udhari</th>
-                      <th className="text-right py-2 px-2">Discount</th>
-                      <th className="text-center py-2 px-2">Mode</th>
-                      <th className="text-center py-2 px-2">Status</th>
-                      <th className="text-left py-2 px-2">Date</th>
-                      <th className="py-2 px-2"></th>
+                  <thead className="sticky top-0 z-20 shadow-xs">
+                    <tr className="bg-gray-100 text-gray-700 font-bold uppercase tracking-wider text-[11px] border-b border-gray-300">
+                      <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Bill#</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Retailer</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Worker</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Total</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Paid</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Udhari</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Discount</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Mode</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Status</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Date</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1649,16 +1649,16 @@ ${otherPendingText}Thank you for your business!
               {rgbHistoryLoading ? (
                 <div className="py-8 text-center text-sm text-gray-400">Loading RGB history...</div>
               ) : (
-                <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                <div className="overflow-auto max-h-[calc(100vh-270px)] min-h-[350px] border border-gray-200 rounded-xl shadow-2xs">
                   <table className="w-full text-xs min-w-[540px]">
-                    <thead>
-                      <tr className="border-b border-gray-100 text-gray-500">
-                        <th className="text-left py-2 px-2">Date</th>
-                        <th className="text-left py-2 px-2">Retailer</th>
-                        <th className="text-left py-2 px-2">RGB Item</th>
-                        <th className="text-center py-2 px-2">Crate Exchange Activity</th>
-                        <th className="text-left py-2 px-2">Worker</th>
-                        <th className="text-center py-2 px-2">Bill Link</th>
+                    <thead className="sticky top-0 z-20 shadow-xs">
+                      <tr className="bg-gray-100 text-gray-700 font-bold uppercase tracking-wider text-[11px] border-b border-gray-300">
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Date</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Retailer</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">RGB Item</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Crate Exchange Activity</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Worker</th>
+                        <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Bill Link</th>
                       </tr>
                     </thead>
                     <tbody>

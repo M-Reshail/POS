@@ -325,8 +325,8 @@ export const AdminDashboard: React.FC = () => {
 
               <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
                 <table className="w-full text-left border-collapse min-w-[480px]">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-[11px] font-bold uppercase text-slate-400 tracking-wider">
+                  <thead className="sticky top-0 z-10 bg-white shadow-xs">
+                    <tr className="border-b border-slate-100 text-[11px] font-bold uppercase text-slate-400 tracking-wider bg-slate-50">
                       <th className="py-2.5 px-3">Bill #</th>
                       <th className="py-2.5 px-3">Retailer</th>
                       <th className="py-2.5 px-3">Date</th>
