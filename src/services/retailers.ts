@@ -22,7 +22,9 @@ export const retailersService = {
   getLedger: async (
     id: string,
     limit = 15,
-    offset = 0
+    offset = 0,
+    startDate?: string,
+    endDate?: string
   ): Promise<{
     retailer: { id: string; shopName: string; ownerName: string };
     outstanding: number;
@@ -30,7 +32,7 @@ export const retailersService = {
     pagination: { total: number; limit: number; offset: number };
   }> => {
     const response: any = await api.get(`/retailers/${id}/ledger`, {
-      params: { limit, offset },
+      params: { limit, offset, startDate, endDate },
     });
     return response.data;
   },

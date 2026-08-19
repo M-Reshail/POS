@@ -92,22 +92,35 @@ export const updateRetailer = async (id: string, input: UpdateRetailerInput) => 
 export const getRetailerLedger = async (
   retailerId: string,
   limit = 50,
-  offset = 0
+  offset = 0,
+  startDate?: string,
+  endDate?: string
 ) => {
   const retailer = await prisma.retailer.findUnique({ where: { id: retailerId } });
   if (!retailer) throw new Error('RETAILER_NOT_FOUND');
 
+  const whereClause: Prisma.LedgerEntryWhereInput = { retailerId };
+  if (startDate || endDate) {
+    whereClause.createdAt = {};
+    if (startDate) whereClause.createdAt.gte = new Date(startDate);
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      whereClause.createdAt.lte = end;
+    }
+  }
+
   const [entries, total, outstanding] = await Promise.all([
     prisma.ledgerEntry.findMany({
-      where: { retailerId },
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       take: limit,
       skip: offset,
       include: {
-        bill: { select: { id: true, billNumber: true, total: true } },
+        bill: { select: { id: true, billNumber: true, total: true, pendingAmount: true, status: true } },
       },
     }),
-    prisma.ledgerEntry.count({ where: { retailerId } }),
+    prisma.ledgerEntry.count({ where: whereClause }),
     getRetailerOutstanding(retailerId),
   ]);
 
