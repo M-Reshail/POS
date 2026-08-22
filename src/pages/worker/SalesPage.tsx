@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Button, Card, InfiniteScrollTrigger } from '../../components/common';
+import { Button, Card } from '../../components/common';
 import { useStore } from '../../store';
 import {
   ShoppingCart, Trash2, Droplet, Edit2, Check, Search, X,
@@ -68,20 +68,16 @@ export const SalesPage: React.FC = () => {
   const [rgbExchanges, setRgbExchanges] = useState<Record<string, { cratesGiven: number; cratesReturned: number }>>({});
   const [retailerRGBBalances, setRetailerRGBBalances] = useState<RGBRetailerBalance[]>([]);
 
-  // History tab (Server-side paginated)
+  // History tab (Full dataset loaded in single call)
   const [historySearchTerm, setHistorySearchTerm] = useState('');
   const [historyDateFilter, setHistoryDateFilter] = useState('');
   const [selectedBillForDetails, setSelectedBillForDetails] = useState<string | null>(null);
   const [historyBills, setHistoryBills] = useState<Bill[]>([]);
-  const [totalHistoryBills, setTotalHistoryBills] = useState(0);
   const [historyBillsLoading, setHistoryBillsLoading] = useState(false);
-  const [loadingMoreHistoryBills, setLoadingMoreHistoryBills] = useState(false);
 
-  // RGB History tab (Server-side paginated)
+  // RGB History tab (Full dataset loaded in single call)
   const [rgbHistory, setRgbHistory] = useState<RGBTransactionRecord[]>([]);
-  const [totalRgbHistory, setTotalRgbHistory] = useState(0);
   const [rgbHistoryLoading, setRgbHistoryLoading] = useState(false);
-  const [loadingMoreRgbHistory, setLoadingMoreRgbHistory] = useState(false);
 
   // Add Retailer Modal
   const [showAddRetailerModal, setShowAddRetailerModal] = useState(false);
@@ -108,13 +104,11 @@ export const SalesPage: React.FC = () => {
       .catch(() => setRetailerRGBBalances([]));
   }, [selectedRetailer]);
 
-  const loadHistoryBills = async (count?: number) => {
-    const limitToFetch = count ?? Math.max(10, historyBills.length);
+  const loadHistoryBills = async () => {
     setHistoryBillsLoading(true);
     try {
-      const res = await billsService.list({ limit: limitToFetch, offset: 0 });
+      const res = await billsService.list({ limit: 2000 });
       setHistoryBills(res.bills || []);
-      setTotalHistoryBills(res.total || 0);
     } catch (err) {
       console.error('Failed to load history bills:', err);
     } finally {
@@ -122,50 +116,15 @@ export const SalesPage: React.FC = () => {
     }
   };
 
-  const handleLoadMoreHistoryBills = async () => {
-    if (loadingMoreHistoryBills || historyBills.length >= totalHistoryBills) return;
-    setLoadingMoreHistoryBills(true);
-    try {
-      const nextOffset = historyBills.length;
-      const res = await billsService.list({ limit: 10, offset: nextOffset });
-      if (res.bills?.length) {
-        setHistoryBills((prev) => [...prev, ...res.bills]);
-        setTotalHistoryBills(res.total || totalHistoryBills);
-      }
-    } catch (err) {
-      console.error('Failed to load more history bills:', err);
-    } finally {
-      setLoadingMoreHistoryBills(false);
-    }
-  };
-
   const loadRgbHistory = async () => {
     setRgbHistoryLoading(true);
     try {
-      const res = await rgbService.getTransactions({ limit: 10, offset: 0 });
+      const res = await rgbService.getTransactions({ limit: 2000 });
       setRgbHistory(res.transactions || []);
-      setTotalRgbHistory(res.total || 0);
     } catch (err) {
       console.error('Failed to load RGB history:', err);
     } finally {
       setRgbHistoryLoading(false);
-    }
-  };
-
-  const handleLoadMoreRgbHistory = async () => {
-    if (loadingMoreRgbHistory || rgbHistory.length >= totalRgbHistory) return;
-    setLoadingMoreRgbHistory(true);
-    try {
-      const nextOffset = rgbHistory.length;
-      const res = await rgbService.getTransactions({ limit: 10, offset: nextOffset });
-      if (res.transactions?.length) {
-        setRgbHistory((prev) => [...prev, ...res.transactions]);
-        setTotalRgbHistory(res.total || totalRgbHistory);
-      }
-    } catch (err) {
-      console.error('Failed to load more RGB history:', err);
-    } finally {
-      setLoadingMoreRgbHistory(false);
     }
   };
 
@@ -1627,11 +1586,6 @@ ${otherPendingText}Thank you for your business!
                     ))}
                   </tbody>
                 </table>
-                {/* Reliable Infinite Scroll Trigger */}
-                <InfiniteScrollTrigger
-                  onLoadMore={handleLoadMoreHistoryBills}
-                  hasMore={historyBills.length < totalHistoryBills}
-                />
                 {filteredHistoryBills.length === 0 && (
                   <p className="text-center text-gray-400 py-8 text-sm">
                     {historyBillsLoading ? 'Loading bills...' : 'No bills found'}
@@ -1704,12 +1658,6 @@ ${otherPendingText}Thank you for your business!
                       ))}
                     </tbody>
                   </table>
-                  {/* Reliable Infinite Scroll Trigger */}
-                  <InfiniteScrollTrigger
-                    onLoadMore={handleLoadMoreRgbHistory}
-                    hasMore={rgbHistory.length < totalRgbHistory}
-                    color="text-teal-600"
-                  />
                   {groupedWorkerRgbHistory.length === 0 && (
                     <p className="text-center text-gray-400 py-8 text-sm">No RGB activity recorded yet</p>
                   )}

@@ -14,7 +14,7 @@ export const rgbService = {
     limit?: number;
     offset?: number;
   }): Promise<{ transactions: RGBTransactionRecord[]; total: number; limit?: number; offset?: number }> => {
-    const response: any = await api.get('/rgb/transactions', { params });
+    const response: any = await api.get('/rgb/transactions', { params: { limit: 2000, ...params } });
     return response.data;
   },
 

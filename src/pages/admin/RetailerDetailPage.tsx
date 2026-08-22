@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Card, Button, Modal, InfiniteScrollTrigger } from '../../components/common';
+import { Card, Button, Modal } from '../../components/common';
 import { useStore } from '../../store';
 import {
   ArrowLeft,
@@ -24,7 +24,8 @@ import {
 } from 'lucide-react';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import { retailersService } from '../../services/retailers';
-import { Retailer, LedgerEntry } from '../../types';
+import { billsService } from '../../services/bills';
+import { Retailer, LedgerEntry, Bill } from '../../types';
 import { ExpandableBillRow } from '../../components/bills/ExpandableBillRow';
 
 const ENTRY_TYPE_BADGES: Record<string, { bg: string; text: string; label: string }> = {
@@ -78,31 +79,201 @@ export const RetailerDetailPage: React.FC = () => {
 
   const [retailer, setRetailer] = useState<Retailer | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
-  const [totalEntries, setTotalEntries] = useState(0);
+
   const [outstanding, setOutstanding] = useState(0);
 
   const [loadingRetailer, setLoadingRetailer] = useState(true);
   const [loadingLedger, setLoadingLedger] = useState(true);
   const [error, setError] = useState('');
-  const [loadingMore, setLoadingMore] = useState(false);
 
   // Record Payment (retailer-level FIFO) state
   const [showRecordPayment, setShowRecordPayment] = useState(false);
   const [recordPaymentAmount, setRecordPaymentAmount] = useState('');
   const [recordPaymentLoading, setRecordPaymentLoading] = useState(false);
 
-  // Consolidated Bill Generator Modal State
+  // Pending Bills (Consolidated) Modal State
   const [isConsolidatedModalOpen, setIsConsolidatedModalOpen] = useState(false);
+  const [consolidatedBills, setConsolidatedBills] = useState<Bill[]>([]);
+  const [consolidatedLoading, setConsolidatedLoading] = useState(false);
+  const [consolidatedFetched, setConsolidatedFetched] = useState(false);
 
-  // Date Range Report Modal State (Part C)
+  // Date Range Report Modal State
   const [isDateReportModalOpen, setIsDateReportModalOpen] = useState(false);
   const [dateReportStart, setDateReportStart] = useState('');
   const [dateReportEnd, setDateReportEnd] = useState('');
+  const [activeDatePreset, setActiveDatePreset] = useState<'today' | 'this_month' | 'last_30' | 'all' | null>(null);
   const [dateReportLoading, setDateReportLoading] = useState(false);
+  const [dateReportBills, setDateReportBills] = useState<Bill[]>([]);
+  const [dateReportFetched, setDateReportFetched] = useState(false);
 
   // Friendly Grouped View vs Raw Audit Log View
   const [ledgerViewMode, setLedgerViewMode] = useState<'friendly' | 'detailed'>('friendly');
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+
+  // Fetch pending & partial bills from the Bill table
+  const handleFetchPendingBills = async () => {
+    if (!id) return;
+    setConsolidatedLoading(true);
+    try {
+      const [pendingRes, partialRes] = await Promise.all([
+        billsService.list({ retailerId: id, status: 'pending' as any, limit: 500, offset: 0 }),
+        billsService.list({ retailerId: id, status: 'partial' as any, limit: 500, offset: 0 }),
+      ]);
+      const combined = [
+        ...(pendingRes.bills || []),
+        ...(partialRes.bills || []),
+      ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      setConsolidatedBills(combined);
+      setConsolidatedFetched(true);
+    } catch {
+      store.addNotification('error', 'Failed to load pending bills.');
+    } finally {
+      setConsolidatedLoading(false);
+    }
+  };
+
+  // Fetch bills for Date Range Report
+  const handleFetchDateReport = async (start = dateReportStart, end = dateReportEnd, isAllTimePreset = false) => {
+    if (!id) return;
+    setDateReportLoading(true);
+    try {
+      const isAllTime = isAllTimePreset || (!start && !end);
+      const res = await billsService.list({
+        retailerId: id,
+        limit: 500,
+        offset: 0,
+        startDate: isAllTime ? undefined : (start || undefined),
+        endDate: isAllTime ? undefined : (end || undefined),
+      } as any);
+      const bills = res.bills || [];
+      setDateReportBills(bills);
+      setDateReportFetched(true);
+
+      // If All Time was selected or both dates were empty, populate the date inputs with the first and last bill dates
+      if (isAllTime && bills.length > 0) {
+        const timestamps = bills.map((b) => new Date(b.createdAt).getTime());
+        const minDateStr = new Date(Math.min(...timestamps)).toISOString().split('T')[0];
+        const maxDateStr = new Date(Math.max(...timestamps)).toISOString().split('T')[0];
+        setDateReportStart(minDateStr);
+        setDateReportEnd(maxDateStr);
+      }
+    } catch {
+      store.addNotification('error', 'Failed to load bills.');
+    } finally {
+      setDateReportLoading(false);
+    }
+  };
+
+  // Select a quick date preset and update/refresh preview
+  const handleSelectPreset = (presetKey: 'today' | 'this_month' | 'last_30' | 'all') => {
+    setActiveDatePreset(presetKey);
+    let start = '';
+    let end = '';
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    if (presetKey === 'today') {
+      start = todayStr;
+      end = todayStr;
+      setDateReportStart(start);
+      setDateReportEnd(end);
+    } else if (presetKey === 'this_month') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+      end = todayStr;
+      setDateReportStart(start);
+      setDateReportEnd(end);
+    } else if (presetKey === 'last_30') {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 30);
+      start = d.toISOString().split('T')[0];
+      end = todayStr;
+      setDateReportStart(start);
+      setDateReportEnd(end);
+    } else if (presetKey === 'all') {
+      start = '';
+      end = '';
+      setDateReportStart('');
+      setDateReportEnd('');
+    }
+
+    // Automatically fetch and show the bills for the selected preset
+    handleFetchDateReport(start, end, presetKey === 'all');
+  };
+
+
+  // Direct print pending bills (fetches if not already loaded)
+  const handleDirectPrintPendingBills = async () => {
+    if (consolidatedBills.length > 0) {
+      handlePrintConsolidatedBill(consolidatedBills);
+      return;
+    }
+    if (!id) return;
+    setConsolidatedLoading(true);
+    try {
+      const [pendingRes, partialRes] = await Promise.all([
+        billsService.list({ retailerId: id, status: 'pending' as any, limit: 500, offset: 0 }),
+        billsService.list({ retailerId: id, status: 'partial' as any, limit: 500, offset: 0 }),
+      ]);
+      const combined = [
+        ...(pendingRes.bills || []),
+        ...(partialRes.bills || []),
+      ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      setConsolidatedBills(combined);
+      setConsolidatedFetched(true);
+      if (combined.length > 0) {
+        handlePrintConsolidatedBill(combined);
+      } else {
+        store.addNotification('info', 'No pending bills found to print.');
+      }
+    } catch {
+      store.addNotification('error', 'Failed to load bills for printing.');
+    } finally {
+      setConsolidatedLoading(false);
+    }
+  };
+
+  // Direct print date range report (fetches if not already loaded)
+  const handleDirectPrintDateReport = async () => {
+    if (dateReportBills.length > 0) {
+      handlePrintDateReport(dateReportBills, dateReportStart, dateReportEnd);
+      return;
+    }
+    if (!id) return;
+    setDateReportLoading(true);
+    try {
+      const isAllTime = activeDatePreset === 'all' || (!dateReportStart && !dateReportEnd);
+      const res = await billsService.list({
+        retailerId: id,
+        limit: 500,
+        offset: 0,
+        startDate: isAllTime ? undefined : (dateReportStart || undefined),
+        endDate: isAllTime ? undefined : (dateReportEnd || undefined),
+      } as any);
+      const bills = res.bills || [];
+      setDateReportBills(bills);
+      setDateReportFetched(true);
+      if (bills.length > 0) {
+        if (isAllTime) {
+          const timestamps = bills.map((b) => new Date(b.createdAt).getTime());
+          const minDateStr = new Date(Math.min(...timestamps)).toISOString().split('T')[0];
+          const maxDateStr = new Date(Math.max(...timestamps)).toISOString().split('T')[0];
+          setDateReportStart(minDateStr);
+          setDateReportEnd(maxDateStr);
+          handlePrintDateReport(bills, minDateStr, maxDateStr);
+        } else {
+          handlePrintDateReport(bills, dateReportStart, dateReportEnd);
+        }
+      } else {
+        store.addNotification('info', 'No bills found in selected date range to print.');
+      }
+    } catch {
+      store.addNotification('error', 'Failed to load bills for printing.');
+    } finally {
+      setDateReportLoading(false);
+    }
+  };
+
+
 
   const toggleExpandGroup = (groupId: string) => {
     setExpandedGroupIds((prev) => {
@@ -113,132 +284,148 @@ export const RetailerDetailPage: React.FC = () => {
     });
   };
 
-  // Print Consolidated Bill Thermal Statement
-  const handlePrintConsolidatedBill = (pendingGroups: GroupedLedgerTransaction[]) => {
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  const fmt = (n: number) => n.toLocaleString('en-PK');
+  const fmtDate = (d: Date | string) => {
+    const dt = new Date(d);
+    return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getFullYear()).slice(2)}`;
+  };
+  const LINE = '----------------------------------------';
+
+
+  // Print Consolidated Bill Thermal Statement — sources from Bill records directly
+  const handlePrintConsolidatedBill = (bills: Bill[]) => {
     if (!retailer) return;
-    const grandTotalPending = pendingGroups.reduce((sum, g) => sum + g.netChange, 0);
+    const grandTotal = bills.reduce((s, b) => s + Number(b.pendingAmount), 0);
+    const W = 40; // thermal width chars
 
-    const billLines = pendingGroups
-      .map((g, idx) => {
-        const bNum = g.billNumber ? `#${g.billNumber}` : `Bill ${idx + 1}`;
-        const dateStr = new Date(g.createdAt).toLocaleDateString();
-        const totalStr = g.saleAmount ? `₨${g.saleAmount.toLocaleString('en-PK')}` : '—';
-        const paidStr = `₨${(g.paidAmount || 0).toLocaleString('en-PK')}`;
-        const pendingStr = `₨${g.netChange.toLocaleString('en-PK')}`;
+    const header = [
+      LINE,
+      '             ABDULHAQ'.padEnd(W),
+      LINE,
+      `Date: ${new Date().toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}`,
+      `Retailer: ${retailer.shopName} (${retailer.ownerName})`,
+      `Phone: ${retailer.mobileNumber || 'N/A'}`,
+      `Address: ${retailer.address}`,
+      LINE,
+      `PENDING BILLS (${bills.length})`,
+      LINE,
+      'Bill         Date      Sale    Paid    Due',
+    ].join('\n');
 
-        return `${bNum.padEnd(16)} ${dateStr.padEnd(12)} ${pendingStr.padStart(10)}\n  (Sale: ${totalStr} | Paid: ${paidStr})`;
-      })
-      .join('\n────────────────────────────────────────\n');
+    const rows = bills.map((b) => {
+      const billShort = `#${b.billNumber.replace(/^BL-\d{8}-/, '')}`.padEnd(13);
+      const dateS = fmtDate(b.createdAt).padEnd(10);
+      const sale = fmt(Number(b.total)).padStart(6);
+      const paid = fmt(Number(b.paidAmount)).padStart(6);
+      const due  = fmt(Number(b.pendingAmount)).padStart(6);
+      return `${billShort}${dateS}${sale}  ${paid}  ${due}`;
+    }).join('\n');
 
-    const content = `
-╔════════════════════════════════════════╗
-║                ABDULHAQ                ║
-║      CONSOLIDATED PENDING STATEMENT     ║
-╚════════════════════════════════════════╝
+    const footer = [
+      LINE,
+      `TOTAL OUTSTANDING:${fmt(grandTotal).padStart(W - 18)}`,
+      LINE,
+      '       Thank you for your business!',
+    ].join('\n');
 
-Date: ${new Date().toLocaleString()}
-
-RETAILER: ${retailer.shopName} (${retailer.ownerName})
-Phone:    ${retailer.mobileNumber || 'N/A'}
-Address:  ${retailer.address}
-
-────────────────────────────────────────
-PENDING BILLS BREAKDOWN (${pendingGroups.length} bills)
-────────────────────────────────────────
-${billLines}
-
-────────────────────────────────────────
-GRAND TOTAL COMBINED PENDING:
-₨${grandTotalPending.toLocaleString('en-PK')}
-────────────────────────────────────────
-
-This is a consolidated statement of all unpaid balances.
-Thank you for your business!
-════════════════════════════════════════
-    `;
-
-    navigator.clipboard.writeText(content).catch(() => {});
+    const content = `${header}\n${rows}\n${footer}`;
     const w = window.open('', '', 'height=600,width=800');
     if (w) {
       w.document.write(
-        `<html><head><title>Consolidated Statement - ${retailer.shopName}</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{white-space:pre;}</style></head><body><pre>${content}</pre><script>window.print();window.close();</script></body></html>`
+        `<html><head><title>Consolidated Statement - ${retailer.shopName}</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{white-space:pre;}</style></head><body><pre>${content}</pre><script>window.print();window.close();<\/script></body></html>`
       );
       w.document.close();
     }
   };
 
-  // Print Date Range Statement (Part C)
-  const handlePrintDateReport = (
-    entries: LedgerEntry[],
-    startDate?: string,
-    endDate?: string
-  ) => {
+  // Print Date Range Statement — sources from Bill records directly (one row per bill)
+  const handlePrintDateReport = (bills: Bill[], startDate?: string, endDate?: string) => {
     if (!retailer) return;
+    const W = 40;
 
-    const totalSales = entries
-      .filter((e) => e.entryType === 'sale')
-      .reduce((s, e) => s + Number(e.amount), 0);
-    const totalPaid = entries
-      .filter((e) => e.entryType === 'payment')
-      .reduce((s, e) => s + Number(e.amount), 0);
-    const netChange = totalSales - totalPaid;
+    const totalSales = bills.reduce((s, b) => s + Number(b.total), 0);
+    const totalPaid  = bills.reduce((s, b) => s + Number(b.paidAmount), 0);
+    const totalDue   = bills.reduce((s, b) => s + Number(b.pendingAmount), 0);
 
-    const transactionLines = entries
-      .map((e) => {
-        const dStr = new Date(e.createdAt).toLocaleDateString();
-        const typeStr = e.entryType.toUpperCase().padEnd(7);
-        const bRef = e.bill?.billNumber ? `#${e.bill.billNumber}` : (e.notes ? e.notes.slice(0, 15) : '—');
-        const sign = e.entryType === 'sale' ? '+' : '−';
-        const amtStr = `${sign}₨${Number(e.amount).toLocaleString('en-PK')}`.padStart(10);
-        const balStr = `(Bal: ₨${Number(e.balance).toLocaleString('en-PK')})`;
+    const fmtPeriodDate = (val?: string | Date) => {
+      if (!val) return '';
+      if (typeof val === 'string' && val.includes('-')) {
+        const parts = val.split('-');
+        if (parts.length === 3) {
+          const [y, m, d] = parts;
+          return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+        }
+      }
+      const dt = new Date(val);
+      if (isNaN(dt.getTime())) return String(val);
+      const day = String(dt.getDate()).padStart(2, '0');
+      const month = String(dt.getMonth() + 1).padStart(2, '0');
+      const year = dt.getFullYear();
+      return `${day}/${month}/${year}`;
+    };
 
-        return `${dStr.padEnd(11)} ${typeStr} ${bRef.padEnd(15)} ${amtStr}  ${balStr}`;
-      })
-      .join('\n');
+    let startFormatted = fmtPeriodDate(startDate);
+    let endFormatted = fmtPeriodDate(endDate);
 
-    const content = `
-╔════════════════════════════════════════╗
-║                ABDULHAQ                ║
-║           DATE RANGE REPORT            ║
-╚════════════════════════════════════════╝
+    // If dates are not set (e.g. All Time), derive from earliest and latest bill in dataset
+    if ((!startFormatted || !endFormatted) && bills.length > 0) {
+      const timestamps = bills.map((b) => new Date(b.createdAt).getTime());
+      const minDate = new Date(Math.min(...timestamps));
+      const maxDate = new Date(Math.max(...timestamps));
+      if (!startFormatted) startFormatted = fmtPeriodDate(minDate);
+      if (!endFormatted) endFormatted = fmtPeriodDate(maxDate);
+    }
+    if (!startFormatted) startFormatted = fmtPeriodDate(new Date());
+    if (!endFormatted) endFormatted = fmtPeriodDate(new Date());
 
-Period:    ${startDate || 'All Time'} to ${endDate || 'Today'}
-Generated: ${new Date().toLocaleString()}
+    const header = [
+      LINE,
+      '             ABDULHAQ'.padEnd(W),
+      LINE,
+      `Period: ${startFormatted} - ${endFormatted}`,
+      `RETAILER: ${retailer.shopName} (${retailer.ownerName})`,
+      `Phone: ${retailer.mobileNumber || 'N/A'}`,
+      `Address: ${retailer.address}`,
+      LINE,
+      `BILLS (${bills.length})`,
+      LINE,
+      'Date       Bill No.      Amount  Status',
+    ].join('\n');
 
-RETAILER: ${retailer.shopName} (${retailer.ownerName})
-Phone:    ${retailer.mobileNumber || 'N/A'}
-Address:  ${retailer.address}
+    const rows = bills.map((b) => {
+      const dateS  = fmtDate(b.createdAt).padEnd(11);
+      const billNo = `#${b.billNumber.replace(/^BL-\d{8}-/, '')}`.padEnd(14);
+      const amt    = fmt(Number(b.total)).padStart(6);
+      const status = (b.status === 'paid' ? 'PAID' : b.status === 'partial' ? 'PARTIAL' : 'UNPAID').padStart(8);
+      return `${dateS}${billNo}${amt}${status}`;
+    }).join('\n');
 
-────────────────────────────────────────
-TRANSACTION HISTORY (${entries.length} records)
-────────────────────────────────────────
-${transactionLines || 'No transactions in selected period.'}
+    const footer = [
+      LINE,
+      `TOTAL BILLS: ${bills.length}`,
+      `TOTAL SALES: Rs ${fmt(totalSales)}`,
+      LINE,
+      `Paid:        Rs ${fmt(totalPaid)}`,
+      `Outstanding: Rs ${fmt(totalDue)}`,
+      LINE,
+      '       Thank you for your business!',
+    ].join('\n');
 
-────────────────────────────────────────
-PERIOD FINANCIAL SUMMARY
-────────────────────────────────────────
-Total Sales:        ₨${totalSales.toLocaleString('en-PK')}
-Total Payments:     ₨${totalPaid.toLocaleString('en-PK')}
-Net Period Change:  ${netChange >= 0 ? '+' : ''}₨${netChange.toLocaleString('en-PK')}
-Current Total Debt: ₨${(retailer.outstanding || 0).toLocaleString('en-PK')}
-────────────────────────────────────────
-
-This statement lists all account transactions in the period.
-Thank you for your business!
-════════════════════════════════════════
-    `;
-
-    navigator.clipboard.writeText(content).catch(() => {});
+    const content = `${header}\n${rows}\n${footer}`;
     const w = window.open('', '', 'height=600,width=800');
     if (w) {
       w.document.write(
-        `<html><head><title>Date Range Report - ${retailer.shopName}</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{white-space:pre;}</style></head><body><pre>${content}</pre><script>window.print();window.close();</script></body></html>`
+        `<html><head><title>Date Range Report - ${retailer.shopName}</title><style>body{font-family:monospace;padding:20px;font-size:12px;}pre{white-space:pre;}</style></head><body><pre>${content}</pre><script>window.print();window.close();<\/script></body></html>`
       );
       w.document.close();
     }
   };
 
   // Edit Retailer Modal State
+
+
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState<RetailerEditForm>({
     shopName: '',
@@ -269,15 +456,14 @@ Thank you for your business!
       .finally(() => setLoadingRetailer(false));
   }, [id]);
 
-  // Initial load: First page of 10 ledger entries
+  // Load ALL ledger entries in a single request (no pagination — scale is small enough)
   useEffect(() => {
     if (!id) return;
     setLoadingLedger(true);
     retailersService
-      .getLedger(id, 10, 0)
+      .getLedger(id)
       .then((data) => {
         setLedgerEntries(data.entries || []);
-        setTotalEntries(data.pagination?.total || 0);
         if (typeof data.outstanding === 'number') {
           setOutstanding(data.outstanding);
         }
@@ -288,38 +474,18 @@ Thank you for your business!
       .finally(() => setLoadingLedger(false));
   }, [id]);
 
-  // Incremental server-side pagination on scroll
-  const handleLoadMore = async () => {
-    if (loadingMore || ledgerEntries.length >= totalEntries) return;
-    setLoadingMore(true);
-    try {
-      const nextOffset = ledgerEntries.length;
-      const data = await retailersService.getLedger(id!, 10, nextOffset);
-      if (data.entries?.length) {
-        setLedgerEntries((prev) => [...prev, ...data.entries]);
-        setTotalEntries(data.pagination?.total || totalEntries);
-      }
-    } catch (err) {
-      console.error('Failed to fetch next ledger page:', err);
-    } finally {
-      setLoadingMore(false);
-    }
-  };
-
   const refreshRetailerData = async () => {
     if (!id) return;
     try {
-      const currentLoadedCount = Math.max(10, ledgerEntries.length);
       const [updatedRetailer, ledgerData] = await Promise.all([
         retailersService.getById(id),
-        retailersService.getLedger(id, currentLoadedCount, 0),
+        retailersService.getLedger(id),
       ]);
       setRetailer(updatedRetailer);
       if (typeof updatedRetailer.outstanding === 'number') {
         setOutstanding(updatedRetailer.outstanding);
       }
       setLedgerEntries(ledgerData.entries || []);
-      setTotalEntries(ledgerData.pagination?.total || 0);
       if (typeof ledgerData.outstanding === 'number') {
         setOutstanding(ledgerData.outstanding);
       }
@@ -776,16 +942,22 @@ Thank you for your business!
                   </div>
                 )}
 
-                {/* Consolidated Bill Generator Button (Shown if 2+ pending bills) */}
-                {groupedTransactions.filter((g) => g.netChange > 0).length >= 2 && (
+                {/* Generate Pending Bills Button — shown whenever the retailer has an outstanding balance.
+                    NOTE: Do NOT gate this on groupedTransactions count — the ledger is paginated and the
+                    first page of entries may be all-paid history, hiding the button incorrectly (Bug 2). */}
+                {outstanding > 0 && (
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => setIsConsolidatedModalOpen(true)}
+                    onClick={() => {
+                      setConsolidatedBills([]);
+                      setConsolidatedFetched(false);
+                      setIsConsolidatedModalOpen(true);
+                    }}
                     className="flex items-center gap-1.5 text-xs border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 font-bold"
                   >
                     <FileText size={14} className="text-amber-700" />
-                    Generate Consolidated Bill
+                    Generate Pending Bills
                   </Button>
                 )}
 
@@ -1174,12 +1346,6 @@ Thank you for your business!
                 </table>
               )}
             </div>
-
-            {/* Reliable Infinite Scroll Trigger */}
-            <InfiniteScrollTrigger
-              onLoadMore={handleLoadMore}
-              hasMore={ledgerEntries.length < totalEntries}
-            />
           </Card>
         </div>
       </PageContainer>
@@ -1288,119 +1454,180 @@ Thank you for your business!
           </div>
         </div>
       </Modal>
-      {/* ── CONSOLIDATED BILL MODAL ── */}
+      {/* ── GENERATE PENDING BILLS MODAL ── */}
       <Modal
         isOpen={isConsolidatedModalOpen}
-        title="Consolidated Pending Bill Statement"
-        onClose={() => setIsConsolidatedModalOpen(false)}
+        title="Generate Pending Bills"
+        size="lg"
+        onClose={() => {
+          setIsConsolidatedModalOpen(false);
+          setConsolidatedBills([]);
+          setConsolidatedFetched(false);
+        }}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setIsConsolidatedModalOpen(false);
+                setConsolidatedBills([]);
+                setConsolidatedFetched(false);
+              }}
+            >
+              Close
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={consolidatedLoading}
+              onClick={handleFetchPendingBills}
+              className="flex items-center gap-1.5 border border-amber-300 text-amber-900 hover:bg-amber-50 font-semibold"
+            >
+              <FileText size={14} className="text-amber-700" />
+              Preview
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={consolidatedLoading}
+              onClick={handleDirectPrintPendingBills}
+              className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold"
+            >
+              <Printer size={14} />
+              Print Statement
+            </Button>
+          </>
+        }
       >
-          <div className="space-y-4 text-xs">
-            <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-              <div className="flex items-center justify-between font-bold text-amber-900 mb-1">
-                <span>{retailer?.shopName}</span>
-                <span>{new Date().toLocaleDateString()}</span>
-              </div>
-              <p className="text-[11px] text-amber-800">
-                Owner: {retailer?.ownerName} • Contact: {retailer?.mobileNumber}
-              </p>
+        <div className="space-y-3 text-xs">
+          {/* Retailer Header */}
+          <div className="bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+            <div className="flex items-center justify-between font-bold text-amber-900">
+              <span>{retailer?.shopName}</span>
+              <span>{new Date().toLocaleDateString()}</span>
             </div>
-
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-gray-100 font-bold text-gray-700 uppercase text-[10px]">
-                  <tr>
-                    <th className="p-2">Bill #</th>
-                    <th className="p-2">Date</th>
-                    <th className="p-2 text-right">Sale Total</th>
-                    <th className="p-2 text-right">Paid</th>
-                    <th className="p-2 text-right font-bold text-red-600">Pending</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {groupedTransactions
-                    .filter((g) => g.netChange > 0)
-                    .map((g) => (
-                      <tr key={g.id}>
-                        <td className="p-2 font-mono font-bold text-gray-900">
-                          {g.billNumber ? `#${g.billNumber}` : '—'}
-                        </td>
-                        <td className="p-2 text-gray-600 whitespace-nowrap">
-                          {new Date(g.createdAt).toLocaleDateString()}
-                        </td>
-                        <td className="p-2 text-right">
-                          ₨{(g.saleAmount || g.amount).toLocaleString('en-PK')}
-                        </td>
-                        <td className="p-2 text-right text-emerald-700">
-                          ₨{(g.paidAmount || 0).toLocaleString('en-PK')}
-                        </td>
-                        <td className="p-2 text-right font-bold text-red-600">
-                          ₨{g.netChange.toLocaleString('en-PK')}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-                <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
-                  <tr>
-                    <td colSpan={4} className="p-2.5 text-right uppercase text-[11px]">
-                      Grand Total Combined Pending:
-                    </td>
-                    <td className="p-2.5 text-right text-sm text-red-600">
-                      ₨{groupedTransactions
-                        .filter((g) => g.netChange > 0)
-                        .reduce((sum, g) => sum + g.netChange, 0)
-                        .toLocaleString('en-PK')}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setIsConsolidatedModalOpen(false)}
-              >
-                Close
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => {
-                  const pendingGroups = groupedTransactions.filter((g) => g.netChange > 0);
-                  handlePrintConsolidatedBill(pendingGroups);
-                }}
-                className="flex items-center gap-1.5"
-              >
-                <Printer size={14} />
-                Print Consolidated Statement
-              </Button>
-            </div>
-          </div>
-        </Modal>
-
-      {/* ── DATE RANGE REPORT MODAL (Part C) ── */}
-      <Modal
-        isOpen={isDateReportModalOpen}
-        title="Date Range Transaction Report"
-        onClose={() => setIsDateReportModalOpen(false)}
-      >
-        <div className="space-y-4 text-xs">
-          <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-            <p className="font-bold text-blue-900 mb-1">{retailer?.shopName} — Statement Generator</p>
-            <p className="text-[11px] text-blue-800">
-              Generate a complete audit statement of all transactions (sales and payments, paid or pending) within a specific date window.
+            <p className="text-[11px] text-amber-800 mt-0.5">
+              Owner: {retailer?.ownerName} • Contact: {retailer?.mobileNumber || 'N/A'}
             </p>
           </div>
 
+          {/* Body Content */}
+          {consolidatedLoading ? (
+            <div className="py-8 text-center text-gray-500 text-xs font-medium">Loading pending bills…</div>
+          ) : !consolidatedFetched ? (
+            <div className="py-6 text-center text-gray-500 text-xs bg-gray-50 rounded-lg border border-dashed border-gray-200">
+              Click <span className="font-bold text-amber-800">"Preview Pending Bills"</span> below to review all unpaid &amp; partial bills before printing.
+            </div>
+          ) : consolidatedBills.length === 0 ? (
+            <div className="py-6 text-center text-gray-500 text-xs italic bg-gray-50 rounded-lg">No pending bills found for this retailer.</div>
+          ) : (
+            /* Preview Table — compact scroll container with sticky header & pinned footer */
+            <div className="border border-gray-200 rounded-lg overflow-hidden flex flex-col">
+              <div className="max-h-48 overflow-y-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-gray-100 font-bold text-gray-700 uppercase text-[10px] sticky top-0 z-10 border-b border-gray-200">
+                    <tr>
+                      <th className="p-2">Bill #</th>
+                      <th className="p-2">Date</th>
+                      <th className="p-2 text-right">Sale</th>
+                      <th className="p-2 text-right">Paid</th>
+                      <th className="p-2 text-right font-bold text-red-600">Due</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {consolidatedBills.map((b) => (
+                      <tr key={b.id} className="hover:bg-amber-50/40">
+                        <td className="p-2 font-mono font-bold text-gray-900">
+                          #{b.billNumber.replace(/^BL-\d{8}-/, '')}
+                        </td>
+                        <td className="p-2 text-gray-600 whitespace-nowrap">
+                          {new Date(b.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="p-2 text-right">₨{Number(b.total).toLocaleString('en-PK')}</td>
+                        <td className="p-2 text-right text-emerald-700 font-medium">₨{Number(b.paidAmount).toLocaleString('en-PK')}</td>
+                        <td className="p-2 text-right font-bold text-red-600">₨{Number(b.pendingAmount).toLocaleString('en-PK')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Pinned Totals Row */}
+              <div className="bg-gray-50 border-t-2 border-gray-300 px-3 py-2 flex items-center justify-between text-xs font-bold">
+                <span className="uppercase text-[11px] text-gray-600">Total Outstanding:</span>
+                <span className="text-sm text-red-600">
+                  ₨{consolidatedBills.reduce((s, b) => s + Number(b.pendingAmount), 0).toLocaleString('en-PK')}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* ── DATE RANGE REPORT MODAL ── */}
+      <Modal
+        isOpen={isDateReportModalOpen}
+        title="Date Range Bill Report"
+        size="lg"
+        onClose={() => {
+          setIsDateReportModalOpen(false);
+          setDateReportBills([]);
+          setDateReportFetched(false);
+          setActiveDatePreset(null);
+        }}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setIsDateReportModalOpen(false);
+                setDateReportBills([]);
+                setDateReportFetched(false);
+                setActiveDatePreset(null);
+              }}
+            >
+              Close
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={dateReportLoading}
+              onClick={() => handleFetchDateReport()}
+              className="flex items-center gap-1.5 border border-blue-300 text-blue-900 hover:bg-blue-50 font-semibold"
+            >
+              <FileText size={14} className="text-blue-700" />
+              Preview
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={dateReportLoading}
+              onClick={handleDirectPrintDateReport}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 font-bold"
+            >
+              <Printer size={14} />
+              Print Report
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-xs">
+          <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-200">
+            <p className="font-bold text-blue-900">{retailer?.shopName} — Bill Report Generator</p>
+          </div>
+
           {/* Date Pickers */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2.5">
             <div>
               <label className="block text-[11px] font-bold text-gray-700 mb-1">Start Date</label>
               <input
                 type="date"
                 value={dateReportStart}
-                onChange={(e) => setDateReportStart(e.target.value)}
+                onChange={(e) => {
+                  setActiveDatePreset(null);
+                  setDateReportStart(e.target.value);
+                }}
                 className="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:border-blue-500 focus:outline-none"
               />
             </div>
@@ -1409,100 +1636,104 @@ Thank you for your business!
               <input
                 type="date"
                 value={dateReportEnd}
-                onChange={(e) => setDateReportEnd(e.target.value)}
+                onChange={(e) => {
+                  setActiveDatePreset(null);
+                  setDateReportEnd(e.target.value);
+                }}
                 className="w-full text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:border-blue-500 focus:outline-none"
               />
             </div>
           </div>
 
-          {/* Quick Preset Buttons */}
-          <div className="flex items-center gap-1.5">
+          {/* Quick Preset Buttons with Active Styling */}
+          <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[10px] text-gray-500 font-bold">Presets:</span>
-            <button
-              type="button"
-              onClick={() => {
-                const today = new Date().toISOString().split('T')[0];
-                setDateReportStart(today);
-                setDateReportEnd(today);
-              }}
-              className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-semibold cursor-pointer"
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const now = new Date();
-                const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-                const today = now.toISOString().split('T')[0];
-                setDateReportStart(firstDay);
-                setDateReportEnd(today);
-              }}
-              className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-semibold cursor-pointer"
-            >
-              This Month
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const d = new Date();
-                d.setDate(d.getDate() - 30);
-                setDateReportStart(d.toISOString().split('T')[0]);
-                setDateReportEnd(new Date().toISOString().split('T')[0]);
-              }}
-              className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-semibold cursor-pointer"
-            >
-              Last 30 Days
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setDateReportStart('');
-                setDateReportEnd('');
-              }}
-              className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-semibold cursor-pointer"
-            >
-              All Time
-            </button>
+            {[
+              ['Today', 'today'],
+              ['This Month', 'this_month'],
+              ['Last 30 Days', 'last_30'],
+              ['All Time', 'all'],
+            ].map(([label, key]) => {
+              const isActive = activeDatePreset === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleSelectPreset(key as any)}
+                  className={`px-2.5 py-1 rounded-md text-[11px] transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-blue-600 text-white font-bold shadow-xs border border-blue-600'
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold border border-gray-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setIsDateReportModalOpen(false)}
-            >
-              Close
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={async () => {
-                if (!id) return;
-                try {
-                  setDateReportLoading(true);
-                  const res = await retailersService.getLedger(
-                    id,
-                    200,
-                    0,
-                    dateReportStart || undefined,
-                    dateReportEnd || undefined
-                  );
-                  handlePrintDateReport(res.entries, dateReportStart, dateReportEnd);
-                } catch (err: any) {
-                  store.addNotification('error', 'Failed to generate report.');
-                } finally {
-                  setDateReportLoading(false);
-                }
-              }}
-              loading={dateReportLoading}
-              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700"
-            >
-              <Printer size={14} />
-              Generate & Print Report
-            </Button>
-          </div>
+          {/* Preview Area */}
+          {dateReportLoading ? (
+            <div className="py-8 text-center text-gray-500 text-xs font-medium">Loading bills…</div>
+          ) : !dateReportFetched ? (
+            <div className="py-6 text-center text-gray-500 text-xs bg-gray-50 rounded-lg border border-dashed border-gray-200">
+              Select a date preset or range, then click <span className="font-bold text-blue-700">"Preview Bills"</span> to review.
+            </div>
+          ) : dateReportBills.length === 0 ? (
+            <div className="py-6 text-center text-gray-500 italic bg-gray-50 rounded-lg">No bills found in this date range.</div>
+          ) : (
+            <div className="border border-gray-200 rounded-lg overflow-hidden flex flex-col">
+              <div className="bg-gray-50 px-3 py-1.5 border-b border-gray-200 text-[11px] font-bold text-gray-600 uppercase flex items-center justify-between">
+                <span>Preview</span>
+                <span className="text-blue-700 font-bold">{dateReportBills.length} bill{dateReportBills.length !== 1 ? 's' : ''}</span>
+              </div>
+              <div className="max-h-48 overflow-y-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-gray-100 font-bold text-gray-700 uppercase text-[10px] sticky top-0 z-10 border-b border-gray-200">
+                    <tr>
+                      <th className="p-2">Date</th>
+                      <th className="p-2">Bill #</th>
+                      <th className="p-2 text-right">Amount</th>
+                      <th className="p-2 text-right">Paid</th>
+                      <th className="p-2 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {dateReportBills.map((b) => (
+                      <tr key={b.id} className="hover:bg-blue-50/30">
+                        <td className="p-2 text-gray-600 whitespace-nowrap">{new Date(b.createdAt).toLocaleDateString()}</td>
+                        <td className="p-2 font-mono font-bold text-gray-900">#{b.billNumber.replace(/^BL-\d{8}-/, '')}</td>
+                        <td className="p-2 text-right font-medium">₨{Number(b.total).toLocaleString('en-PK')}</td>
+                        <td className="p-2 text-right text-emerald-700 font-medium">₨{Number(b.paidAmount).toLocaleString('en-PK')}</td>
+                        <td className="p-2 text-center">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            b.status === 'paid' ? 'bg-emerald-100 text-emerald-700' :
+                            b.status === 'partial' ? 'bg-amber-100 text-amber-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {b.status === 'paid' ? 'PAID' : b.status === 'partial' ? 'PARTIAL' : 'UNPAID'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Pinned Totals Footer Row */}
+              <div className="bg-gray-50 border-t-2 border-gray-300 px-3 py-2 grid grid-cols-4 items-center text-xs font-bold gap-2">
+                <span className="uppercase text-[11px] text-gray-600">Totals:</span>
+                <span className="text-right text-gray-900 font-extrabold">
+                  ₨{dateReportBills.reduce((s, b) => s + Number(b.total), 0).toLocaleString('en-PK')}
+                </span>
+                <span className="text-right text-emerald-700 font-extrabold">
+                  ₨{dateReportBills.reduce((s, b) => s + Number(b.paidAmount), 0).toLocaleString('en-PK')}
+                </span>
+                <span className="text-right text-red-600 font-extrabold">
+                  Due: ₨{dateReportBills.reduce((s, b) => s + Number(b.pendingAmount), 0).toLocaleString('en-PK')}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
     </Layout>

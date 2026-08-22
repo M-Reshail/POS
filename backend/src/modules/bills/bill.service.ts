@@ -475,6 +475,8 @@ export const getBills = async (options: {
   workerId?: string;    // If set, filter to this worker
   retailerId?: string;
   status?: BillStatus;
+  startDate?: string;   // ISO date string e.g. "2026-08-01" — filters by createdAt >= start of that day
+  endDate?: string;     // ISO date string e.g. "2026-08-31" — filters by createdAt <= end of that day
   limit?: number;
   offset?: number;
 }) => {
@@ -482,6 +484,16 @@ export const getBills = async (options: {
   if (options.workerId) where.workerId = options.workerId;
   if (options.retailerId) where.retailerId = options.retailerId;
   if (options.status) where.status = options.status;
+  if (options.startDate || options.endDate) {
+    where.createdAt = {};
+    if (options.startDate) {
+      (where.createdAt as any).gte = new Date(`${options.startDate}T00:00:00.000Z`);
+    }
+    if (options.endDate) {
+      (where.createdAt as any).lte = new Date(`${options.endDate}T23:59:59.999Z`);
+    }
+  }
+
 
   const [bills, total] = await Promise.all([
     prisma.bill.findMany({

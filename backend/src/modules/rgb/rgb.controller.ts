@@ -161,7 +161,7 @@ export const returnRGBStandalone = async (req: Request, res: Response): Promise<
 export const listRGBTransactions = async (req: Request, res: Response): Promise<void> => {
   try {
     const retailerId = req.query.retailerId as string | undefined;
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+    const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string) || 2000, 2000) : 2000;
     const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
     const result = await rgbService.getRGBTransactions({ retailerId, limit, offset });
     ok(res, result);

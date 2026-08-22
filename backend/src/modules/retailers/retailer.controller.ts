@@ -21,7 +21,7 @@ const createRetailerSchema = z.object({
 const updateRetailerSchema = createRetailerSchema.partial();
 
 const ledgerQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(500).default(50),
+  limit: z.coerce.number().int().min(1).max(2000).default(50),
   offset: z.coerce.number().int().min(0).default(0),
   startDate: z.string().optional(),
   endDate: z.string().optional(),

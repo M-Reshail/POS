@@ -13,6 +13,8 @@ export const InfiniteScrollTrigger: React.FC<InfiniteScrollTriggerProps> = ({
   color = 'text-blue-600',
 }) => {
   const triggerRef = useRef<HTMLDivElement>(null);
+  const onLoadMoreRef = useRef(onLoadMore);
+  onLoadMoreRef.current = onLoadMore;
 
   useEffect(() => {
     if (!hasMore) return;
@@ -20,12 +22,12 @@ export const InfiniteScrollTrigger: React.FC<InfiniteScrollTriggerProps> = ({
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          onLoadMore();
+          onLoadMoreRef.current();
         }
       },
       {
         threshold: 0.1,
-        rootMargin: '150px',
+        rootMargin: '100px',
       }
     );
 
@@ -40,7 +42,7 @@ export const InfiniteScrollTrigger: React.FC<InfiniteScrollTriggerProps> = ({
       }
       observer.disconnect();
     };
-  }, [hasMore, onLoadMore]);
+  }, [hasMore]);
 
   if (!hasMore) return null;
 

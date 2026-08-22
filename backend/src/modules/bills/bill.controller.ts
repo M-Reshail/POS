@@ -33,8 +33,8 @@ const createBillSchema = z.object({
   oldPendingPaymentApplied: z.number().min(0).optional(),
   notes: z.string().trim().optional(),
   rgbExchanges: z.array(z.object({
-    rgbItemId:      z.string().uuid('Invalid RGB item ID.'),
-    cratesGiven:    z.number().int().min(0).default(0),
+    rgbItemId: z.string().uuid('Invalid RGB item ID.'),
+    cratesGiven: z.number().int().min(0).default(0),
     cratesReturned: z.number().int().min(0).default(0),
   })).optional().default([]),
   /** Amount the retailer is paying toward old/new udhaar. NOT added to bill total. */
@@ -59,7 +59,9 @@ const createBillSchema = z.object({
 const listBillsSchema = z.object({
   retailerId: z.string().uuid().optional(),
   status: z.nativeEnum(BillStatus).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  startDate: z.string().optional(), // ISO date string e.g. "2026-08-01"
+  endDate: z.string().optional(),   // ISO date string e.g. "2026-08-31"
+  limit: z.coerce.number().int().min(1).max(2000).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
 
@@ -132,6 +134,8 @@ export const listBills = async (req: Request, res: Response): Promise<void> => {
       workerId: isAdmin ? undefined : req.user!.id, // Workers scoped to own bills
       retailerId: query.data.retailerId,
       status: query.data.status,
+      startDate: query.data.startDate,
+      endDate: query.data.endDate,
       limit: query.data.limit,
       offset: query.data.offset,
     });
@@ -161,9 +165,9 @@ export const addPayment = async (req: Request, res: Response): Promise<void> => 
 /** POST /api/bills/preview-udhaar-allocation — No DB writes; returns allocation plan */
 export const previewUdhaarAllocation = async (req: Request, res: Response): Promise<void> => {
   const schema = z.object({
-    retailerId:   z.string().uuid('Invalid retailer ID.'),
+    retailerId: z.string().uuid('Invalid retailer ID.'),
     newBillTotal: z.number().min(0),
-    newBillPaid:  z.number().min(0).optional().default(0),
+    newBillPaid: z.number().min(0).optional().default(0),
     paymentAmount: z.number().positive('Payment amount must be positive.'),
     mode: z.enum(['old_first', 'current_first']).default('old_first'),
   });

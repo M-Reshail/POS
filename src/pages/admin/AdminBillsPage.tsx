@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Button, Card, InfiniteScrollTrigger } from '../../components/common';
+import { Button, Card } from '../../components/common';
 import { useStore } from '../../store';
 import { billsService } from '../../services/bills';
 import { rgbService } from '../../services/rgb';
@@ -115,17 +115,12 @@ export const AdminBillsPage: React.FC = () => {
   const { retailers, fetchInitialData } = useStore();
   const store = useStore();
 
-  // Server-side paginated bills and RGB transactions
+  // Full dataset state
   const [bills, setBills] = useState<Bill[]>([]);
-  const [totalBills, setTotalBills] = useState(0);
   const [rgbTransactions, setRgbTransactions] = useState<RGBTransactionRecord[]>([]);
-  const [totalRgb, setTotalRgb] = useState(0);
-
-  const [loadingMoreBills, setLoadingMoreBills] = useState(false);
-  const [loadingMoreRgb, setLoadingMoreRgb] = useState(false);
 
   const [workers, setWorkers] = useState<{ id: string; name: string }[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [expandedBill, setExpandedBill] = useState<string | null>(null);
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   const [activeBillSection, setActiveBillSection] = useState<'all' | 'rgb'>('all');
@@ -141,27 +136,16 @@ export const AdminBillsPage: React.FC = () => {
   const [dateTo, setDateTo] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  // Active server-side filter params — stored in ref so handleLoadMoreBills closure always reads the latest
-  const activeServerFilters = useRef<{ status?: string; retailerId?: string }>({});
-
-  /** Fetch bills from offset=0 with given server-side filters — resets the bill list */
-  const fetchBillsServerSide = useCallback(async (filters: { status?: string; retailerId?: string }) => {
-    activeServerFilters.current = filters;
-    setLoading(true);
+  /** Fetch full bills and RGB transactions dataset */
+  const fetchBills = async () => {
+    setInitialLoading(true);
     try {
       const [billsRes, rgbRes] = await Promise.all([
-        billsService.list({
-          limit: 10,
-          offset: 0,
-          status: filters.status || undefined,
-          retailerId: filters.retailerId || undefined,
-        }),
-        rgbService.getTransactions({ limit: 10, offset: 0 }),
+        billsService.list({ limit: 2000 }),
+        rgbService.getTransactions({ limit: 2000 }),
       ]);
       setBills(billsRes.bills || []);
-      setTotalBills(billsRes.total || 0);
       setRgbTransactions(rgbRes.transactions || []);
-      setTotalRgb(rgbRes.total || 0);
 
       // Extract unique workers from loaded bills
       const workerMap = new Map<string, string>();
@@ -176,75 +160,27 @@ export const AdminBillsPage: React.FC = () => {
     } catch {
       store.addNotification('error', 'Failed to load bills');
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
     fetchInitialData();
-    fetchBillsServerSide({});
+    fetchBills();
   }, []);
 
-  const loadBills = () => fetchBillsServerSide(activeServerFilters.current);
+  const loadBills = () => fetchBills();
 
-  // Refresh bills without setting loading=true (keeps scroll position & expanded bill state intact)
+  // Refresh bills without showing full loader
   const refreshBillsQuietly = async () => {
     try {
-      const currentLoadedCount = Math.max(10, bills.length);
-      const filters = activeServerFilters.current;
-      const res = await billsService.list({
-        limit: currentLoadedCount,
-        offset: 0,
-        status: filters.status || undefined,
-        retailerId: filters.retailerId || undefined,
-      });
+      const res = await billsService.list({ limit: 2000 });
       if (res.bills?.length) {
         setBills(res.bills);
-        setTotalBills(res.total || 0);
       }
       await store.fetchRetailers();
     } catch {
       // ignore
-    }
-  };
-
-  const handleLoadMoreBills = async () => {
-    if (loadingMoreBills || bills.length >= totalBills) return;
-    setLoadingMoreBills(true);
-    try {
-      const nextOffset = bills.length;
-      const filters = activeServerFilters.current;
-      const res = await billsService.list({
-        limit: 10,
-        offset: nextOffset,
-        status: filters.status || undefined,
-        retailerId: filters.retailerId || undefined,
-      });
-      if (res.bills?.length) {
-        setBills((prev) => [...prev, ...res.bills]);
-        setTotalBills(res.total || totalBills);
-      }
-    } catch {
-      store.addNotification('error', 'Failed to load more bills');
-    } finally {
-      setLoadingMoreBills(false);
-    }
-  };
-
-  const handleLoadMoreRgb = async () => {
-    if (loadingMoreRgb || rgbTransactions.length >= totalRgb) return;
-    setLoadingMoreRgb(true);
-    try {
-      const nextOffset = rgbTransactions.length;
-      const res = await rgbService.getTransactions({ limit: 10, offset: nextOffset });
-      if (res.transactions?.length) {
-        setRgbTransactions((prev) => [...prev, ...res.transactions]);
-        setTotalRgb(res.total || totalRgb);
-      }
-    } catch {
-      store.addNotification('error', 'Failed to load more RGB transactions');
-    } finally {
-      setLoadingMoreRgb(false);
     }
   };
 
@@ -313,10 +249,8 @@ export const AdminBillsPage: React.FC = () => {
     setWorkerFilter('');
     setDateFrom('');
     setDateTo('');
-    // Reset server-side filters and re-fetch from scratch
     setStatusFilter('');
     setRetailerFilter('');
-    // fetchBillsServerSide will be triggered by the useEffects below
   };
 
   const isFilterActive =
@@ -328,21 +262,7 @@ export const AdminBillsPage: React.FC = () => {
     Boolean(workerFilter) ||
     Boolean(statusFilter);
 
-  // Server-side filter triggers: when status or retailer changes, fetch fresh from offset=0.
-  // Skip the first render (handled by the initial fetchBillsServerSide({}) in the mount effect).
-  const isMounted = useRef(false);
-  useEffect(() => {
-    if (!isMounted.current) { isMounted.current = true; return; }
-    fetchBillsServerSide({
-      status: statusFilter || undefined,
-      retailerId: retailerFilter || undefined,
-    });
-  }, [statusFilter, retailerFilter]);
-
-
-  // Newest-first order matching backend
-  // Note: searchTerm, workerFilter, and date range remain client-side filters
-  // applied on top of the server-filtered page. Status & retailer are server-side.
+  // Client-side filtering for all bill criteria
   const filteredBills = useMemo(() => {
     return bills.filter((bill) => {
       const retailer = retailers.find((r) => r.id === bill.retailerId);
@@ -355,15 +275,17 @@ export const AdminBillsPage: React.FC = () => {
         (retailer?.ownerName || '').toLowerCase().includes(s) ||
         workerName.toLowerCase().includes(s);
 
+      const matchRetailer = !retailerFilter || bill.retailerId === retailerFilter;
       const matchWorker = !workerFilter || bill.workerId === workerFilter;
+      const matchStatus = !statusFilter || bill.status === statusFilter;
 
       const billDate = new Date(bill.createdAt).toISOString().split('T')[0];
       const matchFrom = !dateFrom || billDate >= dateFrom;
       const matchTo = !dateTo || billDate <= dateTo;
 
-      return matchSearch && matchWorker && matchFrom && matchTo;
+      return matchSearch && matchRetailer && matchWorker && matchStatus && matchFrom && matchTo;
     });
-  }, [bills, retailers, searchTerm, workerFilter, dateFrom, dateTo]);
+  }, [bills, retailers, searchTerm, retailerFilter, workerFilter, statusFilter, dateFrom, dateTo]);
 
   const displayedBills = filteredBills;
 
@@ -475,7 +397,7 @@ export const AdminBillsPage: React.FC = () => {
                 : `Showing ${displayedGroupedRgbTransactions.length} grouped entry (${filteredRgbTransactions.length} RGB transaction${filteredRgbTransactions.length !== 1 ? 's' : ''})`}
             </p>
           </div>
-          <Button size="sm" variant="secondary" onClick={loadBills} disabled={loading} className="w-full sm:w-auto justify-center">
+          <Button size="sm" variant="secondary" onClick={loadBills} disabled={initialLoading} className="w-full sm:w-auto justify-center">
             Refresh
           </Button>
         </div>
@@ -645,54 +567,46 @@ export const AdminBillsPage: React.FC = () => {
             </button>
           </div>
 
-          {loading ? (
+          {initialLoading ? (
             <div className="text-center py-10 text-gray-400 text-sm">Loading data...</div>
           ) : activeBillSection === 'all' ? (
             /* ALL SALES BILLS TABLE */
             displayedBills.length === 0 ? (
               <div className="text-center py-10 text-gray-400 text-sm">No bills found. Try adjusting your filters.</div>
             ) : (
-              <div>
-                <div className="overflow-auto max-h-[calc(100vh-270px)] min-h-[350px] border border-gray-200 rounded-xl shadow-2xs">
-                  <table className="w-full text-xs min-w-[680px]">
-                    <thead className="sticky top-0 z-20 shadow-xs">
-                      <tr className="bg-gray-100 text-gray-700 font-bold uppercase tracking-wider text-[11px] border-b border-gray-300">
-                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Bill#</th>
-                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Retailer</th>
-                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Worker</th>
-                        <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Total</th>
-                        <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Paid</th>
-                        <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Pending</th>
-                        <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Discount</th>
-                        <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Mode</th>
-                        <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Status</th>
-                        <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Date</th>
-                        <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayedBills.map((bill: Bill) => (
-                        <ExpandableBillRow
-                          key={bill.id}
-                          bill={bill}
-                          showRetailer={true}
-                          showWorker={true}
-                          colSpan={11}
-                          isExpanded={expandedBill === bill.id}
-                          onToggleExpand={() => setExpandedBill((prev) => (prev === bill.id ? null : bill.id))}
-                          onPaymentSuccess={refreshBillsQuietly}
-                          viewMode="admin-bills"
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-
-                  {/* Reliable Infinite Scroll Trigger */}
-                  <InfiniteScrollTrigger
-                    onLoadMore={handleLoadMoreBills}
-                    hasMore={bills.length < totalBills}
-                  />
-                </div>
+              <div className="overflow-auto max-h-[calc(100vh-270px)] min-h-[350px] border border-gray-200 rounded-xl shadow-2xs">
+                <table className="w-full text-xs min-w-[680px]">
+                  <thead className="sticky top-0 z-20 shadow-xs">
+                    <tr className="bg-gray-100 text-gray-700 font-bold uppercase tracking-wider text-[11px] border-b border-gray-300">
+                      <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Bill#</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Retailer</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Worker</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Total</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Paid</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Pending</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-right py-3 px-3">Discount</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Mode</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-center py-3 px-3">Status</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 text-left py-3 px-3">Date</th>
+                      <th className="sticky top-0 z-20 bg-gray-100 py-3 px-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedBills.map((bill: Bill) => (
+                      <ExpandableBillRow
+                        key={bill.id}
+                        bill={bill}
+                        showRetailer={true}
+                        showWorker={true}
+                        colSpan={11}
+                        isExpanded={expandedBill === bill.id}
+                        onToggleExpand={() => setExpandedBill((prev) => (prev === bill.id ? null : bill.id))}
+                        onPaymentSuccess={refreshBillsQuietly}
+                        viewMode="admin-bills"
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )
           ) : (
@@ -791,13 +705,6 @@ export const AdminBillsPage: React.FC = () => {
                       })}
                     </tbody>
                   </table>
-
-                  {/* Reliable Infinite Scroll Trigger for RGB */}
-                  <InfiniteScrollTrigger
-                    onLoadMore={handleLoadMoreRgb}
-                    hasMore={rgbTransactions.length < totalRgb}
-                    color="text-teal-600"
-                  />
                 </div>
               </div>
             )

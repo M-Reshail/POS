@@ -10,7 +10,7 @@ export const billsService = {
   }): Promise<{ bills: Bill[]; total: number; limit: number; offset: number }> => {
     // Backend getBills returns: ok(res, { bills, total, limit, offset })
     // After interceptor: { success: true, data: { bills: [...], total, limit, offset } }
-    const response: any = await api.get('/bills', { params });
+    const response: any = await api.get('/bills', { params: { limit: 2000, ...params } });
     return response.data;
   },
   create: async (billData: any): Promise<any> => {
