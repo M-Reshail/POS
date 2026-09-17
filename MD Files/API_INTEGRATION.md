@@ -8,7 +8,7 @@ This guide details the integration layer between the React frontend (running on 
 
 The frontend uses `axios` to interact with backend endpoints. The API client is configured with interceptors to automatically forward authentication headers and manage token expirations.
 
-### API Base Client (`src/services/api.ts`)
+### API Base Client (`frontend/src/services/api.ts`)
 
 ```typescript
 import axios from "axios";
@@ -69,7 +69,7 @@ apiClient.interceptors.response.use(
 
 The API integrations are structured into services matching the backend controllers:
 
-### 1. Authentication Service (`src/services/auth.ts`)
+### 1. Authentication Service (`frontend/src/services/auth.ts`)
 Handles logins, user session checking, and logouts.
 - **Endpoint**: `/api/auth`
 
@@ -96,7 +96,7 @@ export const authService = {
 };
 ```
 
-### 2. Products Service (`src/services/products.ts`)
+### 2. Products Service (`frontend/src/services/products.ts`)
 Retrieves and updates the catalog.
 - **Endpoint**: `/api/products`
 
@@ -126,7 +126,7 @@ export const productService = {
 };
 ```
 
-### 3. Inventory Service (`src/services/inventory.ts`)
+### 3. Inventory Service (`frontend/src/services/inventory.ts`)
 Manages stock batches, low-stock checks, and manual ledger adjustments.
 - **Endpoint**: `/api/inventory`
 
@@ -161,7 +161,7 @@ export const inventoryService = {
 };
 ```
 
-### 4. Retailers & CRM Service (`src/services/retailers.ts`)
+### 4. Retailers & CRM Service (`frontend/src/services/retailers.ts`)
 Manages accounts, price tiers, and empty crates (RGB).
 - **Endpoint**: `/api/retailers`
 
@@ -201,7 +201,7 @@ export const retailerService = {
 };
 ```
 
-### 5. Sales & Invoicing Service (`src/services/bills.ts`)
+### 5. Sales & Invoicing Service (`frontend/src/services/bills.ts`)
 Coordinates checkout transactions and bill cancellations.
 - **Endpoint**: `/api/bills`
 
@@ -237,7 +237,7 @@ export const billService = {
 };
 ```
 
-### 6. Ledger & Payments Service (`src/services/ledger.ts`)
+### 6. Ledger & Payments Service (`frontend/src/services/ledger.ts`)
 Records direct debt payments and pulls general ledger statements.
 - **Endpoint**: `/api/ledger`
 
@@ -262,7 +262,7 @@ export const ledgerService = {
 };
 ```
 
-### 7. Returnable Glass Bottles (RGB) Service (`src/services/rgb.ts`)
+### 7. Returnable Glass Bottles (RGB) Service (`frontend/src/services/rgb.ts`)
 Coordinates empty crate stock items, per-retailer balances, and crate issue/return transactions.
 - **Endpoint**: `/api/rgb`
 
@@ -307,7 +307,7 @@ export const rgbService = {
 
 ## 🔄 Zustand Store Integration Pattern
 
-To connect these service APIs to the frontend state, the Zustand store (`src/store/index.ts`) uses async/await actions that trigger requests, handle load indicators, and save active records.
+To connect these service APIs to the frontend state, the Zustand store (`frontend/src/store/index.ts`) uses async/await actions that trigger requests, handle load indicators, and save active records.
 
 ### Fetching Data Example
 

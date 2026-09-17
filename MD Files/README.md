@@ -37,23 +37,25 @@ The system uses a single login page for both Admin and Worker accounts. Role-bas
 
 ## 🏗️ Project Structure
 
-The project is structured as a monorepo containing the React frontend at the root level and the Node.js API server in the `backend/` directory:
+The project is structured as a monorepo containing the React frontend in the `frontend/` directory and the Node.js API server in the `backend/` directory:
 
 ```
 POS/                            ← Monorepo Root
-├── src/                        ← Frontend Source (React + TypeScript)
-│   ├── components/
-│   │   ├── common/             # Reusable UI elements (Button, Input, Modal, etc.)
-│   │   └── Layout/             # Main dashboard navigation container
-│   ├── pages/
-│   │   ├── auth/               # Single login page
-│   │   ├── worker/             # Sales page for staff
-│   │   └── admin/              # Dashboard, Inventory, CRM, and Reports
-│   ├── store/                  # Zustand state management
-│   ├── types/                  # TypeScript interface definitions
-│   └── App.tsx                 # Frontend routing & Protected routes
-├── public/                     ← Static Assets
-│   └── images/                 # Brand logos (pepsi.png, sprite.png, etc.)
+├── frontend/                   ← Frontend Application (Vite + React + TypeScript)
+│   ├── src/                    # Application source code
+│   │   ├── components/         # Reusable UI elements & layouts
+│   │   ├── pages/              # Auth, worker & admin route views
+│   │   ├── store/              # Zustand state management
+│   │   ├── types/              # TypeScript interface definitions
+│   │   └── App.tsx             # Frontend routing & protected routes
+│   ├── public/                 # Static assets & brand logos
+│   ├── UIUX/                   # Design tokens & UI specifications
+│   ├── index.html              # HTML entry template
+│   ├── vite.config.ts          # Vite configuration & dev proxy
+│   ├── tsconfig.json           # Frontend TypeScript configuration
+│   ├── tailwind.config.js      # Tailwind CSS theme configuration
+│   ├── postcss.config.js       # PostCSS plugins
+│   └── package.json            # Frontend dependencies & scripts
 └── backend/                    ← Backend Source (Express + Prisma + PostgreSQL)
     ├── prisma/
     │   ├── schema.prisma       # Prisma data model & database schema

@@ -34,7 +34,7 @@ Tailwind CSS utility colors are used to enforce semantic meaning:
 
 ## Reusable Components
 
-All reusable UI components are housed in `src/components/common/index.tsx`.
+All reusable UI components are housed in `frontend/src/components/common/index.tsx`.
 
 ### Buttons
 The `Button` component accepts a `variant` and `size` prop.
@@ -69,7 +69,7 @@ The `Badge` component is a small, pill-shaped indicator used primarily in tables
 | **Info** | Blue | Standard tags |
 
 ### Modals & Dialogs
-The common `Modal` component (in `src/components/common/index.tsx`) renders a centered overlay dialog.
+The common `Modal` component (in `frontend/src/components/common/index.tsx`) renders a centered overlay dialog.
 - **Portalled Rendering:** Implemented via React Portals (`createPortal`) rendering directly into `document.body` to avoid overflow/stacking issues.
 - **Structure:** Features a fixed header (Title + Close X), scrollable body content (`overflow-y-auto`), and a footer for action buttons.
 - **Advanced UX Behavior:**

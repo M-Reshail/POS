@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+}
+
+* {
+  @apply box-border;
+}
+
+body {
+  @apply bg-surface text-ink antialiased font-sans;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  @apply font-display;
+}
+
+/* Custom smooth scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: theme('colors.border.strong');
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: theme('colors.ink.subtle');
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-accent-500 text-brand-900 rounded-control font-semibold hover:bg-accent-400 transition-colors disabled:bg-surface-muted disabled:text-ink-subtle disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-surface-muted text-ink border border-border rounded-control font-medium hover:bg-border/50 transition-colors;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 bg-danger-500 text-white rounded-control font-medium hover:bg-danger-600 transition-colors;
+  }
+
+  .card {
+    @apply bg-surface-card border border-border rounded-card shadow-sm p-5 sm:p-6;
+  }
+
+  .input-field {
+    @apply w-full px-3 py-2 border border-border rounded-control focus:outline-none focus:ring-2 focus:ring-accent-500/50 focus:border-accent-500 bg-surface-card text-ink placeholder:text-ink-subtle;
+  }
+
+  /* Numeric / money / quantity display — tabular ledger face, see DESIGN_TOKENS.md */
+  .figure {
+    @apply font-mono tabular-nums;
+  }
+}
+
+/* Page fade entrance animation */
+@keyframes pageFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-fade {
+  animation: pageFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Modal entrance animation */
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Toast progress bar — shrinks width from 100% to 0 */
+@keyframes toast-shrink {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+/* Toast entrance — slides down from above */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Gentle glowing pulse animation for due payment reminders banner */
+@keyframes reminderPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.35);
+    border-color: rgba(220, 53, 69, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 16px 3px rgba(180, 42, 56, 0.25);
+    border-color: rgba(180, 42, 56, 1);
+  }
+}
+
+.animate-reminder-pulse {
+  animation: reminderPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Card Entrance Animation — preserved from previous version, used in existing pages */
+@keyframes cardSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-card-slide-up {
+  animation: cardSlideUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
