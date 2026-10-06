@@ -29,6 +29,7 @@ import {
   BillSnapshot,
   AllocationPlan,
 } from '../../lib/udhaarAllocator';
+import { autoCancelRemindersIfPaid } from '../../lib/reminderAutoCancel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -644,6 +645,9 @@ export const addPayment = async (billId: string, input: AddPaymentInput) => {
         balance: new Prisma.Decimal(newBalance),
       },
     });
+
+    // ── Step 2: auto-cancel reminders if outstanding reached 0 ──────────────
+    await autoCancelRemindersIfPaid(tx, bill.retailerId);
 
     return { bill: updatedBill, paymentRecord };
   });

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Layout, PageContainer } from '../../components/Layout';
 import { useStore } from '../../store';
 import {
-  Users, TrendingUp, AlertTriangle, Boxes,
+  TrendingUp, AlertTriangle, Boxes,
   CreditCard, DollarSign, Clock, Plus,
   CheckCircle2, ArrowRight, ShieldAlert, Activity, BellPlus, ShoppingCart, RotateCcw
 } from 'lucide-react';
@@ -217,7 +217,71 @@ export const AdminDashboard: React.FC = () => {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+          {/* ── Mobile: single compact summary card (hidden on sm+) ─── */}
+          <div className="sm:hidden">
+            <div className="bg-surface-card border border-border rounded-2xl overflow-hidden">
+              {/* Today's Sales row */}
+              <div className="grid grid-cols-3 items-center px-4 py-3 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <DollarSign size={15} className="text-brand-600 shrink-0" />
+                  <span className="text-xs font-semibold text-ink-muted">Today's Sales</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-sm font-extrabold text-ink">₨{todaysSalesAmount.toLocaleString()}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-ink-subtle">{todaysBills.length} bill{todaysBills.length !== 1 ? 's' : ''}</span>
+                </div>
+              </div>
+              {/* Received row */}
+              <div className="grid grid-cols-3 items-center px-4 py-3 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={15} className="text-success-500 shrink-0" />
+                  <span className="text-xs font-semibold text-ink-muted">Received</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-sm font-extrabold text-success-500">₨{todaysPaidAmount.toLocaleString()}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-ink-subtle">{todaysBills.filter((b) => Number(b.paidAmount) > 0).length} collected</span>
+                </div>
+              </div>
+              {/* Credit Due row */}
+              <div className="grid grid-cols-3 items-center px-4 py-3 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <CreditCard size={15} className="text-warning-500 shrink-0" />
+                  <span className="text-xs font-semibold text-ink-muted">Credit Due</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-sm font-extrabold text-warning-500">₨{todaysCreditDue.toLocaleString()}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-ink-subtle">{todaysBills.filter((b) => Number(b.pendingAmount) > 0).length} on udhaar</span>
+                </div>
+              </div>
+              {/* Pending Receivables row */}
+              <div className="grid grid-cols-3 items-center px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp size={15} className="text-brand-700 shrink-0" />
+                  <span className="text-xs font-semibold text-ink-muted">Pending</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-sm font-extrabold text-brand-800">₨{totalPendingReceivables.toLocaleString()}</span>
+                </div>
+                <div className="text-right">
+                  <button
+                    onClick={() => navigate('/admin/retailers')}
+                    className="text-brand-600 hover:text-brand-700 font-bold flex items-center justify-end gap-0.5 text-[10px]"
+                  >
+                    <ArrowRight size={11} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Desktop/tablet: original 4-col stat cards (hidden on mobile) ─── */}
+          <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
             {/* Card 1: Today's Sales */}
             <Card variant="stat" className="border-brand-600/30 bg-gradient-to-br from-surface-card to-brand-50/20">
               <div className="flex items-center justify-between mb-2">
@@ -263,7 +327,7 @@ export const AdminDashboard: React.FC = () => {
               </p>
             </Card>
 
-            {/* Card 4: Pending Receivables (Total Unpaid from All Customer Ledgers) */}
+            {/* Card 4: Pending Receivables */}
             <Card variant="stat">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-ink-muted">Pending Receivables</span>
@@ -285,84 +349,38 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* ── LEVEL 2: Operational Metrics (Inventory, Retailers, RGB Crates) ───── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          {/* Card 1: Inventory */}
+        {/* ── LEVEL 2: Operational Metrics (Inventory only) ───── */}
+        <div className="mb-6">
+          {/* Card: Inventory (full width) */}
           <Card variant="default">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-ink-muted">Inventory</span>
-              <Boxes size={16} className="text-brand-600" />
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-ink-muted flex items-center gap-1.5">
+                <Boxes size={14} className="text-brand-600" /> Inventory
+              </span>
             </div>
-            <div className="space-y-1 my-2">
-              <p className="text-lg sm:text-xl font-bold text-ink">
-                <Figure>{totalStockQuantity.toLocaleString()}</Figure> <span className="text-xs font-normal text-ink-subtle">PET units</span>
-              </p>
-              <p className="text-sm font-medium text-ink-muted">
-                <Figure>{totalRgbCrates.toLocaleString()}</Figure> <span className="text-xs font-normal text-ink-subtle">RGB warehouse crates</span>
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {/* PET units row */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-ink font-semibold"><Figure>{totalStockQuantity.toLocaleString()}</Figure> <span className="text-ink-subtle font-normal">PET units</span></span>
+                <button onClick={() => navigate('/admin/inventory')} className="text-brand-600 hover:text-brand-700 font-bold flex items-center gap-0.5">View <ArrowRight size={11} /></button>
+              </div>
+              {/* RGB warehouse row */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-ink font-semibold"><Figure>{totalRgbCrates.toLocaleString()}</Figure> <span className="text-ink-subtle font-normal">RGB in warehouse</span></span>
+                <button onClick={() => navigate('/admin/inventory')} className="text-brand-600 hover:text-brand-700 font-bold flex items-center gap-0.5">View <ArrowRight size={11} /></button>
+              </div>
+              {/* RGB with retailers row */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-ink font-semibold"><Figure>{cratesWithRetailers.toLocaleString()}</Figure> <span className="text-ink-subtle font-normal">RGB with {retailersWithCratesCount} shops</span></span>
+                <button onClick={() => navigate('/admin/inventory')} className="text-brand-600 hover:text-brand-700 font-bold flex items-center gap-0.5">View <ArrowRight size={11} /></button>
+              </div>
             </div>
-            <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
+            <div className="pt-2.5 mt-2.5 border-t border-border text-xs">
               {lowStockBatches.length > 0 ? (
                 <span className="text-warning-500 font-semibold">{lowStockBatches.length} batch needs restocking</span>
               ) : (
                 <span className="text-success-500 font-medium">Stock levels healthy</span>
               )}
-              <button
-                onClick={() => navigate('/admin/inventory')}
-                className="text-brand-600 hover:text-brand-700 font-bold flex items-center gap-0.5"
-              >
-                View Inventory <ArrowRight size={12} />
-              </button>
-            </div>
-          </Card>
-
-          {/* Card 2: Retailers */}
-          <Card variant="default">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-ink-muted">Retailers</span>
-              <Users size={16} className="text-brand-600" />
-            </div>
-            <div className="space-y-1 my-2">
-              <p className="text-lg sm:text-xl font-bold text-ink">
-                <Figure>{retailers.length}</Figure> <span className="text-xs font-normal text-ink-subtle">shops</span>
-              </p>
-              <p className="text-sm font-medium text-warning-500">
-                ₨<Figure>{totalPendingReceivables.toLocaleString()}</Figure> <span className="text-xs font-normal text-ink-subtle">credit due</span>
-              </p>
-            </div>
-            <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
-              <span className="text-ink-muted">Active retailer accounts</span>
-              <button
-                onClick={() => navigate('/admin/retailers')}
-                className="text-brand-600 hover:text-brand-700 font-bold flex items-center gap-0.5"
-              >
-                View Retailers <ArrowRight size={12} />
-              </button>
-            </div>
-          </Card>
-
-          {/* Card 3: RGB Crates */}
-          <Card variant="default">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-ink-muted">RGB Crates</span>
-              <RotateCcw size={16} className="text-brand-600" />
-            </div>
-            <div className="space-y-1 my-2">
-              <p className="text-lg sm:text-xl font-bold text-ink">
-                <Figure>{totalRgbCrates.toLocaleString()}</Figure> <span className="text-xs font-normal text-ink-subtle">in warehouse</span>
-              </p>
-              <p className="text-sm font-medium text-ink-muted">
-                <Figure>{cratesWithRetailers.toLocaleString()}</Figure> <span className="text-xs font-normal text-ink-subtle">with {retailersWithCratesCount} shops</span>
-              </p>
-            </div>
-            <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
-              <span className="text-ink-muted">Tracked glass crates</span>
-              <button
-                onClick={() => navigate('/admin/inventory')}
-                className="text-brand-600 hover:text-brand-700 font-bold flex items-center gap-0.5"
-              >
-                View RGB <ArrowRight size={12} />
-              </button>
             </div>
           </Card>
         </div>
@@ -385,8 +403,8 @@ export const AdminDashboard: React.FC = () => {
                         key={p}
                         onClick={() => setSalesOverviewPeriod(p)}
                         className={`px-3 py-1 text-xs font-semibold rounded-control transition-all capitalize ${salesOverviewPeriod === p
-                            ? 'bg-brand-700 text-white shadow-xs'
-                            : 'text-ink-muted hover:text-ink'
+                          ? 'bg-brand-700 text-white shadow-xs'
+                          : 'text-ink-muted hover:text-ink'
                           }`}
                       >
                         {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : 'Today'}
@@ -560,10 +578,10 @@ export const AdminDashboard: React.FC = () => {
                       <td className="py-3 px-3 text-center">
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded-control text-[10px] font-bold capitalize ${bill.status === 'paid'
-                              ? 'bg-success-50 text-success-500'
-                              : bill.status === 'partial'
-                                ? 'bg-warning-50 text-warning-500'
-                                : 'bg-danger-50 text-danger-500'
+                            ? 'bg-success-50 text-success-500'
+                            : bill.status === 'partial'
+                              ? 'bg-warning-50 text-warning-500'
+                              : 'bg-danger-50 text-danger-500'
                             }`}
                         >
                           {bill.status}

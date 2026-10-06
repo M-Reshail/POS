@@ -17,8 +17,6 @@ import { ExpandableBillRow } from '../../components/bills/ExpandableBillRow';
 interface CartItem extends BillItem {
   isEditingPrice?: boolean;
   editPrice?: string;
-  discountType?: 'percent' | 'fixed';
-  discountValue?: number;
   productName?: string;
 }
 
@@ -47,7 +45,6 @@ export const SalesPage: React.FC = () => {
 
   // Cart — single source of truth for all product quantities
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [itemDiscountInputs, setItemDiscountInputs] = useState<{ [key: string]: string }>({});
 
   // Bill Summary panel
   const [selectedRetailer, setSelectedRetailer] = useState('');
@@ -59,8 +56,6 @@ export const SalesPage: React.FC = () => {
   const [allocationPreview, setAllocationPreview] = useState<AllocationPlan | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [cartDiscountType, setCartDiscountType] = useState<'percent' | 'fixed'>('fixed');
-  const [cartDiscountValue, setCartDiscountValue] = useState('');
   const [pendingReceiptBill, setPendingReceiptBill] = useState<Bill | null>(null);
   const [receiptPendingBills, setReceiptPendingBills] = useState<Bill[]>([]);
 
@@ -258,7 +253,7 @@ export const SalesPage: React.FC = () => {
         updated[existing] = {
           ...item,
           quantity: newQty,
-          total: newQty * item.price - (item.discountValue || 0),
+          total: newQty * item.price,
         };
         return updated;
       }
@@ -274,8 +269,6 @@ export const SalesPage: React.FC = () => {
           total: product.defaultPrice,
           isEditingPrice: false,
           editPrice: product.defaultPrice.toString(),
-          discountType: 'fixed' as const,
-          discountValue: 0,
         },
       ];
     });
@@ -289,17 +282,14 @@ export const SalesPage: React.FC = () => {
       const item = prev[existing];
       if (item.quantity <= 1) {
         // Remove item from cart entirely
-        const next = prev.filter((_, idx) => idx !== existing);
-        // Also clean up its discount input
-        setItemDiscountInputs((d) => { const n = { ...d }; delete n[item.id]; return n; });
-        return next;
+        return prev.filter((_, idx) => idx !== existing);
       }
       const updated = [...prev];
       const newQty = item.quantity - 1;
       updated[existing] = {
         ...item,
         quantity: newQty,
-        total: Math.max(0, newQty * item.price - (item.discountValue || 0)),
+        total: Math.max(0, newQty * item.price),
       };
       return updated;
     });
@@ -312,10 +302,7 @@ export const SalesPage: React.FC = () => {
       const existing = prev.findIndex((i) => i.productId === product.id);
       if (targetQty <= 0) {
         if (existing < 0) return prev;
-        const next = prev.filter((_, idx) => idx !== existing);
-        const item = prev[existing];
-        setItemDiscountInputs((d) => { const n = { ...d }; delete n[item.id]; return n; });
-        return next;
+        return prev.filter((_, idx) => idx !== existing);
       }
 
       if (existing >= 0) {
@@ -324,7 +311,7 @@ export const SalesPage: React.FC = () => {
         updated[existing] = {
           ...item,
           quantity: targetQty,
-          total: targetQty * item.price - (item.discountValue || 0),
+          total: targetQty * item.price,
         };
         return updated;
       }
@@ -340,8 +327,6 @@ export const SalesPage: React.FC = () => {
           total: targetQty * product.defaultPrice,
           isEditingPrice: false,
           editPrice: product.defaultPrice.toString(),
-          discountType: 'fixed' as const,
-          discountValue: 0,
         },
       ];
     });
@@ -350,7 +335,6 @@ export const SalesPage: React.FC = () => {
 
   const removeFromCart = (itemId: string) => {
     setCartItems((prev) => prev.filter((i) => i.id !== itemId));
-    setItemDiscountInputs((prev) => { const next = { ...prev }; delete next[itemId]; return next; });
   };
 
   const updateItemPrice = (itemId: string, newPriceStr: string) => {
@@ -359,25 +343,9 @@ export const SalesPage: React.FC = () => {
     setCartItems((prev) =>
       prev.map((item) =>
         item.id === itemId
-          ? { ...item, price, total: item.quantity * price - (item.discountValue || 0), isEditingPrice: false }
+          ? { ...item, price, total: item.quantity * price, isEditingPrice: false }
           : item
       )
-    );
-  };
-
-  const updateItemDiscount = (itemId: string, value: number, type: 'percent' | 'fixed') => {
-    setCartItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== itemId) return item;
-        const discAmt = type === 'percent' ? (item.quantity * item.price * value) / 100 : value;
-        return {
-          ...item,
-          discountType: type,
-          discountValue: discAmt,
-          discount: discAmt,
-          total: Math.max(0, item.quantity * item.price - discAmt),
-        };
-      })
     );
   };
 
@@ -387,7 +355,7 @@ export const SalesPage: React.FC = () => {
     setCartItems((prev) =>
       prev.map((item) =>
         item.id === itemId
-          ? { ...item, quantity: qty, total: Math.max(0, qty * item.price - (item.discountValue || 0)) }
+          ? { ...item, quantity: qty, total: Math.max(0, qty * item.price) }
           : item
       )
     );
@@ -395,15 +363,9 @@ export const SalesPage: React.FC = () => {
 
   // ── Totals ────────────────────────────────────────────────────────────────────
   const subtotal = cartItems.reduce((s, i) => s + i.quantity * i.price, 0);
-  const itemDiscounts = cartItems.reduce((s, i) => s + (i.discountValue || 0), 0);
-  const cartDiscountValueNum = parseFloat(cartDiscountValue) || 0;
-  const cartDiscountAmount = cartDiscountType === 'percent'
-    ? Math.max(0, subtotal - itemDiscounts) * cartDiscountValueNum / 100
-    : cartDiscountValueNum;
-  const totalDiscounts = itemDiscounts + cartDiscountAmount;
   const udhaarPaymentNum = parseFloat(udhaarPaymentAmount) || 0;
   // FIXED: new bill total = products only. Udhaar payment is applied to OLD bills, not this total.
-  const total = subtotal - totalDiscounts;
+  const total = subtotal;
   const amountReceivedNum = parseFloat(amountReceived) || 0;
   const changeAmount = Math.max(0, amountReceivedNum - total);
   const udhariAmount = Math.max(0, total - amountReceivedNum);
@@ -456,9 +418,7 @@ export const SalesPage: React.FC = () => {
           productId: item.productId,
           quantity: item.quantity,
           price: item.price,
-          discount: item.discountValue || 0,
         })),
-        discount: totalDiscounts,
         paymentMode: paymentMethod,
         paidAmount: paidAmt,
         // Udhaar payment: applied to old/new bills — NOT added to total (was the bug)
@@ -489,15 +449,12 @@ export const SalesPage: React.FC = () => {
 
   const resetForm = () => {
     setCartItems([]);
-    setItemDiscountInputs({});
     setSelectedRetailer('');
     setAmountReceived('');
     setUdhaarPaymentAmount('');
     setUdhaarPaymentMode('old_first');
     setAllocationPreview(null);
     setPaymentMethod('cash');
-    setCartDiscountType('fixed');
-    setCartDiscountValue('');
     setPendingReceiptBill(null);
     setReceiptPendingBills([]);
     setShowRGB(false);
@@ -555,7 +512,7 @@ ${itemsText}
 
 ────────────────────────────────────────
 Subtotal:     ₨${Number(bill.subtotal).toFixed(2)}
-${bill.discount && Number(bill.discount) > 0 ? `Discount:     ₨${Number(bill.discount).toFixed(2)}\n` : ''}Total:        ₨${Number(bill.total).toFixed(2)}
+Total:        ₨${Number(bill.total).toFixed(2)}
 Paid:         ₨${Number(bill.paidAmount).toFixed(2)}
 ${Number(bill.pendingAmount) > 0 ? `Udhari:       ₨${Number(bill.pendingAmount).toFixed(2)}\n` : ''}Status:       ${bill.status.toUpperCase()}
 ${bill.oldPendingPaymentApplied && Number(bill.oldPendingPaymentApplied) > 0 ? `\n────────────────────────────────────────\nUDHAAR PAYMENT APPLIED: ₨${Number(bill.oldPendingPaymentApplied).toFixed(0)}\n────────────────────────────────────────` : ''}
@@ -875,7 +832,7 @@ ${otherPendingText}Thank you for your business!
                                   <div className="grid grid-cols-2 gap-2">
                                     <div className="bg-surface-muted border border-border rounded-control p-2 flex flex-col items-center">
                                       <span className="text-[11px] font-bold text-ink-muted mb-1 flex items-center gap-1">
-                                        Given ↓
+                                        Given ↑
                                       </span>
                                       <div className="flex items-center justify-between w-full border border-border bg-surface-card rounded-control overflow-hidden h-8 shadow-xs">
                                         <button
@@ -921,7 +878,7 @@ ${otherPendingText}Thank you for your business!
                                       <span className={`text-[11px] font-bold mb-1 flex items-center gap-1 ${
                                         balance <= 0 ? 'text-ink-subtle' : 'text-ink-muted'
                                       }`}>
-                                        Returned ↑
+                                        Returned ↓
                                       </span>
                                       <div className={`flex items-center justify-between w-full border rounded-control overflow-hidden h-8 shadow-xs ${
                                         balance <= 0 ? 'bg-surface-muted border-border' : 'bg-surface-card border-border'
@@ -1132,28 +1089,6 @@ ${otherPendingText}Thank you for your business!
                       <h3 className="text-sm font-bold text-gray-800">Cart ({cartItems.length} items)</h3>
                       <button onClick={() => setCartItems([])} className="text-xs text-red-500 hover:text-red-700">Clear all</button>
                     </div>
-                    {/* Cart Discount Control */}
-                    <div className="mb-3 pb-3 border-b border-border flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                      <label className="text-xs font-semibold text-ink-muted">Cart Discount:</label>
-                      <div className="flex items-center gap-1.5 flex-1 w-full sm:w-auto">
-                        <select
-                          value={cartDiscountType}
-                          onChange={(e) => setCartDiscountType(e.target.value as 'percent' | 'fixed')}
-                          className="input-field text-xs py-1"
-                        >
-                          <option value="fixed">PKR (₨)</option>
-                          <option value="percent">% Off</option>
-                        </select>
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="0"
-                          value={cartDiscountValue ?? ''}
-                          onChange={(e) => setCartDiscountValue(e.target.value)}
-                          className="input-field text-xs py-1 flex-1"
-                        />
-                      </div>
-                    </div>
                     <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0 border border-border rounded-card">
                       <table className="w-full text-xs min-w-[460px]">
                         <thead className="sticky top-0 z-10 bg-surface-muted border-b border-border text-ink-subtle uppercase text-[10px] font-bold">
@@ -1161,7 +1096,6 @@ ${otherPendingText}Thank you for your business!
                             <th className="text-left py-2 px-3">Item</th>
                             <th className="text-center py-2 px-1">Qty</th>
                             <th className="text-center py-2 px-1">Price</th>
-                            <th className="text-center py-2 px-1">Discount</th>
                             <th className="text-right py-2 px-3">Total</th>
                             <th className="py-2 px-1"></th>
                           </tr>
@@ -1214,35 +1148,6 @@ ${otherPendingText}Thank you for your business!
                                     ₨<Figure>{item.price.toFixed(0)}</Figure> <Edit2 size={11} className="text-ink-subtle" />
                                   </button>
                                 )}
-                              </td>
-                              <td className="py-2 px-1 text-center">
-                                <div className="flex items-center justify-center gap-1">
-                                  <select
-                                    value={item.discountType || 'fixed'}
-                                    onChange={(e) =>
-                                      updateItemDiscount(item.id, 0, e.target.value as 'percent' | 'fixed')
-                                    }
-                                    className="input-field text-[11px] py-0.5 px-1"
-                                  >
-                                    <option value="fixed">PKR</option>
-                                    <option value="percent">%</option>
-                                  </select>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    placeholder="0"
-                                    value={itemDiscountInputs[item.id] ?? ''}
-                                    className="input-field text-xs text-center w-14 py-0.5"
-                                    onChange={(e) => {
-                                      setItemDiscountInputs((prev) => ({ ...prev, [item.id]: e.target.value }));
-                                      updateItemDiscount(
-                                        item.id,
-                                        parseFloat(e.target.value) || 0,
-                                        item.discountType || 'fixed'
-                                      );
-                                    }}
-                                  />
-                                </div>
                               </td>
                               <td className="py-2 px-3 text-right font-bold text-ink">
                                 ₨<Figure>{item.total.toFixed(0)}</Figure>
@@ -1315,12 +1220,6 @@ ${otherPendingText}Thank you for your business!
                         <span>Subtotal</span>
                         <span>₨<Figure>{subtotal.toFixed(0)}</Figure></span>
                       </div>
-                      {totalDiscounts > 0 && (
-                        <div className="flex justify-between text-success-500 font-medium">
-                          <span>Discount</span>
-                          <span>−₨<Figure>{totalDiscounts.toFixed(0)}</Figure></span>
-                        </div>
-                      )}
                       <div className="flex justify-between font-bold text-ink text-lg border-t border-border pt-1.5">
                         <span>Total</span>
                         <span>₨<Figure>{total.toFixed(0)}</Figure></span>
@@ -1528,7 +1427,6 @@ ${otherPendingText}Thank you for your business!
                       <th className="sticky top-0 z-20 bg-surface-muted text-right py-3 px-3">Total</th>
                       <th className="sticky top-0 z-20 bg-surface-muted text-right py-3 px-3">Paid</th>
                       <th className="sticky top-0 z-20 bg-surface-muted text-right py-3 px-3">Udhari</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-right py-3 px-3">Discount</th>
                       <th className="sticky top-0 z-20 bg-surface-muted text-center py-3 px-3">Mode</th>
                       <th className="sticky top-0 z-20 bg-surface-muted text-center py-3 px-3">Status</th>
                       <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">Date</th>
@@ -1542,7 +1440,7 @@ ${otherPendingText}Thank you for your business!
                         bill={bill}
                         showRetailer={true}
                         showWorker={true}
-                        colSpan={11}
+                        colSpan={10}
                         isExpanded={selectedBillForDetails === bill.id}
                         onToggleExpand={() =>
                           setSelectedBillForDetails((prev) => (prev === bill.id ? null : bill.id))
@@ -1603,12 +1501,12 @@ ${otherPendingText}Thank you for your business!
                             <div className="inline-flex items-center gap-1.5 flex-wrap justify-center">
                               {group.cratesGiven > 0 && (
                                 <span className="px-2 py-0.5 rounded-control text-xs font-semibold bg-surface-muted text-ink border border-border">
-                                  Given ↓ <Figure>{group.cratesGiven}</Figure>
+                                  Given ↑ <Figure>{group.cratesGiven}</Figure>
                                 </span>
                               )}
                               {group.cratesReturned > 0 && (
                                 <span className="px-2 py-0.5 rounded-control text-xs font-semibold bg-surface-muted text-ink border border-border">
-                                  Returned ↑ <Figure>{group.cratesReturned}</Figure>
+                                  Returned ↓ <Figure>{group.cratesReturned}</Figure>
                                 </span>
                               )}
                             </div>

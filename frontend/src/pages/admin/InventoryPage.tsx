@@ -1023,7 +1023,7 @@ export const InventoryPage: React.FC = () => {
                             <td className="py-3 px-4 text-center">
                               <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-control text-xs font-bold ${isIssue ? 'bg-warning-50 text-warning-500 border border-warning-500/30' : 'bg-success-50 text-success-500 border border-success-500/30'
                                 }`}>
-                                {isIssue ? 'Given ↓' : 'Returned ↑'}
+                                {isIssue ? 'Given ↑' : 'Returned ↓'}
                               </span>
                             </td>
                             <td className="py-3 px-4 text-right font-bold text-ink">

@@ -42,7 +42,6 @@ const RenderBillDetails: React.FC<{ bill: Bill }> = ({ bill }) => {
               <th className="text-left pb-1">Product</th>
               <th className="text-center pb-1">Qty</th>
               <th className="text-right pb-1">Price</th>
-              <th className="text-right pb-1">Disc</th>
               <th className="text-right pb-1">Total</th>
             </tr>
           </thead>
@@ -56,14 +55,11 @@ const RenderBillDetails: React.FC<{ bill: Bill }> = ({ bill }) => {
                 </td>
                 <td className="py-0.5 text-center text-ink"><Figure>{item.quantity}</Figure></td>
                 <td className="py-0.5 text-right text-ink">₨<Figure>{Number(item.price).toFixed(0)}</Figure></td>
-                <td className="py-0.5 text-right text-brand-600">
-                  {Number(item.discount) > 0 ? <>₨<Figure>{Number(item.discount).toFixed(0)}</Figure></> : '—'}
-                </td>
                 <td className="py-0.5 text-right font-semibold text-ink">₨<Figure>{Number(item.total).toFixed(0)}</Figure></td>
               </tr>
             ))}
             {bill.items.length === 0 && !(bill as any).rgbExchanges?.length && (
-              <tr><td colSpan={5} className="py-1 text-ink-subtle italic">No product items</td></tr>
+              <tr><td colSpan={4} className="py-1 text-ink-subtle italic">No product items</td></tr>
             )}
           </tbody>
         </table>
@@ -78,7 +74,7 @@ const RenderBillDetails: React.FC<{ bill: Bill }> = ({ bill }) => {
               return (
                 <div key={ex.id} className="flex items-center justify-between text-xs py-0.5">
                   <span className={`flex items-center gap-1 font-medium ${isIssue ? 'text-warning-500' : 'text-success-500'}`}>
-                    <span className="text-[10px]">{isIssue ? '📦↓' : '📦↑'}</span>
+                    <span className="text-[10px]">{isIssue ? '📦↑' : '📦↓'}</span>
                     {ex.itemName} — {isIssue ? 'Given' : 'Returned'}
                   </span>
                   <span className={`font-bold ${isIssue ? 'text-warning-500' : 'text-success-500'}`}>
@@ -96,7 +92,6 @@ const RenderBillDetails: React.FC<{ bill: Bill }> = ({ bill }) => {
         <p className="text-xs font-bold text-ink-muted mb-2">Payment Details</p>
         <div className="space-y-1 text-xs">
           <div className="flex justify-between"><span className="text-ink-subtle">Subtotal</span><span className="text-ink">₨<Figure>{Number(bill.subtotal).toFixed(0)}</Figure></span></div>
-          {Number(bill.discount) > 0 && <div className="flex justify-between text-brand-600"><span>Discount</span><span>−₨<Figure>{Number(bill.discount).toFixed(0)}</Figure></span></div>}
           {Number(bill.previousPendingAdded) > 0 && <div className="flex justify-between text-warning-500"><span>Prev. Pending</span><span>+₨<Figure>{Number(bill.previousPendingAdded).toFixed(0)}</Figure></span></div>}
           <div className="flex justify-between font-bold border-t border-border pt-1"><span className="text-ink">Total</span><span className="text-ink">₨<Figure>{Number(bill.total).toFixed(0)}</Figure></span></div>
           <div className="flex justify-between text-success-500"><span>Paid</span><span>₨<Figure>{Number(bill.paidAmount).toFixed(0)}</Figure></span></div>
@@ -391,7 +386,6 @@ export const AdminBillsPage: React.FC = () => {
   const totalRevenue = filteredBills.reduce((s, b) => s + Number(b.total || 0), 0);
   const totalPaid = filteredBills.reduce((s, b) => s + Number(b.paidAmount || 0), 0);
   const totalPending = filteredBills.reduce((s, b) => s + Number(b.pendingAmount || 0), 0);
-  const totalDiscount = filteredBills.reduce((s, b) => s + Number(b.discount || 0), 0);
 
   return (
     <Layout sidebarItems={ADMIN_SIDEBAR}>
@@ -504,12 +498,6 @@ export const AdminBillsPage: React.FC = () => {
                   <span className="text-[11px] text-ink-muted font-bold uppercase tracking-wider">Credit Due</span>
                   <span className="text-xs sm:text-sm font-extrabold text-warning-500">
                     ₨<Figure>{totalPending.toLocaleString()}</Figure>
-                  </span>
-                </div>
-                <div className="py-1.5 px-2 flex items-center justify-between">
-                  <span className="text-[11px] text-ink-muted font-bold uppercase tracking-wider">Discounts</span>
-                  <span className="text-xs sm:text-sm font-extrabold text-brand-600">
-                    ₨<Figure>{totalDiscount.toLocaleString()}</Figure>
                   </span>
                 </div>
               </div>
@@ -653,7 +641,6 @@ export const AdminBillsPage: React.FC = () => {
                       <th className="sticky top-0 z-20 bg-surface-muted text-right py-2.5 px-3">Total</th>
                       <th className="sticky top-0 z-20 bg-surface-muted text-right py-2.5 px-3">Paid</th>
                       <th className="sticky top-0 z-20 bg-surface-muted text-right py-2.5 px-3">Pending</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-right py-2.5 px-3">Discount</th>
                       <th className="sticky top-0 z-20 bg-surface-muted text-center py-2.5 px-3">Mode</th>
                       <th className="sticky top-0 z-20 bg-surface-muted text-center py-2.5 px-3">Status</th>
                       <th className="sticky top-0 z-20 bg-surface-muted text-left py-2.5 px-3">Date</th>
@@ -667,7 +654,7 @@ export const AdminBillsPage: React.FC = () => {
                         bill={bill}
                         showRetailer={true}
                         showWorker={true}
-                        colSpan={11}
+                        colSpan={10}
                         isExpanded={expandedBill === bill.id}
                         onToggleExpand={() => setExpandedBill((prev) => (prev === bill.id ? null : bill.id))}
                         onPaymentSuccess={refreshBillsQuietly}
@@ -731,12 +718,12 @@ export const AdminBillsPage: React.FC = () => {
                                 <div className="inline-flex items-center gap-1.5 flex-wrap justify-center">
                                   {group.cratesGiven > 0 && (
                                     <span className="px-2 py-0.5 rounded-control text-[11px] font-bold bg-warning-50 text-warning-500 border border-warning-500/30">
-                                      Given ↓ <Figure>{group.cratesGiven}</Figure>
+                                      Given ↑ <Figure>{group.cratesGiven}</Figure>
                                     </span>
                                   )}
                                   {group.cratesReturned > 0 && (
                                     <span className="px-2 py-0.5 rounded-control text-[11px] font-bold bg-success-50 text-success-500 border border-success-500/30">
-                                      Returned ↑ <Figure>{group.cratesReturned}</Figure>
+                                      Returned ↓ <Figure>{group.cratesReturned}</Figure>
                                     </span>
                                   )}
                                 </div>

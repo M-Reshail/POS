@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PaymentReminder } from '../../types';
 import { remindersService } from '../../services/reminders';
+import { retailersService } from '../../services/retailers';
 import { useStore } from '../../store';
 import { AddReminderModal } from './AddReminderModal';
 import {
@@ -50,22 +51,35 @@ export const DueRemindersWidget: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchDueReminders]);
 
-  const handleMarkAsPaid = async (id: string, shopName?: string) => {
+  const handleMarkAsPaid = async (reminder: PaymentReminder) => {
+    const { id, retailerId, retailer, amount } = reminder;
+    if (!retailerId) return;
     setUpdatingIds((prev) => [...prev, id]);
     try {
-      await remindersService.updateReminder(id, { status: 'PAID' });
+      await retailersService.recordPayment(
+        retailerId,
+        Number(amount),
+        id,
+      );
       store.addNotification(
         'success',
-        `Payment for ${shopName || 'retailer'} marked as PAID`
+        `Payment for ${retailer?.shopName || 'retailer'} marked as received`
       );
       // Optimistically remove from due list
       setDueReminders((prev) => prev.filter((r) => r.id !== id));
       setTotalCount((prev) => Math.max(0, prev - 1));
-      fetchDueReminders(true);
+      // Refresh retailer outstanding + bill statuses so dashboard reflects the payment
+      await Promise.all([
+        store.fetchRetailers(),
+        store.fetchBills(),
+        fetchDueReminders(true),
+      ]);
     } catch (err: any) {
       const errMsg =
-        err.response?.data?.message || err.message || 'Failed to mark payment as paid.';
+        err.response?.data?.message || err.message || 'Failed to mark payment as received.';
       store.addNotification('error', errMsg);
+      // Refetch to ensure list is accurate after error
+      fetchDueReminders(true);
     } finally {
       setUpdatingIds((prev) => prev.filter((item) => item !== id));
     }
@@ -147,9 +161,6 @@ export const DueRemindersWidget: React.FC = () => {
                     {totalCount} {totalCount === 1 ? 'Payment' : 'Payments'} Due
                   </span>
                 </div>
-                <p className="text-xs sm:text-sm text-red-800 font-medium mt-0.5">
-                  Overdue or due-today retailer credit settlements requiring collection
-                </p>
               </div>
             </div>
 
@@ -238,9 +249,7 @@ export const DueRemindersWidget: React.FC = () => {
                         <button
                           type="button"
                           disabled={isUpdating}
-                          onClick={() =>
-                            handleMarkAsPaid(reminder.id, reminder.retailer?.shopName)
-                          }
+                          onClick={() => handleMarkAsPaid(reminder)}
                           className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-sm transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50"
                         >
                           {isUpdating ? (

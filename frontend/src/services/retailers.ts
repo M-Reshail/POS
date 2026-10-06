@@ -36,6 +36,7 @@ export const retailersService = {
   recordPayment: async (
     id: string,
     amount: number,
+    reminderId?: string,
   ): Promise<{
     plan: {
       entries: Array<{
@@ -48,9 +49,12 @@ export const retailersService = {
       }>;
       totalApplied: number;
       excessAmount: number;
+      reminder?: Record<string, unknown>;
     };
   }> => {
-    const response: any = await api.post(`/retailers/${id}/record-payment`, { amount });
+    const body: Record<string, unknown> = { amount };
+    if (reminderId !== undefined) body.reminderId = reminderId;
+    const response: any = await api.post(`/retailers/${id}/record-payment`, body);
     return response.data;
   },
 };

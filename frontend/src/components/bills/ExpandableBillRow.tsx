@@ -142,7 +142,6 @@ export const ExpandableBillRow: React.FC<ExpandableBillRowProps> = ({
   const totalVal = Number(currentBill.total) || 0;
   const paidVal = Number(currentBill.paidAmount) || 0;
   const pendingVal = Number(currentBill.pendingAmount) || 0;
-  const discountVal = Number(currentBill.discount) || 0;
 
   const hasItems = currentBill.items && currentBill.items.length > 0;
   const hasRgb = (currentBill as any).rgbExchanges && (currentBill as any).rgbExchanges.length > 0;
@@ -219,9 +218,6 @@ export const ExpandableBillRow: React.FC<ExpandableBillRowProps> = ({
           ₨{paidVal.toFixed(0)}
         </td>
         <td className="py-2.5 px-3 text-right font-bold text-orange-600 text-xs">₨{pendingVal.toFixed(0)}</td>
-        <td className="py-2.5 px-3 text-right text-purple-600 text-xs">
-          {discountVal > 0 ? `₨${discountVal.toFixed(0)}` : '—'}
-        </td>
         <td className="py-2.5 px-3 text-center capitalize text-gray-500 text-xs">
           {currentBill.paymentMode?.replace('-', ' ') || '—'}
         </td>
@@ -318,7 +314,7 @@ export const ExpandableBillRow: React.FC<ExpandableBillRowProps> = ({
                       {(currentBill as any).rgbExchanges.map((ex: any) => (
                         <div key={ex.id} className="flex justify-between text-[11px] py-0.5 px-1 bg-surface-muted/50 rounded">
                           <span className="text-ink">
-                            {ex.type?.toLowerCase() === 'issue' ? '📦↓ Given' : '📦↑ Returned'}: {ex.itemName}
+                            {ex.type?.toLowerCase() === 'issue' ? '📦↑ Given' : '📦↓ Returned'}: {ex.itemName}
                           </span>
                           <span className="font-bold text-ink">{ex.quantity}</span>
                         </div>
@@ -523,7 +519,7 @@ export const ExpandableBillRow: React.FC<ExpandableBillRowProps> = ({
                           {(currentBill as any).rgbExchanges.map((ex: any) => (
                             <div key={ex.id} className="flex justify-between text-[11px] py-0.5 px-1 bg-teal-50/50 rounded">
                               <span className="text-teal-900">
-                                {ex.type?.toLowerCase() === 'issue' ? '📦↓ Given' : '📦↑ Returned'}: {ex.itemName}
+                                {ex.type?.toLowerCase() === 'issue' ? '📦↑ Given' : '📦↓ Returned'}: {ex.itemName}
                               </span>
                               <span className="font-bold text-teal-800">{ex.quantity}</span>
                             </div>

@@ -37,7 +37,6 @@ export const ReportsPage: React.FC = () => {
   const totalRevenue = filteredBills.reduce((s, b) => s + Number(b.total), 0);
   const totalPaid = filteredBills.reduce((s, b) => s + Number(b.paidAmount), 0);
   const totalPending = filteredBills.reduce((s, b) => s + Number(b.pendingAmount), 0);
-  const totalDiscount = filteredBills.reduce((s, b) => s + Number(b.discount || 0), 0);
   const totalPET = filteredBills.reduce((s, b) => s + b.items.reduce((ss, i) => ss + i.quantity, 0), 0);
   const monthlyExpenses = expenseSummary?.month || 0;
   const netProfit = totalRevenue - monthlyExpenses;
@@ -84,13 +83,12 @@ export const ReportsPage: React.FC = () => {
 
   // ── Revenue by Worker ─────────────────────────────────────────────────────────
   const workerRevenueData = useMemo(() => {
-    const map = new Map<string, { name: string; revenue: number; bills: number; discount: number }>();
+    const map = new Map<string, { name: string; revenue: number; bills: number }>();
     filteredBills.forEach((b) => {
       const workerName = (b as any).worker?.name || b.workerId.slice(0, 8);
-      const existing = map.get(b.workerId) || { name: workerName, revenue: 0, bills: 0, discount: 0 };
+      const existing = map.get(b.workerId) || { name: workerName, revenue: 0, bills: 0 };
       existing.revenue += Number(b.total);
       existing.bills += 1;
-      existing.discount += Number(b.discount || 0);
       map.set(b.workerId, existing);
     });
     return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
@@ -223,12 +221,6 @@ export const ReportsPage: React.FC = () => {
                   </span>
                 </div>
                 <div className="py-1.5 px-2 flex items-center justify-between">
-                  <span className="text-[11px] text-ink-muted font-bold uppercase tracking-wider">Total Discounts</span>
-                  <span className="text-xs sm:text-sm font-extrabold text-brand-600">
-                    ₨<Figure>{(totalDiscount / 1000).toFixed(1)}K</Figure>
-                  </span>
-                </div>
-                <div className="py-1.5 px-2 flex items-center justify-between">
                   <span className="text-[11px] text-ink-muted font-bold uppercase tracking-wider">Collection Rate</span>
                   <span className="text-xs sm:text-sm font-extrabold text-success-500">
                     <Figure>{totalRevenue > 0 ? ((totalPaid / totalRevenue) * 100).toFixed(0) : 0}</Figure>%
@@ -297,10 +289,9 @@ export const ReportsPage: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#E2E6EC" />
                   <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `₨${(v / 1000).toFixed(0)}K`} />
-                  <Tooltip formatter={(v: any, name: any) => [`₨${Number(v).toFixed(0)}`, name === 'revenue' ? 'Revenue' : 'Discount']} />
+                  <Tooltip formatter={(v: any) => [`₨${Number(v).toFixed(0)}`, 'Revenue']} />
                   <Legend iconType="circle" iconSize={8} />
                   <Bar dataKey="revenue" name="Revenue" fill="#1F9D66" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="discount" name="Discounts" fill="#D9A63E" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
