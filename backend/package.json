@@ -5,8 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "build": "prisma generate && tsc",
+    "start": "prisma migrate deploy && node dist/index.js",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
@@ -23,6 +23,7 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^2.2.0",
+    "prisma": "^5.22.0",
     "uuid": "^14.0.1",
     "web-push": "^3.6.7",
     "zod": "^3.22.4"
@@ -39,7 +40,6 @@
     "@types/uuid": "^10.0.0",
     "@types/web-push": "^3.6.4",
     "pg": "^8.20.0",
-    "prisma": "^5.7.0",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.2"

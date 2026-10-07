@@ -32,6 +32,16 @@ function optionalEnv(key: string, defaultValue: string): string {
   return process.env[key]?.trim() || defaultValue;
 }
 
+function optionalEnvEnum<T extends string>(key: string, allowed: T[], defaultValue: T): T {
+  const raw = process.env[key]?.trim();
+  if (!raw) return defaultValue;
+  if (!allowed.includes(raw as T)) {
+    console.error(`\n❌  Invalid value for ${key}: "${raw}". Must be one of: ${allowed.join(', ')}`);
+    process.exit(1);
+  }
+  return raw as T;
+}
+
 // ── Parsed & validated config ─────────────────────────────────────────────────
 
 export const env = {
@@ -46,6 +56,12 @@ export const env = {
   JWT_REFRESH_EXPIRES_IN: optionalEnv('JWT_REFRESH_EXPIRES_IN', '7d'),
 
   CORS_ORIGIN: optionalEnv('CORS_ORIGIN', 'http://localhost:5173'),
+
+  // ── Cookie SameSite ───────────────────────────────────────────────────────
+  // Use 'none' in production when frontend and API are on different domains.
+  // 'none' REQUIRES secure: true (HTTPS). 'strict' is the safe default for
+  // same-domain setups (e.g. Railway subdomain + custom domain on same origin).
+  COOKIE_SAMESITE: optionalEnvEnum('COOKIE_SAMESITE', ['strict', 'lax', 'none'], 'strict') as 'strict' | 'lax' | 'none',
 
   // ── Web Push (VAPID) ──────────────────────────────────────────────────────
   VAPID_PUBLIC_KEY:  requireEnv('VAPID_PUBLIC_KEY'),
