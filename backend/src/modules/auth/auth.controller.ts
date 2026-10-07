@@ -109,7 +109,7 @@ export const loginController = async (req: Request, res: Response): Promise<void
     res.cookie('refreshToken', result.tokens.refreshToken, {
       httpOnly: true,
       secure: env.isProduction,
-      sameSite: 'strict',
+      sameSite: env.COOKIE_SAMESITE,
       maxAge: parseDurationToMs(env.JWT_REFRESH_EXPIRES_IN),
     });
 
@@ -135,7 +135,7 @@ export const logoutController = (_req: Request, res: Response): void => {
   res.clearCookie('refreshToken', {
     httpOnly: true,
     secure: env.isProduction,
-    sameSite: 'strict',
+    sameSite: env.COOKIE_SAMESITE,
   });
 
   res.status(200).json({
