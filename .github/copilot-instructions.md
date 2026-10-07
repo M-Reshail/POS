@@ -27,19 +27,19 @@ This is a comprehensive Wholesale & Retail Beverage Management System built with
 Development Server:
 
 ```bash
-npm run dev
+npm run dev:frontend
 ```
 
 Production Build:
 
 ```bash
-npm run build
+npm run build:frontend
 ```
 
 ## Project Structure
 
 ```
-src/
+frontend/src/
 ├── components/common/      # Reusable UI components
 ├── components/Layout/      # Main app layout
 ├── pages/
@@ -126,22 +126,22 @@ src/
 
 ### UI Components
 
-- `src/components/common/index.tsx` - Button, Input, Card, Select, Badge, Modal
+- `frontend/src/components/common/index.tsx` - Button, Input, Card, Select, Badge, Modal
 
 ### State Management
 
-- `src/store/index.ts` - Zustand store with all app state
+- `frontend/src/store/index.ts` - Zustand store with all app state
 
 ### Type Definitions
 
-- `src/types/index.ts` - All TypeScript interfaces
+- `frontend/src/types/index.ts` - All TypeScript interfaces
 
 ### Main Application
 
-- `src/App.tsx` - Routing and protected routes
-- `src/pages/auth/LoginPage.tsx` - Authentication
-- `src/pages/admin/*.tsx` - Admin pages
-- `src/pages/worker/*.tsx` - Worker pages
+- `frontend/src/App.tsx` - Routing and protected routes
+- `frontend/src/pages/auth/LoginPage.tsx` - Authentication
+- `frontend/src/pages/admin/*.tsx` - Admin pages
+- `frontend/src/pages/worker/*.tsx` - Worker pages
 
 ## No Current Issues
 

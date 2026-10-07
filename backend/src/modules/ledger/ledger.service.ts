@@ -10,6 +10,7 @@
 
 import { prisma } from '../../lib/prisma';
 import { LedgerEntryType, LedgerPaymentMode, Prisma } from '@prisma/client';
+import { autoCancelRemindersIfPaid } from '../../lib/reminderAutoCancel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,9 @@ export const recordDirectPayment = async (input: DirectPaymentInput) => {
         retailer: { select: { shopName: true } },
       },
     });
+
+    // ── Step 2: auto-cancel reminders if outstanding reached 0 ──────────────
+    await autoCancelRemindersIfPaid(tx, input.retailerId);
 
     return { entry, previousBalance: currentBalance, newBalance };
   });

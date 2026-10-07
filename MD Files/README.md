@@ -37,24 +37,26 @@ The system uses a single login page for both Admin and Worker accounts. Role-bas
 
 ## 🏗️ Project Structure
 
-The project is structured as a monorepo containing the React frontend at the root level and the Node.js API server in the `backend/` directory:
+The project is structured as a monorepo containing the React frontend in the `frontend/` directory and the Node.js API server in the `backend/` directory:
 
 ```
 POS/                            ← Monorepo Root
-├── src/                        ← Frontend Source (React + TypeScript)
-│   ├── components/
-│   │   ├── common/             # Reusable UI elements (Button, Input, Modal, etc.)
-│   │   └── Layout/             # Main dashboard navigation container
-│   ├── pages/
-│   │   ├── auth/               # Single login page
-│   │   ├── worker/             # Sales page for staff
-│   │   └── admin/              # Dashboard, Inventory, CRM, and Reports
-│   ├── store/                  # Zustand state management
-│   ├── types/                  # TypeScript interface definitions
-│   └── App.tsx                 # Frontend routing & Protected routes
-├── public/                     ← Static Assets
-│   └── images/                 # Brand logos (pepsi.png, sprite.png, etc.)
-└── backend/                    ← Backend Source (Express + Prisma + PostgreSQL)
+├── frontend/                   ← Frontend Application (Vite + React + TypeScript)
+│   ├── src/                    # Application source code
+│   │   ├── components/         # Reusable UI elements & layouts
+│   │   ├── pages/              # Auth, worker & admin route views
+│   │   ├── store/              # Zustand state management
+│   │   ├── types/              # TypeScript interface definitions
+│   │   └── App.tsx             # Frontend routing & protected routes
+│   ├── public/                 # Static assets & brand logos
+│   ├── UIUX/                   # Design tokens & UI specifications
+│   ├── index.html              # HTML entry template
+│   ├── vite.config.ts          # Vite configuration & dev proxy
+│   ├── tsconfig.json           # Frontend TypeScript configuration
+│   ├── tailwind.config.js      # Tailwind CSS theme configuration
+│   ├── postcss.config.js       # PostCSS plugins
+│   └── package.json            # Frontend dependencies & scripts
+├── backend/                    ← Backend Source (Express + Prisma + PostgreSQL)
     ├── prisma/
     │   ├── schema.prisma       # Prisma data model & database schema
     │   └── seed.ts             # Database seeder (Admin & Worker default users)
@@ -65,6 +67,7 @@ POS/                            ← Monorepo Root
     │   ├── modules/            # Business modules (Auth, Products, Inventory, CRM, Bills, Ledger)
     │   └── index.ts            # API Server entry point
     └── package.json            # Backend scripts & dependency list
+└── package.json                # Monorepo root scripts (dev:frontend, dev:backend, build:*)
 ```
 
 ---
@@ -125,6 +128,8 @@ npm run db:seed
 # Start the backend development server
 npm run dev
 ```
+*(Alternatively, from the monorepo root `POS/`, you can run `npm run dev:backend`)*
+
 The backend API server will start on `http://localhost:5000`.
 
 ### 2. Frontend Setup
@@ -132,8 +137,8 @@ The backend API server will start on `http://localhost:5000`.
 In a new terminal window, install frontend dependencies and start the Vite dev server:
 
 ```bash
-# Navigate to the monorepo root
-cd POS
+# Navigate to the frontend directory
+cd POS/frontend
 
 # Install dependencies
 npm install
@@ -141,6 +146,8 @@ npm install
 # Start the frontend dev server
 npm run dev
 ```
+*(Alternatively, from the monorepo root `POS/`, you can run `npm run dev:frontend`)*
+
 The application will launch in development mode, typically available at `http://localhost:5173` (with fallback to `3000`).
 
 ---

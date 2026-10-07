@@ -45,7 +45,16 @@ const ERROR_MAP = {
   RETAILER_NOT_FOUND:  { status: 422, message: 'Retailer not found. Please provide a valid retailerId.' },
   DUE_DATE_IN_PAST:    { status: 400, message: 'dueDate cannot be in the past when creating a reminder.' },
   REMINDER_NOT_FOUND:  { status: 404, message: 'Payment reminder not found.' },
+  RETAILER_NO_OUTSTANDING: {
+    status: 400,
+    message: 'Cannot create a reminder: this retailer has no outstanding balance.',
+  },
+  REMINDER_AMOUNT_EXCEEDS_OUTSTANDING: {
+    status: 400,
+    message: 'Reminder amount cannot exceed the retailer\'s current outstanding balance.',
+  },
 };
+
 
 // ── Controllers ───────────────────────────────────────────────────────────────
 
@@ -99,6 +108,18 @@ export const updateReminder = async (req: Request, res: Response): Promise<void>
     badRequest(res, 'Validation failed.', parsed.error.flatten().fieldErrors);
     return;
   }
+
+  // ── Step 5: reject status:'PAID' — callers must use record-payment ────────
+  if (parsed.data.status === ReminderStatus.PAID) {
+    badRequest(
+      res,
+      'Cannot mark a reminder as PAID via this endpoint. ' +
+        'Use POST /api/retailers/:id/record-payment with { amount, reminderId } instead. ' +
+        'This records the payment in the ledger and marks the reminder atomically.',
+    );
+    return;
+  }
+
   try {
     const reminder = await reminderService.updateReminder(req.params.id, parsed.data);
     ok(res, { reminder });
@@ -106,6 +127,7 @@ export const updateReminder = async (req: Request, res: Response): Promise<void>
     handleServiceError(res, error, ERROR_MAP);
   }
 };
+
 
 /** DELETE /api/reminders/:id — Hard delete a reminder */
 export const deleteReminder = async (req: Request, res: Response): Promise<void> => {

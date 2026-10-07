@@ -50,9 +50,17 @@ const app = express();
 
 app.use(
   cors({
-    origin: env.CORS_ORIGIN.includes(',')
-      ? env.CORS_ORIGIN.split(',').map((o) => o.trim())
-      : env.CORS_ORIGIN,
+    origin: (origin, callback) => {
+      // Allow all origins in development or matching local network/allowed list
+      if (!origin || env.isDevelopment) {
+        return callback(null, true);
+      }
+      const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim());
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`Not allowed by CORS: ${origin}`));
+    },
     credentials: true, // Required for httpOnly cookie (refresh token)
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],

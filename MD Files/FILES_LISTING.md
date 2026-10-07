@@ -32,16 +32,16 @@ Houses static assets loaded directly by the client browser.
 
 ---
 
-## 3. Frontend Source Code (`src/`)
+## 3. Frontend Source Code (`frontend/src/`)
 Contains client-side React + TypeScript application source code.
 
-- **src/main.tsx** - DOM rendering entry point.
-- **src/App.tsx** - Frontend routing setup, including layout wrappers and RBAC guards.
-- **src/index.css** - Global Tailwind definitions and custom CSS overrides.
-- **src/types/index.ts** - Unified TypeScript interfaces representing data models.
-- **src/store/index.ts** - Zustand state management store for frontend actions.
+- **frontend/src/main.tsx** - DOM rendering entry point.
+- **frontend/src/App.tsx** - Frontend routing setup, including layout wrappers and RBAC guards.
+- **frontend/src/index.css** - Global Tailwind definitions and custom CSS overrides.
+- **frontend/src/types/index.ts** - Unified TypeScript interfaces representing data models.
+- **frontend/src/store/index.ts** - Zustand state management store for frontend actions.
 
-### Pages (`src/pages/`)
+### Pages (`frontend/src/pages/`)
 - **auth/LoginPage.tsx** - Dual-role login screen.
 - **worker/SalesPage.tsx** - Brand-first drill-down and cart checkout panel for workers.
 - **admin/AdminDashboard.tsx** - Metric summaries, inventory alerts, and real-time transaction logs.
@@ -120,16 +120,16 @@ Each directory contains service logics, Express routing handlers, and endpoints.
 
 ---
 
-## 5. Frontend Services (`src/services/`)
+## 5. Frontend Services (`frontend/src/services/`)
 Communicates with the backend REST endpoints.
 
-- **src/services/auth.ts** - Worker/Admin sign-in operations.
-- **src/services/brands.ts** - Brand listing, brand creation, and brand image modification.
-- **src/services/products.ts** - Variant CRUD services.
-- **src/services/inventory.ts** - Stock batch additions and adjustments.
-- **src/services/retailers.ts** - Retailer accounts and balance statements.
-- **src/services/bills.ts** - Sales billing processing.
-- **src/services/rgb.ts** - Returnable Glass Bottles (crates) management, balances, and exchange history.
+- **frontend/src/services/auth.ts** - Worker/Admin sign-in operations.
+- **frontend/src/services/brands.ts** - Brand listing, brand creation, and brand image modification.
+- **frontend/src/services/products.ts** - Variant CRUD services.
+- **frontend/src/services/inventory.ts** - Stock batch additions and adjustments.
+- **frontend/src/services/retailers.ts** - Retailer accounts and balance statements.
+- **frontend/src/services/bills.ts** - Sales billing processing.
+- **frontend/src/services/rgb.ts** - Returnable Glass Bottles (crates) management, balances, and exchange history.
 
 ---
 

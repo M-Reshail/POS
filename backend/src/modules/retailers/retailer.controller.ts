@@ -29,12 +29,17 @@ const ledgerQuerySchema = z.object({
 
 const recordPaymentSchema = z.object({
   amount: z.number().positive('Payment amount must be positive.'),
+  reminderId: z.string().optional(),
 });
 
 const ERROR_MAP = {
   RETAILER_NOT_FOUND: { status: 404, message: 'Retailer not found.' },
   INVALID_PAYMENT_AMOUNT: { status: 422, message: 'Payment amount must be greater than zero.' },
   NO_PENDING_BILLS: { status: 409, message: 'This retailer has no pending bills to pay.' },
+  REMINDER_NOT_FOUND: { status: 404, message: 'Payment reminder not found.' },
+  REMINDER_RETAILER_MISMATCH: { status: 400, message: 'Reminder does not belong to this retailer.' },
+  REMINDER_AMOUNT_MISMATCH: { status: 400, message: 'Payment amount must exactly match the reminder amount.' },
+  REMINDER_ALREADY_PAID_OR_CANCELLED: { status: 409, message: 'Reminder has already been paid or cancelled.' },
 };
 
 // ── Controllers ───────────────────────────────────────────────────────────────
@@ -91,7 +96,11 @@ export const recordRetailerPayment = async (req: Request, res: Response): Promis
   const parsed = recordPaymentSchema.safeParse(req.body);
   if (!parsed.success) { badRequest(res, 'Validation failed.', parsed.error.flatten().fieldErrors); return; }
   try {
-    const plan = await retailerService.recordRetailerPayment(req.params.id, parsed.data.amount);
+    const plan = await retailerService.recordRetailerPayment(
+      req.params.id,
+      parsed.data.amount,
+      parsed.data.reminderId,
+    );
     ok(res, { plan });
   } catch (error) { handleServiceError(res, error, ERROR_MAP); }
 };

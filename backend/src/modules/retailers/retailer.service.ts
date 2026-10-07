@@ -6,9 +6,10 @@
  */
 
 import { prisma } from '../../lib/prisma';
-import { BillPaymentMode, BillStatus, LedgerEntryType, Prisma } from '@prisma/client';
+import { BillPaymentMode, BillStatus, LedgerEntryType, Prisma, ReminderStatus } from '@prisma/client';
 import { allocateFifoPayment } from '../../lib/fifoPaymentAllocator';
 import type { BillSnapshot, AllocationPlan } from '../../lib/udhaarAllocator';
+import { autoCancelRemindersIfPaid } from '../../lib/reminderAutoCancel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -152,11 +153,23 @@ export const getRetailerLedger = async (
 export const recordRetailerPayment = async (
   retailerId: string,
   paymentAmount: number,
-): Promise<AllocationPlan> => {
+  reminderId?: string,
+): Promise<AllocationPlan & { reminder?: object }> => {
   const retailer = await prisma.retailer.findUnique({ where: { id: retailerId } });
   if (!retailer) throw new Error('RETAILER_NOT_FOUND');
 
   if (paymentAmount <= 0) throw new Error('INVALID_PAYMENT_AMOUNT');
+
+  // ── Step 1 pre-checks (outside tx — read-only) ────────────────────────────
+  if (reminderId !== undefined) {
+    // Load reminder; validate it belongs to this retailer and amount matches
+    const reminder = await prisma.paymentReminder.findUnique({ where: { id: reminderId } });
+    if (!reminder) throw new Error('REMINDER_NOT_FOUND');
+    if (reminder.retailerId !== retailerId) throw new Error('REMINDER_RETAILER_MISMATCH');
+    // Decimal-exact comparison — no float math
+    if (!reminder.amount.equals(new Prisma.Decimal(paymentAmount)))
+      throw new Error('REMINDER_AMOUNT_MISMATCH');
+  }
 
   // Fetch pending/partial bills in FIFO order (oldest first)
   const pendingRows = await prisma.bill.findMany({
@@ -188,7 +201,30 @@ export const recordRetailerPayment = async (
 
   if (plan.entries.length === 0) return plan;
 
+  let updatedReminder: object | undefined;
+
   await prisma.$transaction(async (tx) => {
+    // ── Step 1c: double-submit guard (inside tx) ────────────────────────────
+    if (reminderId !== undefined) {
+      const result = await tx.paymentReminder.updateMany({
+        where: {
+          id: reminderId,
+          status: { in: [ReminderStatus.PENDING, ReminderStatus.OVERDUE] },
+        },
+        data: { status: ReminderStatus.PAID },
+      });
+      if (result.count === 0) throw new Error('REMINDER_ALREADY_PAID_OR_CANCELLED');
+
+      // Read back the updated reminder for inclusion in the response
+      updatedReminder = await tx.paymentReminder.findUnique({
+        where: { id: reminderId },
+        include: {
+          retailer: { select: { id: true, shopName: true, ownerName: true } },
+          createdBy: { select: { id: true, name: true, role: true } },
+        },
+      }) ?? undefined;
+    }
+
     // Get the current ledger running balance as the starting point
     const lastEntry = await tx.ledgerEntry.findFirst({
       where: { retailerId },
@@ -220,7 +256,9 @@ export const recordRetailerPayment = async (
           billId: entry.billId,
           amount: new Prisma.Decimal(entry.amountApplied),
           paymentMode: BillPaymentMode.cash,
-          notes: `Retailer-level FIFO payment`,
+          notes: reminderId
+            ? `Retailer-level FIFO payment (from reminder)`
+            : `Retailer-level FIFO payment`,
         },
       });
 
@@ -233,11 +271,16 @@ export const recordRetailerPayment = async (
           entryType: LedgerEntryType.payment,
           amount: new Prisma.Decimal(entry.amountApplied),
           balance: new Prisma.Decimal(runningBalance),
-          notes: `Retailer-level FIFO payment`,
+          notes: reminderId
+            ? `Retailer-level FIFO payment (from reminder)`
+            : `Retailer-level FIFO payment`,
         },
       });
     }
+
+    // ── Step 2: auto-cancel remaining reminders if outstanding <= 0 ─────────
+    await autoCancelRemindersIfPaid(tx, retailerId);
   });
 
-  return plan;
+  return updatedReminder !== undefined ? { ...plan, reminder: updatedReminder } : plan;
 };
