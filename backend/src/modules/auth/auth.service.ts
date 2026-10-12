@@ -11,6 +11,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../../lib/prisma';
 import { env } from '../../config/env';
 import { UserRole } from '@prisma/client';
+import { SALT_ROUNDS, COMMON_PASSWORDS } from './auth.constants';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -164,3 +165,47 @@ export const getCurrentUser = async (userId: string): Promise<SafeUser> => {
 
   return toSafeUser(user);
 };
+
+/**
+ * Change authenticated user's password.
+ * Verifies current password with bcrypt, validates against common passwords/username,
+ * hashes with shared SALT_ROUNDS and updates database.
+ *
+ * NOTE: Refresh tokens are stateless JWTs and not tracked in the database.
+ * No schema change is performed, so existing refresh tokens remain valid until expiry.
+ * The current session remains valid and the user is not logged out on success.
+ */
+export const changePassword = async (
+  userId: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<void> => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!user || !user.isActive) {
+    throw new Error('USER_NOT_FOUND');
+  }
+
+  // 1. Verify current password
+  const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!isMatch) {
+    throw new Error('INVALID_CURRENT_PASSWORD');
+  }
+
+  // 2. Disallow common passwords or username as password
+  const normalizedNew = newPassword.toLowerCase().trim();
+  const normalizedUsername = (user.username || '').toLowerCase().trim();
+  if (COMMON_PASSWORDS.includes(normalizedNew) || (normalizedUsername && normalizedNew === normalizedUsername)) {
+    throw new Error('PASSWORD_TOO_COMMON');
+  }
+
+  // 3. Hash and update
+  const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash },
+  });
+};
+

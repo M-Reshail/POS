@@ -14,5 +14,10 @@ export const authService = {
     // Backend returns: { success: true, data: { user } }
     const response: any = await api.get('/auth/me');
     return response.data;
-  }
+  },
+  changePassword: async (currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> => {
+    // Backend returns: { success: true, message: "..." }
+    const response: any = await api.post('/auth/change-password', { currentPassword, newPassword });
+    return response;
+  },
 };
