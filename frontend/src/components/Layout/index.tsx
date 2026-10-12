@@ -46,7 +46,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems, headerAc
   }, [location.pathname]);
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-[100dvh] bg-gray-50">
       {/* Sidebar - Hidden on mobile, visible on larger screens */}
       <aside
         className={`${sidebarOpen ? 'w-64' : 'w-20'
@@ -97,7 +97,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems, headerAc
           {/* Shift-end reminder — visible only for workers when sidebar is expanded */}
           {sidebarOpen && currentUser?.role === 'worker' && (
             <p className="text-xs text-yellow-400 mb-2 leading-snug">
-              Leaving your shift? Log out so noone can use your account.
+              Leaving your shift? Log out so no one can use your account.
             </p>
           )}
           <button
@@ -120,7 +120,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems, headerAc
 
       {/* Mobile Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-screen w-64 bg-gray-900 text-white transition-transform duration-300 z-50 md:hidden flex flex-col ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed inset-y-0 left-0 w-64 bg-gray-900 text-white transition-transform duration-300 z-50 md:hidden flex flex-col ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
       >
         {/* Logo */}
@@ -155,7 +155,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems, headerAc
         </nav>
 
         {/* User Info & Logout */}
-        <div className="p-4 border-t border-gray-700 flex-shrink-0">
+        <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-gray-700 flex-shrink-0">
           <div className="mb-3">
             <p className="text-sm text-gray-400">Logged in as</p>
             <p className="text-sm font-medium truncate">{currentUser?.name}</p>
@@ -164,7 +164,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebarItems, headerAc
           {/* Shift-end reminder — visible only for workers */}
           {currentUser?.role === 'worker' && (
             <p className="text-xs text-yellow-400 mb-2 leading-snug">
-              Leaving your shift? Log out so noone can use your account.
+              Leaving your shift? Log out so no one can use your account.
             </p>
           )}
           <button

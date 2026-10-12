@@ -6,7 +6,7 @@
 import { prisma } from '../../lib/prisma';
 import bcrypt from 'bcrypt';
 
-const SALT_ROUNDS = 12;
+import { SALT_ROUNDS } from '../auth/auth.constants';
 
 // ── List all workers with basic sales stats ───────────────────────────────────
 export const getAllWorkers = async () => {

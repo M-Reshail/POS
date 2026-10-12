@@ -13,6 +13,7 @@ import { ReportsPage } from './pages/admin/ReportsPage';
 import { WorkersPage } from './pages/admin/WorkersPage';
 import { ExpensesPage } from './pages/admin/ExpensesPage';
 import { AdminBillsPage } from './pages/admin/AdminBillsPage';
+import { SettingsPage } from './pages/admin/SettingsPage';
 import { X, LogIn, Clock } from 'lucide-react';
 import './index.css';
 
@@ -299,6 +300,7 @@ export default function App() {
           <Route path="/admin/workers"   element={<ProtectedRoute requiredRole="admin"><WorkersPage /></ProtectedRoute>} />
           <Route path="/admin/expenses"  element={<ProtectedRoute requiredRole="admin"><ExpensesPage /></ProtectedRoute>} />
           <Route path="/admin/bills"     element={<ProtectedRoute requiredRole="admin"><AdminBillsPage /></ProtectedRoute>} />
+          <Route path="/admin/settings"  element={<ProtectedRoute requiredRole="admin"><SettingsPage /></ProtectedRoute>} />
 
           {/* Default redirect */}
           <Route

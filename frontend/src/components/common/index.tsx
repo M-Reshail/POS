@@ -220,7 +220,7 @@ export const Modal: React.FC<ModalProps> = ({
         className={`
           relative bg-white border border-gray-300 rounded-xl shadow-2xl w-full ${SIZE_CLASSES[size]}
           flex flex-col
-          max-h-[calc(100vh-2rem)]
+          max-h-[calc(100dvh-2rem)]
           animate-[modalIn_150ms_ease-out]
         `}
         onClick={(e) => e.stopPropagation()}

@@ -27,7 +27,13 @@ export const LoginPage: React.FC = () => {
       setCurrentUser(user);
       navigate(user.role === 'admin' ? '/admin/dashboard' : '/worker/sales');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please check your username and password.');
+      if (err.response?.status === 401) {
+        setError('Incorrect username or password.');
+      } else if (!err.response) {
+        setError('Cannot reach the server. Please try again.');
+      } else {
+        setError(err.response?.data?.message || 'Login failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -85,6 +91,9 @@ export const LoginPage: React.FC = () => {
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Username"
                   autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   required
                   className="w-full h-[50px] pl-11 pr-4 bg-[#071426]/70 border border-[rgba(150,180,210,0.30)] rounded-xl text-slate-100 placeholder-slate-400/70 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 transition-all text-sm font-medium"
                 />

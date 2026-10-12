@@ -10,6 +10,10 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import * as authService from './auth.service';
 import { env } from '../../config/env';
+import {
+  recordFailedChangePasswordAttempt,
+  resetChangePasswordAttempts,
+} from './changePasswordRateLimiter';
 
 // ── Input Schemas (Zod Validation) ────────────────────────────────────────────
 
@@ -27,6 +31,20 @@ const loginSchema = z.object({
 const refreshSchema = z.object({
   refreshToken: z.string({ required_error: 'Refresh token is required.' }),
 });
+
+const changePasswordSchema = z
+  .object({
+    currentPassword: z
+      .string({ required_error: 'Current password is required.' })
+      .min(1, 'Current password cannot be empty.'),
+    newPassword: z
+      .string({ required_error: 'New password is required.' })
+      .min(6, 'New password must be at least 6 characters long.'),
+  })
+  .refine((data) => data.newPassword !== data.currentPassword, {
+    message: 'New password must be different from current password.',
+    path: ['newPassword'],
+  });
 
 // ── Error Message Map ─────────────────────────────────────────────────────────
 
@@ -207,3 +225,76 @@ export const getMeController = async (req: Request, res: Response): Promise<void
     handleServiceError(res, error);
   }
 };
+
+/**
+ * POST /api/auth/change-password
+ *
+ * Allows an authenticated user to change their password.
+ * - Authenticated via JWT (req.user.id)
+ * - Validates current password and updates passwordHash
+ * - Uses shared in-memory rate limiter (5 failed attempts per 15 min per user)
+ * - Never logs passwords or request bodies
+ *
+ * NOTE: Refresh tokens are stateless JWTs and not tracked in the database.
+ * No schema change is performed, so existing refresh tokens remain valid until expiry.
+ * Current session remains authenticated; user is not logged out on password change.
+ */
+export const changePasswordController = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.id;
+  if (!userId) {
+    res.status(401).json({
+      success: false,
+      message: 'Authentication required.',
+    });
+    return;
+  }
+
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      success: false,
+      message: parsed.error.issues[0]?.message || 'Validation failed.',
+      errors: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  try {
+    await authService.changePassword(userId, parsed.data.currentPassword, parsed.data.newPassword);
+
+    // Reset rate limiter on successful password change
+    resetChangePasswordAttempts(userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Password changed successfully.',
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'INVALID_CURRENT_PASSWORD') {
+        recordFailedChangePasswordAttempt(userId);
+        res.status(400).json({
+          success: false,
+          message: 'Current password is incorrect.',
+        });
+        return;
+      }
+      if (error.message === 'PASSWORD_TOO_COMMON') {
+        res.status(400).json({
+          success: false,
+          message: 'New password is too common or matches your username. Please choose a stronger password.',
+        });
+        return;
+      }
+      if (error.message === 'USER_NOT_FOUND') {
+        res.status(404).json({
+          success: false,
+          message: 'User not found.',
+        });
+        return;
+      }
+    }
+    handleServiceError(res, error);
+  }
+};
+

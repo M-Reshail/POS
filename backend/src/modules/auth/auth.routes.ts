@@ -19,8 +19,10 @@ import {
   logoutController,
   refreshTokenController,
   getMeController,
+  changePasswordController,
 } from './auth.controller';
 import { authenticate } from '../../middleware/auth';
+import { changePasswordRateLimiter } from './changePasswordRateLimiter';
 
 const router = Router();
 
@@ -55,5 +57,12 @@ router.post('/refresh', refreshTokenController);
  * Used by the frontend on app load to restore session.
  */
 router.get('/me', authenticate, getMeController);
+
+/**
+ * POST /api/auth/change-password
+ * Changes password for the currently authenticated user.
+ * Rate limited to 5 failed attempts per 15 minutes per user.
+ */
+router.post('/change-password', authenticate, changePasswordRateLimiter, changePasswordController);
 
 export default router;
