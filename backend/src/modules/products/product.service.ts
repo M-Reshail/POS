@@ -30,7 +30,13 @@ export interface UpdateProductInput {
   // Brand is intentionally NOT here — brand changes go through PUT /api/brands/:id
   category?: string;
   variant?: string;
-  description?: string;
+  description?: string | null;
+}
+
+export interface RestoreProductInput {
+  variant?: string;
+  category?: string;
+  description?: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -139,33 +145,68 @@ export const getProductsInStock = async () => {
  * Duplicate guard: no two active products can share the same brandId + variant.
  */
 export const createProduct = async (input: CreateProductInput) => {
-  const variant = normalize(input.variant);
+  const variant = input.variant.trim();
 
   // Verify brand exists
   const brand = await prisma.brand.findUnique({ where: { id: input.brandId } });
   if (!brand) throw new Error('BRAND_NOT_FOUND');
 
-  // Case-insensitive duplicate check (active products only)
+  // Case-insensitive duplicate check
   const existing = await prisma.product.findFirst({
-    where: { brandId: input.brandId, variant, isActive: true },
+    where: {
+      brandId: input.brandId,
+      variant: { equals: variant, mode: 'insensitive' },
+    },
   });
   if (existing) {
-    throw new Error(
-      `DUPLICATE_PRODUCT:A variant "${variant}" already exists under "${brand.displayName}". ` +
-      `Did you mean to add stock instead?`
-    );
+    if (existing.isActive) {
+      throw new Error(
+        `DUPLICATE_PRODUCT:A product "${variant}" already exists under "${brand.displayName}". Did you mean to add stock instead?`
+      );
+    } else {
+      throw new Error(
+        `ARCHIVED_PRODUCT_EXISTS:${JSON.stringify({
+          productId: existing.id,
+          variant: existing.variant,
+          brandName: brand.displayName,
+        })}`
+      );
+    }
   }
 
-  return prisma.product.create({
-    data: {
-      brandId: input.brandId,
-      brand:   brand.name,           // kept in sync for backward compat
-      variant,
-      category: normalize(input.category || 'general'),
-      description: input.description,
-    },
-    include: brandInclude,
-  });
+  try {
+    return await prisma.product.create({
+      data: {
+        brandId: input.brandId,
+        brand:   brand.name,           // kept in sync for backward compat
+        variant,
+        category: normalize(input.category || 'general'),
+        description: input.description ? input.description.trim() : null,
+      },
+      include: brandInclude,
+    });
+  } catch (err: any) {
+    if (err.code === 'P2002') {
+      const archived = await prisma.product.findFirst({
+        where: {
+          brandId: input.brandId,
+          variant: { equals: variant, mode: 'insensitive' },
+          isActive: false,
+        },
+      });
+      if (archived) {
+        throw new Error(
+          `ARCHIVED_PRODUCT_EXISTS:${JSON.stringify({
+            productId: archived.id,
+            variant: archived.variant,
+            brandName: brand.displayName,
+          })}`
+        );
+      }
+      throw new Error(`DUPLICATE_PRODUCT:A product "${variant}" already exists under "${brand.displayName}".`);
+    }
+    throw err;
+  }
 };
 
 /**
@@ -177,33 +218,113 @@ export const updateProduct = async (id: string, input: UpdateProductInput) => {
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing || !existing.isActive) throw new Error('PRODUCT_NOT_FOUND');
 
-  const newVariant = input.variant ? normalize(input.variant) : existing.variant;
+  const newVariant = input.variant ? input.variant.trim() : existing.variant;
 
-  // If variant changed, check for duplicates among other active products under same brand
-  if (newVariant !== existing.variant && existing.brandId) {
+  // Check for duplicates under the same brand ONLY if the name actually changed (case-insensitive compare)
+  if (existing.brandId && newVariant.toLowerCase() !== existing.variant.toLowerCase()) {
     const conflict = await prisma.product.findFirst({
       where: {
         brandId: existing.brandId,
-        variant: newVariant,
-        isActive: true,
+        variant: { equals: newVariant, mode: 'insensitive' },
         NOT: { id },
       },
     });
     if (conflict) {
+      if (!conflict.isActive) {
+        throw new Error(
+          'DUPLICATE_PRODUCT:A deleted product with this name exists. Choose a different name or restore it from the create form.'
+        );
+      }
       throw new Error(
-        `DUPLICATE_PRODUCT:A variant "${newVariant}" already exists under this brand.`
+        `DUPLICATE_PRODUCT:A product "${newVariant}" already exists under this brand.`
       );
     }
   }
 
-  return prisma.product.update({
-    where: { id },
-    data: {
-      variant:     newVariant,
-      category:    input.category ? normalize(input.category) : undefined,
-      description: input.description,
-    },
-    include: brandInclude,
+  try {
+    return await prisma.product.update({
+      where: { id },
+      data: {
+        variant:     newVariant,
+        category:    input.category ? normalize(input.category) : undefined,
+        description: input.description !== undefined ? (input.description ? input.description.trim() : null) : undefined,
+      },
+      include: brandInclude,
+    });
+  } catch (err: any) {
+    if (err.code === 'P2002') {
+      const archived = await prisma.product.findFirst({
+        where: {
+          brandId: existing.brandId,
+          variant: { equals: newVariant, mode: 'insensitive' },
+          isActive: false,
+          NOT: { id },
+        },
+      });
+      if (archived) {
+        throw new Error(
+          'DUPLICATE_PRODUCT:A deleted product with this name exists. Choose a different name or restore it from the create form.'
+        );
+      }
+      throw new Error(`DUPLICATE_PRODUCT:A product "${newVariant}" already exists under this brand.`);
+    }
+    throw err;
+  }
+};
+
+/**
+ * Restore an archived (soft-deleted) product (sets isActive = true).
+ * Runs inside a transaction.
+ * Updates the name to user's specified casing if provided.
+ * Verifies that no other product (active or archived) under the same brand has that name.
+ */
+export const restoreProduct = async (id: string, input?: RestoreProductInput) => {
+  return await prisma.$transaction(async (tx) => {
+    const product = await tx.product.findUnique({
+      where: { id },
+      include: { brandRel: true },
+    });
+    if (!product) throw new Error('PRODUCT_NOT_FOUND');
+    if (product.isActive) throw new Error('PRODUCT_ALREADY_ACTIVE');
+
+    const targetVariant = input?.variant ? input.variant.trim() : product.variant;
+
+    // Check if another product under this brand has that name
+    const conflict = await tx.product.findFirst({
+      where: {
+        brandId: product.brandId,
+        variant: { equals: targetVariant, mode: 'insensitive' },
+        NOT: { id: product.id },
+      },
+    });
+
+    if (conflict) {
+      if (conflict.isActive) {
+        throw new Error(`DUPLICATE_PRODUCT:A product "${targetVariant}" already exists under this brand.`);
+      } else {
+        throw new Error('DUPLICATE_PRODUCT:Another deleted product with this name already exists under this brand.');
+      }
+    }
+
+    try {
+      return await tx.product.update({
+        where: { id: product.id },
+        data: {
+          isActive: true,
+          variant: targetVariant,
+          category: input?.category ? normalize(input.category) : undefined,
+          description: input?.description !== undefined
+            ? (input.description ? input.description.trim() : null)
+            : undefined,
+        },
+        include: brandInclude,
+      });
+    } catch (err: any) {
+      if (err.code === 'P2002') {
+        throw new Error(`DUPLICATE_PRODUCT:A product "${targetVariant}" already exists under this brand.`);
+      }
+      throw err;
+    }
   });
 };
 

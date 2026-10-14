@@ -27,7 +27,7 @@ import {
 const createProductSchema = z.object({
   brandId:     z.string().uuid('Invalid brandId — must be a valid brand UUID.'),
   category:    z.string().trim().optional().default('general'),
-  variant:     z.string().min(1, 'Variant is required.').trim(),
+  variant:     z.string().min(1, 'Product name is required.').trim(),
   description: z.string().trim().optional(),
 });
 
@@ -35,7 +35,14 @@ const createProductSchema = z.object({
 const updateProductSchema = z.object({
   variant:     z.string().min(1).trim().optional(),
   category:    z.string().min(1).trim().optional(),
-  description: z.string().trim().optional(),
+  description: z.string().trim().nullable().optional(),
+});
+
+// Restore: optionally update variant (casing), category, description
+const restoreProductSchema = z.object({
+  variant:     z.string().min(1).trim().optional(),
+  category:    z.string().min(1).trim().optional(),
+  description: z.string().trim().nullable().optional(),
 });
 
 // ── Error Map ─────────────────────────────────────────────────────────────────
@@ -46,12 +53,35 @@ const ERROR_MAP = {
 };
 
 const parsePrefixedError = (error: unknown, res: Response): boolean => {
+  if (error && typeof error === 'object' && (error as any).code === 'P2002') {
+    conflict(res, 'A product with this name already exists under this brand.');
+    return true;
+  }
+
   if (!(error instanceof Error)) return false;
   const msg = error.message;
 
   if (msg.startsWith('DUPLICATE_PRODUCT:')) {
     conflict(res, msg.slice('DUPLICATE_PRODUCT:'.length));
     return true;
+  }
+
+  if (msg.startsWith('ARCHIVED_PRODUCT_EXISTS:')) {
+    try {
+      const payload = JSON.parse(msg.slice('ARCHIVED_PRODUCT_EXISTS:'.length));
+      res.status(409).json({
+        success: false,
+        code: 'ARCHIVED_PRODUCT_EXISTS',
+        message: `A deleted product named '${payload.variant}' exists under ${payload.brandName}. Restore it?`,
+        productId: payload.productId,
+        variant: payload.variant,
+        brandName: payload.brandName,
+      });
+      return true;
+    } catch {
+      conflict(res, 'A deleted product with this name already exists under this brand.');
+      return true;
+    }
   }
 
   if (msg.startsWith('PRODUCT_HAS_STOCK:')) {
@@ -154,3 +184,27 @@ export const deleteProduct = async (req: Request, res: Response): Promise<void> 
     handleServiceError(res, error, ERROR_MAP);
   }
 };
+
+/**
+ * POST /api/products/:id/restore — Restore an archived product (Admin only)
+ * Sets isActive=true and optionally updates variant (casing), category, description.
+ */
+export const restoreProduct = async (req: Request, res: Response): Promise<void> => {
+  const parsed = restoreProductSchema.safeParse(req.body);
+  if (!parsed.success) {
+    badRequest(res, 'Validation failed.', parsed.error.flatten().fieldErrors);
+    return;
+  }
+
+  try {
+    const product = await productService.restoreProduct(req.params.id, parsed.data);
+    ok(res, { product, message: 'Product restored successfully.' });
+  } catch (error) {
+    if (parsePrefixedError(error, res)) return;
+    handleServiceError(res, error, {
+      ...ERROR_MAP,
+      PRODUCT_ALREADY_ACTIVE: { status: 400, message: 'Product is already active.' },
+    });
+  }
+};
+

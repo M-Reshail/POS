@@ -26,7 +26,15 @@ import {
 
 type PermissionState = 'default' | 'granted' | 'denied';
 
-export const PushNotificationToggle: React.FC = () => {
+interface PushNotificationToggleProps {
+  align?: 'left' | 'right';
+  className?: string;
+}
+
+export const PushNotificationToggle: React.FC<PushNotificationToggleProps> = ({
+  align = 'left',
+  className = '',
+}) => {
   const [isSubscribed,    setIsSubscribed]    = useState(false);
   const [permission,      setPermission]      = useState<PermissionState>('default');
   const [loading,         setLoading]         = useState(true); // checking initial state
@@ -125,7 +133,7 @@ export const PushNotificationToggle: React.FC = () => {
     : Bell;
 
   return (
-    <div className="relative inline-block group">
+    <div className={`relative inline-block group ${className}`}>
       <button
         id="push-notification-toggle"
         onClick={handleToggle}
@@ -149,14 +157,14 @@ export const PushNotificationToggle: React.FC = () => {
       </button>
 
       {/* Hover Status Popup / Tooltip */}
-      <div className="group-hover:opacity-100 group-hover:visible opacity-0 invisible transition-all duration-150 absolute top-full mt-2 right-0 z-50 whitespace-nowrap bg-brand-900 text-white text-xs font-medium px-3 py-1.5 rounded-control border border-brand-700 shadow-xl pointer-events-none flex items-center gap-1.5">
-        <span className={`w-2 h-2 rounded-full ${isDenied ? 'bg-danger-500' : isSubscribed ? 'bg-success-500 animate-ping' : 'bg-ink-subtle'}`} />
-        <span>{tooltipText}</span>
+      <div className={`group-hover:opacity-100 group-hover:visible opacity-0 invisible transition-all duration-150 absolute top-full mt-2 ${align === 'right' ? 'right-0' : 'left-0'} z-50 whitespace-nowrap bg-brand-900 text-white text-xs font-medium px-3 py-1.5 rounded-control border border-brand-700 shadow-xl pointer-events-none flex items-center gap-1.5 max-w-[calc(100vw-2rem)]`}>
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isDenied ? 'bg-danger-500' : isSubscribed ? 'bg-success-500 animate-ping' : 'bg-ink-subtle'}`} />
+        <span className="truncate">{tooltipText}</span>
       </div>
 
       {/* Denied details tooltip banner */}
       {showDeniedTip && (
-        <div className="absolute top-full mt-2 right-0 z-50 w-64 p-3 bg-brand-900 text-white text-xs rounded-card border border-brand-700 shadow-xl">
+        <div className={`absolute top-full mt-2 ${align === 'right' ? 'right-0' : 'left-0'} z-50 w-64 max-w-[calc(100vw-2rem)] p-3 bg-brand-900 text-white text-xs rounded-card border border-brand-700 shadow-xl`}>
           <p className="font-bold text-accent-400 mb-1">Notifications Blocked</p>
           <p className="text-white/80 leading-snug">
             Open site settings in your browser address bar and allow Notifications, then click again.

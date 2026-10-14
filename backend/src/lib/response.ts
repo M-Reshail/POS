@@ -110,10 +110,14 @@ export const unprocessable = (res: Response, message: string): void => {
 
 export const serverError = (res: Response, error: unknown): void => {
   console.error('❌ Unhandled error:', error);
-  const message =
-    process.env.NODE_ENV === 'development' && error instanceof Error
-      ? error.message
-      : 'An unexpected server error occurred.';
+  let message = 'An unexpected server error occurred.';
+  if (error instanceof Error) {
+    if ((error as any).code?.startsWith?.('P') || error.message.includes('PrismaClient') || error.message.includes('Unique constraint')) {
+      message = 'A database error occurred. Please try again.';
+    } else if (process.env.NODE_ENV === 'development') {
+      message = error.message;
+    }
+  }
   res.status(500).json({ success: false, message });
 };
 
@@ -127,6 +131,10 @@ export const handleServiceError = (
   error: unknown,
   errorMap: ErrorMap = {}
 ): void => {
+  if (error && typeof error === 'object' && (error as any).code === 'P2002') {
+    res.status(409).json({ success: false, message: 'A record with these details already exists.' });
+    return;
+  }
   if (error instanceof Error) {
     const mapped = errorMap[error.message];
     if (mapped) {
