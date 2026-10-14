@@ -175,6 +175,10 @@ export const InventoryPage: React.FC = () => {
   const [addProductLoading, setAddProductLoading] = useState(false);
   const addBrandImage = useImageUpload();
 
+  // ── Restore Archived Product Confirmation ───────────────────────────────────
+  const [restorePrompt, setRestorePrompt] = useState<{ productId: string; name: string; brandName: string } | null>(null);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+
   const selectedBrand = brands.find(b => b.id === addProductSelectedBrandId) ?? null;
 
   // ── Edit Product modal (Bug 2 fix: brand is read-only here) ───────────────────
@@ -299,11 +303,10 @@ export const InventoryPage: React.FC = () => {
     const errs: Record<string, string> = {};
     if (addProductBrandMode === 'existing' && !addProductSelectedBrandId) errs.brand = 'Select a brand.';
     if (addProductBrandMode === 'new' && !addProductNewBrandName.trim()) errs.brand = 'Brand name is required.';
-    if (!addProductVariant.trim()) errs.variant = 'Variant is required.';
+    if (!addProductVariant.trim()) errs.variant = 'Product name is required.';
     if (Object.keys(errs).length > 0) { setAddProductErrors(errs); return; }
     setAddProductErrors({});
     setAddProductLoading(true);
-
     try {
       let brandId = addProductSelectedBrandId;
 
@@ -319,12 +322,12 @@ export const InventoryPage: React.FC = () => {
 
       await productsService.create({
         brandId,
-        variant: addProductVariant.trim().toLowerCase(),
+        variant: addProductVariant.trim(),
         description: addProductDescription.trim() || undefined,
       });
 
       store.fetchProducts();
-      store.addNotification('success', `Variant "${addProductVariant}" created`);
+      store.addNotification('success', `Product "${addProductVariant.trim()}" created`);
 
       // Capture product info for post-create stock flow
       const createdVariantLabel = `${addProductBrandMode === 'new' ? addProductNewBrandName.trim() : (selectedBrand?.displayName ?? 'Product')} ${addProductVariant.trim()}`;
@@ -342,7 +345,7 @@ export const InventoryPage: React.FC = () => {
       setTimeout(async () => {
         const refreshedProducts = await productsService.getAll();
         const created = refreshedProducts.find(
-          p => p.variant === addProductVariant.trim().toLowerCase()
+          p => p.variant.toLowerCase() === addProductVariant.trim().toLowerCase()
             && (p.brandId === brandId || p.brandRel?.id === brandId)
         );
         if (created) {
@@ -351,11 +354,53 @@ export const InventoryPage: React.FC = () => {
         }
       }, 300);
     } catch (err: any) {
+      if (err.response?.data?.code === 'ARCHIVED_PRODUCT_EXISTS') {
+        const data = err.response.data;
+        setRestorePrompt({
+          productId: data.productId,
+          name: data.variant || addProductVariant.trim(),
+          brandName: data.brandName || (selectedBrand?.displayName ?? 'Brand'),
+        });
+        return;
+      }
       const msg = err.response?.data?.message || err.message || 'Failed to create product.';
       setAddProductErrors({ brand: msg });
     } finally {
       setAddProductLoading(false);
     }
+  };
+
+  // ── Confirm Restore Archived Product ─────────────────────────────────────────
+  const handleConfirmRestore = async () => {
+    if (!restorePrompt) return;
+    setRestoreLoading(true);
+    try {
+      await productsService.restore(restorePrompt.productId, {
+        variant: addProductVariant.trim(),
+        description: addProductDescription.trim() || undefined,
+      });
+
+      store.fetchProducts();
+      store.addNotification('success', `Product "${addProductVariant.trim()}" restored`);
+
+      // Reset form
+      setAddProductSelectedBrandId('');
+      setAddProductNewBrandName('');
+      setAddProductVariant('');
+      setAddProductDescription('');
+      addBrandImage.reset();
+      setIsAddProductModalOpen(false);
+      setRestorePrompt(null);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Failed to restore product.';
+      store.addNotification('error', msg);
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
+  const handleCancelRestore = () => {
+    setRestorePrompt(null);
   };
 
   // ── Open Edit Modal ───────────────────────────────────────────────────────────
@@ -370,14 +415,14 @@ export const InventoryPage: React.FC = () => {
   const handleSaveEdit = async () => {
     if (!editingProduct) return;
     const errs: Record<string, string> = {};
-    if (!editVariant.trim()) errs.variant = 'Variant is required.';
+    if (!editVariant.trim()) errs.variant = 'Product name is required.';
     if (Object.keys(errs).length > 0) { setEditErrors(errs); return; }
     setEditErrors({});
     setEditLoading(true);
     try {
       await productsService.update(editingProduct.id, {
-        variant: editVariant.trim().toLowerCase(),
-        description: editDescription.trim() || undefined,
+        variant: editVariant.trim(),
+        description: editDescription.trim() ? editDescription.trim() : null,
       });
       store.fetchProducts();
       store.addNotification('success', 'Product updated');
@@ -650,7 +695,7 @@ export const InventoryPage: React.FC = () => {
         className="h-9 px-2.5 sm:px-4 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs whitespace-nowrap"
       >
         <Plus size={15} />
-        <span>New Variant</span>
+        <span>New Product</span>
       </Button>
       <Button
         variant="secondary"
@@ -696,7 +741,7 @@ export const InventoryPage: React.FC = () => {
               className="flex-1 min-w-[100px] h-9 px-2.5 text-xs font-bold flex items-center justify-center gap-1 shadow-xs whitespace-nowrap"
             >
               <Plus size={14} />
-              <span>New Variant</span>
+              <span>New Product</span>
             </Button>
             <Button
               variant="secondary"
@@ -1135,7 +1180,7 @@ export const InventoryPage: React.FC = () => {
                           )}
                         </div>
                         <p className="font-bold text-ink text-[11px] sm:text-xs text-center line-clamp-1">{brand?.displayName ?? brandKey}</p>
-                        <p className="text-[10px] sm:text-[11px] text-ink-muted mt-0.5">{brandProducts.length} variant{brandProducts.length !== 1 ? 's' : ''}</p>
+                        <p className="text-[10px] sm:text-[11px] text-ink-muted mt-0.5">{brandProducts.length} product{brandProducts.length !== 1 ? 's' : ''}</p>
                       </button>
                     );
                   })}
@@ -1159,8 +1204,8 @@ export const InventoryPage: React.FC = () => {
                             </div>
                           )}
                           <div>
-                            <h3 className="font-bold text-ink text-lg capitalize">{brand?.displayName ?? selectedInventoryBrand} — Variants</h3>
-                            <p className="text-xs text-ink-muted">{selectedInventoryVariants.length} variant{selectedInventoryVariants.length !== 1 ? 's' : ''}</p>
+                            <h3 className="font-bold text-ink text-lg capitalize">{brand?.displayName ?? selectedInventoryBrand} — Products</h3>
+                            <p className="text-xs text-ink-muted">{selectedInventoryVariants.length} product{selectedInventoryVariants.length !== 1 ? 's' : ''}</p>
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -1195,15 +1240,9 @@ export const InventoryPage: React.FC = () => {
                               <Button size="sm" onClick={() => openAddStockForVariant(product.id)} className="text-xs py-1 px-2">Add Stock</Button>
                               <button
                                 onClick={() => openEditModal(product)}
-                                className="flex items-center gap-1 text-xs px-2 py-1 rounded-control bg-surface-muted text-brand-700 hover:bg-brand-50 border border-brand-200 transition-colors"
+                                className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-control bg-surface-muted text-brand-700 hover:bg-brand-50 border border-brand-200 transition-colors font-medium"
                               >
                                 <Pencil size={11} /> Edit
-                              </button>
-                              <button
-                                onClick={() => { setDeleteError(''); setDeletingProduct(product); }}
-                                className="flex items-center gap-1 text-xs px-2 py-1 rounded-control bg-danger-50 text-danger-500 hover:bg-danger-50/80 border border-danger-500/20 transition-colors"
-                              >
-                                <Trash2 size={11} /> Delete
                               </button>
                             </div>
                           </div>
@@ -1260,7 +1299,7 @@ export const InventoryPage: React.FC = () => {
                             <table className="w-full text-xs text-left border-collapse min-w-[700px]">
                               <thead className="sticky top-0 z-10 bg-surface-muted">
                                 <tr className="border-b border-border text-ink-subtle font-semibold uppercase text-[11px] tracking-wider bg-surface-muted">
-                                  <th className="py-2 px-3">Variant</th>
+                                  <th className="py-2 px-3">Product</th>
                                   <th className="py-2 px-3">Batch #</th>
                                   <th className="py-2 px-3 text-right">Qty</th>
                                   <th className="py-2 px-3 text-right">Buy Price</th>
@@ -1546,7 +1585,7 @@ export const InventoryPage: React.FC = () => {
         {/* ── Add Product (Variant) Modal ────────────────────────────────────── */}
         <Modal
           isOpen={isAddProductModalOpen}
-          title="Add Product Variant"
+          title="Add New Product"
           onClose={() => { setIsAddProductModalOpen(false); addBrandImage.reset(); setAddProductErrors({}); }}
           footer={
             <>
@@ -1556,7 +1595,7 @@ export const InventoryPage: React.FC = () => {
               </button>
               <button onClick={handleCreateProduct} disabled={addProductLoading}
                 className="flex-1 bg-brand-700 hover:bg-brand-600 disabled:bg-surface-muted disabled:text-ink-subtle text-white text-sm font-semibold rounded-control py-2.5 transition-colors flex items-center justify-center gap-2">
-                {addProductLoading ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Creating…</> : 'Create Variant'}
+                {addProductLoading ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Creating…</> : 'Create Product'}
               </button>
             </>
           }
@@ -1595,7 +1634,7 @@ export const InventoryPage: React.FC = () => {
                       ) : (
                         <div className="w-10 h-10 rounded-control bg-surface-card flex items-center justify-center text-lg">🥤</div>
                       )}
-                      <p className="text-xs text-brand-700 font-medium">Using <strong>{selectedBrand.displayName}</strong> image for this variant.</p>
+                      <p className="text-xs text-brand-700 font-medium">Using <strong>{selectedBrand.displayName}</strong> image for this product.</p>
                     </div>
                   )}
                 </>
@@ -1620,17 +1659,16 @@ export const InventoryPage: React.FC = () => {
               {addProductErrors.brand && <p className="text-danger-500 text-xs mt-1">{addProductErrors.brand}</p>}
             </div>
 
-            {/* Variant */}
+            {/* Variant / Product Name */}
             <div>
               <label className="block text-xs font-semibold text-ink-muted mb-1">
-                Variant <span className="text-danger-500">*</span>
-                <span className="text-ink-subtle font-normal ml-1">(saved in lowercase)</span>
+                Product Name <span className="text-danger-500">*</span>
               </label>
               <input
                 className={`input-field text-sm ${addProductErrors.variant ? 'border-danger-500' : ''}`}
                 value={addProductVariant}
                 onChange={e => setAddProductVariant(e.target.value)}
-                placeholder="e.g. 1.5l pet, 500ml can"
+                placeholder="e.g. 1.5L PET, 500ml can"
               />
               {addProductErrors.variant && <p className="text-danger-500 text-xs mt-1">{addProductErrors.variant}</p>}
             </div>
@@ -1651,19 +1689,44 @@ export const InventoryPage: React.FC = () => {
         {/* ── Edit Product Modal (Bug 2 fix: brand is read-only, no image) ──── */}
         <Modal
           isOpen={!!editingProduct}
-          title={`Edit Variant — ${getBrandName(editingProduct ?? { brand: '', variant: '' } as any)} ${editingProduct?.variant ?? ''}`}
+          title={`Edit Product — ${getBrandName(editingProduct ?? { brand: '', variant: '' } as any)} ${editingProduct?.variant ?? ''}`}
           onClose={() => { setEditingProduct(null); setEditErrors({}); }}
           footer={
-            <>
-              <button onClick={() => { setEditingProduct(null); setEditErrors({}); }}
-                className="flex-1 bg-surface-muted text-ink hover:bg-border/50 border border-border text-sm font-semibold rounded-control py-2.5 transition-colors">
-                Cancel
+            <div className="flex items-center justify-between w-full gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const prod = editingProduct;
+                  setEditingProduct(null);
+                  setEditErrors({});
+                  if (prod) {
+                    setDeleteError('');
+                    setDeletingProduct(prod);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-danger-500 hover:bg-danger-50 border border-danger-200 rounded-control transition-colors"
+                title="Delete or hide this product"
+              >
+                <Trash2 size={13} /> Delete Product
               </button>
-              <button onClick={handleSaveEdit} disabled={editLoading}
-                className="flex-1 bg-brand-700 hover:bg-brand-600 disabled:bg-surface-muted disabled:text-ink-subtle text-white text-sm font-semibold rounded-control py-2.5 transition-colors flex items-center justify-center gap-2">
-                {editLoading ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</> : 'Save Changes'}
-              </button>
-            </>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setEditingProduct(null); setEditErrors({}); }}
+                  className="bg-surface-muted text-ink hover:bg-border/50 border border-border text-sm font-semibold rounded-control px-4 py-2 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  disabled={editLoading}
+                  className="bg-brand-700 hover:bg-brand-600 disabled:bg-surface-muted disabled:text-ink-subtle text-white text-sm font-semibold rounded-control px-4 py-2 transition-colors flex items-center justify-center gap-2"
+                >
+                  {editLoading ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</> : 'Save Changes'}
+                </button>
+              </div>
+            </div>
           }
         >
           <div className="space-y-4">
@@ -1701,17 +1764,16 @@ export const InventoryPage: React.FC = () => {
               );
             })()}
 
-            {/* Variant */}
+            {/* Variant / Product Name */}
             <div>
               <label className="block text-xs font-semibold text-ink-muted mb-1">
-                Variant <span className="text-danger-500">*</span>
-                <span className="text-ink-subtle font-normal ml-1">(saved in lowercase)</span>
+                Product Name <span className="text-danger-500">*</span>
               </label>
               <input
                 className={`input-field text-sm ${editErrors.variant ? 'border-danger-500' : ''}`}
                 value={editVariant}
                 onChange={e => setEditVariant(e.target.value)}
-                placeholder="e.g. 1.5l pet"
+                placeholder="e.g. 1.5L PET"
               />
               {editErrors.variant && <p className="text-danger-500 text-xs mt-1">{editErrors.variant}</p>}
             </div>
@@ -1815,6 +1877,46 @@ export const InventoryPage: React.FC = () => {
             </div>
             <p className="text-sm text-ink-subtle">If this product still has stock, it cannot be hidden. Reduce stock to 0 first.</p>
             {deleteError && <div className="bg-danger-50 border border-danger-500/30 rounded-control px-3 py-2 text-xs text-danger-500 font-medium">{deleteError}</div>}
+          </div>
+        </Modal>
+
+        {/* ── Restore Confirmation Modal ─────────────────────────────────────── */}
+        <Modal
+          isOpen={!!restorePrompt}
+          title="Restore Product?"
+          onClose={handleCancelRestore}
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={handleCancelRestore}
+                disabled={restoreLoading}
+                className="flex-1 bg-surface-muted text-ink hover:bg-border/50 border border-border text-sm font-semibold rounded-control py-2.5 transition-colors"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRestore}
+                disabled={restoreLoading}
+                className="flex-1 bg-brand-500 hover:bg-brand-600 disabled:bg-surface-muted disabled:text-ink-subtle text-white text-sm font-semibold rounded-control py-2.5 transition-colors flex items-center justify-center gap-2"
+              >
+                {restoreLoading ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Restoring…
+                  </>
+                ) : (
+                  'Yes, Restore'
+                )}
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-ink-muted">
+              A deleted product named &apos;<strong className="text-ink">{restorePrompt?.name}</strong>&apos; exists under <strong className="text-ink">{restorePrompt?.brandName}</strong>. Restore it?
+            </p>
           </div>
         </Modal>
 

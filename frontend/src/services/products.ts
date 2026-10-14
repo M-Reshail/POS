@@ -36,7 +36,7 @@ export const productsService = {
    */
   update: async (
     id: string,
-    data: { variant?: string; category?: string; description?: string }
+    data: { variant?: string; category?: string; description?: string | null }
   ): Promise<Product> => {
     const response: any = await api.put(`/products/${id}`, data);
     return response.data.product;
@@ -45,6 +45,15 @@ export const productsService = {
   /** Soft-delete a product. Returns 409 if stock > 0. */
   softDelete: async (id: string): Promise<void> => {
     await api.delete(`/products/${id}`);
+  },
+
+  /** Restore an archived product (admin only). Sets isActive = true. */
+  restore: async (
+    id: string,
+    data?: { variant?: string; category?: string; description?: string | null }
+  ): Promise<Product> => {
+    const response: any = await api.post(`/products/${id}/restore`, data ?? {});
+    return response.data.product;
   },
 
   /** Returns the full URL for a server-relative image path. */

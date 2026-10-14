@@ -21,6 +21,7 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  restoreProduct,
 } from './product.controller';
 
 const router = Router();
@@ -34,8 +35,9 @@ router.get('/in-stock',  listProductsInStock); // Must be before /:id
 router.get('/:id',       getProduct);
 
 // ── Admin Only (write operations) ─────────────────────────────────────────────
-router.post('/',         requireRole('admin'), createProduct);
-router.put('/:id',       requireRole('admin'), updateProduct);
-router.delete('/:id',    requireRole('admin'), deleteProduct);
+router.post('/',              requireRole('admin'), createProduct);
+router.put('/:id',            requireRole('admin'), updateProduct);
+router.delete('/:id',         requireRole('admin'), deleteProduct);
+router.post('/:id/restore',   requireRole('admin'), restoreProduct);
 
 export default router;
