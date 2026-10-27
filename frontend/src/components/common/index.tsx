@@ -260,3 +260,5 @@ export const Modal: React.FC<ModalProps> = ({
 };
 
 export * from './InfiniteScrollTrigger';
+export * from './ReorderableTh';
+export * from './ColumnManagerModal';
