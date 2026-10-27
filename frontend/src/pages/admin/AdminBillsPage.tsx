@@ -1,14 +1,31 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
+import { ReorderableTh, ColumnManagerModal } from '../../components/common';
 import { Card, Figure } from '../../components/ui/Card';
 import { useStore } from '../../store';
 import { billsService } from '../../services/bills';
 import { rgbService } from '../../services/rgb';
-import { Search, ChevronDown, ChevronUp, Filter, RotateCcw, FileText, RefreshCw } from 'lucide-react';
-
+import { Search, ChevronDown, ChevronUp, Filter, RotateCcw, FileText, RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { Bill, RGBTransactionRecord } from '../../types';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import { ExpandableBillRow } from '../../components/bills/ExpandableBillRow';
+import { useReorderableColumns, ColumnConfig } from '../../hooks/useReorderableColumns';
+
+type BillColumnId = 'billNumber' | 'shop' | 'soldBy' | 'total' | 'paid' | 'pending' | 'mode' | 'status' | 'date' | 'actions';
+
+const DEFAULT_BILL_COLUMNS: ColumnConfig<BillColumnId>[] = [
+  { id: 'billNumber', label: 'Bill #', align: 'left', sortable: true, minWidth: '95px' },
+  { id: 'shop', label: 'Shop', align: 'left', sortable: true, minWidth: '130px' },
+  { id: 'soldBy', label: 'Sold By', align: 'left', sortable: true, minWidth: '120px' },
+  { id: 'total', label: 'Total', align: 'right', sortable: true, minWidth: '100px' },
+  { id: 'paid', label: 'Paid', align: 'right', sortable: true, minWidth: '100px' },
+  { id: 'pending', label: 'Pending', align: 'right', sortable: true, minWidth: '100px' },
+  { id: 'mode', label: 'Mode', align: 'center', sortable: true, minWidth: '90px' },
+  { id: 'status', label: 'Status', align: 'center', sortable: true, minWidth: '95px' },
+  { id: 'date', label: 'Date', align: 'left', sortable: true, minWidth: '110px' },
+  { id: 'actions', label: 'Actions', align: 'center', sortable: false, reorderable: false, minWidth: '70px' },
+];
+
 
 type PeriodPreset = 'today' | 'week' | 'month' | null;
 
@@ -292,6 +309,104 @@ export const AdminBillsPage: React.FC = () => {
   }, [bills, retailers, searchTerm, retailerFilter, workerFilter, statusFilter, dateFrom, dateTo]);
 
   const displayedBills = filteredBills;
+
+  // ── Column Reordering & Sorting Hook ───────────────────────────────────────
+  const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false);
+
+  const {
+    columns,
+    sortField,
+    sortDirection,
+    draggedColumnId,
+    dragOverColumnId,
+    dropPosition,
+    isCustomOrder,
+    handleSort,
+    handleDragStart,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleDragEnd,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+    moveColumn,
+    resetColumns,
+  } = useReorderableColumns<BillColumnId>({
+    storageKey: 'pos_bills_table_columns_order',
+    defaultColumns: DEFAULT_BILL_COLUMNS,
+  });
+
+  const columnIdsOrder = useMemo(() => columns.map((c) => c.id), [columns]);
+
+  const sortedBills = useMemo(() => {
+    if (!sortField || !sortDirection) return displayedBills;
+
+    return [...displayedBills].sort((a, b) => {
+      let valA: any = null;
+      let valB: any = null;
+
+      switch (sortField) {
+        case 'billNumber':
+          valA = a.billNumber ? a.billNumber.toLowerCase() : null;
+          valB = b.billNumber ? b.billNumber.toLowerCase() : null;
+          break;
+        case 'shop': {
+          const retA = a.retailer || retailers.find((r) => r.id === a.retailerId);
+          const retB = b.retailer || retailers.find((r) => r.id === b.retailerId);
+          valA = retA?.shopName ? retA.shopName.toLowerCase() : null;
+          valB = retB?.shopName ? retB.shopName.toLowerCase() : null;
+          break;
+        }
+        case 'soldBy': {
+          const wA = (a as any).worker?.name || a.workerId || '';
+          const wB = (b as any).worker?.name || b.workerId || '';
+          valA = wA ? wA.toLowerCase() : null;
+          valB = wB ? wB.toLowerCase() : null;
+          break;
+        }
+        case 'total':
+          valA = a.total != null && !isNaN(Number(a.total)) ? Number(a.total) : null;
+          valB = b.total != null && !isNaN(Number(b.total)) ? Number(b.total) : null;
+          break;
+        case 'paid':
+          valA = a.paidAmount != null && !isNaN(Number(a.paidAmount)) ? Number(a.paidAmount) : null;
+          valB = b.paidAmount != null && !isNaN(Number(b.paidAmount)) ? Number(b.paidAmount) : null;
+          break;
+        case 'pending':
+          valA = a.pendingAmount != null && !isNaN(Number(a.pendingAmount)) ? Number(a.pendingAmount) : null;
+          valB = b.pendingAmount != null && !isNaN(Number(b.pendingAmount)) ? Number(b.pendingAmount) : null;
+          break;
+        case 'mode':
+          valA = a.paymentMode ? a.paymentMode.toLowerCase() : null;
+          valB = b.paymentMode ? b.paymentMode.toLowerCase() : null;
+          break;
+        case 'status':
+          valA = a.status ? a.status.toLowerCase() : null;
+          valB = b.status ? b.status.toLowerCase() : null;
+          break;
+        case 'date':
+          valA = a.createdAt ? (new Date(a.createdAt || 0).getTime() || 0) : null;
+          valB = b.createdAt ? (new Date(b.createdAt || 0).getTime() || 0) : null;
+          break;
+        default:
+          return 0;
+      }
+
+      const isInvalid = (v: any) => v === null || v === undefined || (typeof v === 'number' && isNaN(v));
+      if (isInvalid(valA)) {
+        if (isInvalid(valB)) return 0;
+        return 1;
+      }
+      if (isInvalid(valB)) {
+        return -1;
+      }
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [displayedBills, sortField, sortDirection, retailers]);
 
   const filteredRgbTransactions = useMemo(() => {
     return rgbTransactions.filter((tx) => {
@@ -631,38 +746,78 @@ export const AdminBillsPage: React.FC = () => {
                 <p className="text-sm text-ink-muted font-medium">No sales bills found matching the current filters.</p>
               </div>
             ) : (
-              <div className="overflow-auto max-h-[calc(100vh-270px)] border border-border rounded-card">
-                <table className="w-full text-xs min-w-[680px]">
-                  <thead className="sticky top-0 z-20">
-                    <tr className="bg-surface-muted text-ink-subtle font-bold uppercase tracking-wider text-[11px] border-b border-border">
-                      <th className="sticky top-0 z-20 bg-surface-muted text-left py-2.5 px-3">Bill #</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-left py-2.5 px-3">Shop</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-left py-2.5 px-3">Sold By</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-right py-2.5 px-3">Total</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-right py-2.5 px-3">Paid</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-right py-2.5 px-3">Pending</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-center py-2.5 px-3">Mode</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-center py-2.5 px-3">Status</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-left py-2.5 px-3">Date</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted py-2.5 px-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border bg-surface-card">
-                    {displayedBills.map((bill: Bill) => (
-                      <ExpandableBillRow
-                        key={bill.id}
-                        bill={bill}
-                        showRetailer={true}
-                        showWorker={true}
-                        colSpan={10}
-                        isExpanded={expandedBill === bill.id}
-                        onToggleExpand={() => setExpandedBill((prev) => (prev === bill.id ? null : bill.id))}
-                        onPaymentSuccess={refreshBillsQuietly}
-                        viewMode="admin-bills"
-                      />
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-2">
+                <div className="flex items-center justify-end gap-2">
+                  <span className="text-[11px] text-ink-subtle hidden sm:inline font-medium">
+                    (drag headers to reorder, click to sort)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsColumnManagerOpen(true)}
+                    className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink font-semibold px-2.5 py-1 rounded-control bg-surface-muted hover:bg-border/40 border border-border transition-colors cursor-pointer"
+                    title="Manage table columns"
+                  >
+                    <SlidersHorizontal size={12} />
+                    <span>Columns</span>
+                  </button>
+
+                  {isCustomOrder && (
+                    <button
+                      type="button"
+                      onClick={resetColumns}
+                      className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink font-semibold px-2 py-1 rounded-control hover:bg-surface-muted transition-colors cursor-pointer"
+                      title="Reset column order to default"
+                    >
+                      <RotateCcw size={12} />
+                      <span className="hidden sm:inline">Reset</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="overflow-auto max-h-[calc(100vh-270px)] border border-border rounded-card">
+                  <table className="w-full text-xs min-w-[680px]">
+                    <thead className="sticky top-0 z-20">
+                      <tr className="bg-surface-muted text-ink-subtle font-bold uppercase tracking-wider text-[11px] border-b border-border">
+                        {columns.map((col) => (
+                          <ReorderableTh
+                            key={col.id}
+                            column={col}
+                            isDragging={draggedColumnId === col.id}
+                            isDragOver={dragOverColumnId === col.id}
+                            dropPosition={dropPosition}
+                            sortField={sortField}
+                            sortDirection={sortDirection}
+                            onSort={handleSort}
+                            onDragStart={handleDragStart}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                            onDragEnd={handleDragEnd}
+                            onTouchStart={handleTouchStart}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
+                          />
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border bg-surface-card">
+                      {sortedBills.map((bill: Bill) => (
+                        <ExpandableBillRow
+                          key={bill.id}
+                          bill={bill}
+                          showRetailer={true}
+                          showWorker={true}
+                          colSpan={columns.length}
+                          columnOrder={columnIdsOrder}
+                          isExpanded={expandedBill === bill.id}
+                          onToggleExpand={() => setExpandedBill((prev) => (prev === bill.id ? null : bill.id))}
+                          onPaymentSuccess={refreshBillsQuietly}
+                          viewMode="admin-bills"
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )
           ) : (
@@ -771,6 +926,17 @@ export const AdminBillsPage: React.FC = () => {
             )
           )}
         </Card>
+
+        {/* Sales Bills Column Manager Modal (Mobile / Accessibility) */}
+        <ColumnManagerModal
+          isOpen={isColumnManagerOpen}
+          onClose={() => setIsColumnManagerOpen(false)}
+          columns={columns}
+          moveColumn={moveColumn}
+          resetColumns={resetColumns}
+          isCustomOrder={isCustomOrder}
+        />
+
       </PageContainer>
     </Layout>
   );

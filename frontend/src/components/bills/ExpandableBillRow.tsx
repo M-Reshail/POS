@@ -23,6 +23,7 @@ export interface ExpandableBillRowProps {
   onPaymentSuccess?: (updatedBill?: Bill) => void | Promise<void>;
   viewMode?: 'admin-bills' | 'ledger-friendly' | 'ledger-detailed';
   layoutMode?: 'table' | 'card';
+  columnOrder?: string[];
 }
 
 export const ExpandableBillRow: React.FC<ExpandableBillRowProps> = ({
@@ -38,6 +39,7 @@ export const ExpandableBillRow: React.FC<ExpandableBillRowProps> = ({
   onPaymentSuccess,
   viewMode = 'admin-bills',
   layoutMode = 'table',
+  columnOrder,
 }) => {
   const store = useStore();
   const [currentBill, setCurrentBill] = useState<Bill>(initialBill);
@@ -203,6 +205,90 @@ export const ExpandableBillRow: React.FC<ExpandableBillRowProps> = ({
     }
 
     // Default: 'admin-bills'
+    if (columnOrder && columnOrder.length > 0) {
+      return (
+        <tr className="border-b border-gray-50 hover:bg-gray-50/80 transition-colors">
+          {columnOrder.map((colId) => {
+            switch (colId) {
+              case 'billNumber':
+                return (
+                  <td key={colId} className="py-2.5 px-3 font-mono text-xs font-semibold text-gray-700">
+                    {currentBill.billNumber}
+                  </td>
+                );
+              case 'shop':
+                return (
+                  <td key={colId} className="py-2.5 px-3">
+                    <div className="font-semibold text-gray-900 text-xs">{retailer?.shopName || '—'}</div>
+                    {retailer?.ownerName && <div className="text-gray-400 text-[11px]">{retailer.ownerName}</div>}
+                  </td>
+                );
+              case 'soldBy':
+                return (
+                  <td key={colId} className="py-2.5 px-3 text-xs text-gray-600">
+                    {workerName}
+                  </td>
+                );
+              case 'total':
+                return (
+                  <td key={colId} className="py-2.5 px-3 text-right font-bold text-gray-900 text-xs">
+                    ₨{totalVal.toFixed(0)}
+                  </td>
+                );
+              case 'paid':
+                return (
+                  <td key={colId} className="py-2.5 px-3 text-right font-bold text-emerald-600 text-xs">
+                    ₨{paidVal.toFixed(0)}
+                  </td>
+                );
+              case 'pending':
+                return (
+                  <td key={colId} className="py-2.5 px-3 text-right font-bold text-orange-600 text-xs">
+                    ₨{pendingVal.toFixed(0)}
+                  </td>
+                );
+              case 'mode':
+                return (
+                  <td key={colId} className="py-2.5 px-3 text-center capitalize text-gray-500 text-xs">
+                    {currentBill.paymentMode?.replace('-', ' ') || '—'}
+                  </td>
+                );
+              case 'status':
+                return (
+                  <td key={colId} className="py-2.5 px-3 text-center">
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${STATUS_COLORS[currentBill.status] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+                      {currentBill.status}
+                    </span>
+                  </td>
+                );
+              case 'date':
+                return (
+                  <td key={colId} className="py-2.5 px-3 text-xs text-gray-500 whitespace-nowrap">
+                    {new Date(currentBill.createdAt).toLocaleDateString()}
+                  </td>
+                );
+              case 'actions':
+                return (
+                  <td key={colId} className="py-2.5 px-3 text-center">
+                    <button
+                      onClick={toggleExpand}
+                      className={`p-1.5 rounded text-xs font-semibold transition-colors cursor-pointer ${
+                        isExpanded ? 'bg-blue-600 text-white' : 'text-blue-600 hover:bg-blue-50'
+                      }`}
+                      title={isExpanded ? 'Collapse' : 'Expand Details & Payments'}
+                    >
+                      {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                  </td>
+                );
+              default:
+                return null;
+            }
+          })}
+        </tr>
+      );
+    }
+
     return (
       <tr className="border-b border-gray-50 hover:bg-gray-50/80 transition-colors">
         <td className="py-2.5 px-3 font-mono text-xs font-semibold text-gray-700">{currentBill.billNumber}</td>
