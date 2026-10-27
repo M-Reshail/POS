@@ -26,6 +26,18 @@ const DEFAULT_BILL_COLUMNS: ColumnConfig<BillColumnId>[] = [
   { id: 'actions', label: 'Actions', align: 'center', sortable: false, reorderable: false, minWidth: '70px' },
 ];
 
+type RgbColumnId = 'date' | 'shop' | 'rgbItem' | 'crates' | 'soldBy' | 'billLink' | 'actions';
+
+const DEFAULT_RGB_COLUMNS: ColumnConfig<RgbColumnId>[] = [
+  { id: 'date', label: 'Date', align: 'left', sortable: true, minWidth: '130px' },
+  { id: 'shop', label: 'Shop', align: 'left', sortable: true, minWidth: '140px' },
+  { id: 'rgbItem', label: 'RGB Item', align: 'left', sortable: true, minWidth: '120px' },
+  { id: 'crates', label: 'Crates Exchange Activity', align: 'center', sortable: true, minWidth: '170px' },
+  { id: 'soldBy', label: 'Sold By', align: 'left', sortable: true, minWidth: '110px' },
+  { id: 'billLink', label: 'Bill Link', align: 'center', sortable: true, minWidth: '110px' },
+  { id: 'actions', label: 'Actions', align: 'center', sortable: false, reorderable: false, minWidth: '60px' },
+];
+
 
 type PeriodPreset = 'today' | 'week' | 'month' | null;
 
@@ -339,6 +351,33 @@ export const AdminBillsPage: React.FC = () => {
 
   const columnIdsOrder = useMemo(() => columns.map((c) => c.id), [columns]);
 
+  // ── Column Reordering & Sorting Hook (RGB Bills Tab) ────────────────────────
+  const [isRgbColumnManagerOpen, setIsRgbColumnManagerOpen] = useState(false);
+
+  const {
+    columns: rgbColumns,
+    sortField: rgbSortField,
+    sortDirection: rgbSortDirection,
+    draggedColumnId: rgbDraggedColumnId,
+    dragOverColumnId: rgbDragOverColumnId,
+    dropPosition: rgbDropPosition,
+    isCustomOrder: isRgbCustomOrder,
+    handleSort: handleRgbSort,
+    handleDragStart: handleRgbDragStart,
+    handleDragOver: handleRgbDragOver,
+    handleDragLeave: handleRgbDragLeave,
+    handleDrop: handleRgbDrop,
+    handleDragEnd: handleRgbDragEnd,
+    handleTouchStart: handleRgbTouchStart,
+    handleTouchMove: handleRgbTouchMove,
+    handleTouchEnd: handleRgbTouchEnd,
+    moveColumn: moveRgbColumn,
+    resetColumns: resetRgbColumns,
+  } = useReorderableColumns<RgbColumnId>({
+    storageKey: 'pos_admin_rgb_bills_table_columns_order',
+    defaultColumns: DEFAULT_RGB_COLUMNS,
+  });
+
   const sortedBills = useMemo(() => {
     if (!sortField || !sortDirection) return displayedBills;
 
@@ -497,6 +536,79 @@ export const AdminBillsPage: React.FC = () => {
   }, [filteredRgbTransactions]);
 
   const displayedGroupedRgbTransactions = groupedRgbTransactions;
+
+  const billById = useMemo(() => new Map(bills.map((b) => [b.id, b])), [bills]);
+  const retailerById = useMemo(() => new Map(retailers.map((r) => [r.id, r])), [retailers]);
+
+  // Sort RGB grouped transactions based on active column and direction (decorate-sort-undecorate)
+  const sortedGroupedRgbTransactions = useMemo(() => {
+    if (!rgbSortField || !rgbSortDirection) return displayedGroupedRgbTransactions;
+
+    const getSortValue = (item: GroupedRGBTransaction): any => {
+      switch (rgbSortField) {
+        case 'date':
+          return item.createdAt ? (new Date(item.createdAt || 0).getTime() || 0) : null;
+        case 'shop': {
+          const ret = retailerById.get(item.retailerId);
+          const shop = (item.retailerName || ret?.shopName || '').trim();
+          return shop || null;
+        }
+        case 'rgbItem': {
+          const name = (item.itemName || '').trim();
+          return name || null;
+        }
+        case 'crates': {
+          const diff = Number(item.cratesGiven ?? NaN) - Number(item.cratesReturned ?? NaN);
+          return Number.isFinite(diff) ? diff : null;
+        }
+        case 'soldBy': {
+          const worker = (item.workerName || '').trim();
+          return worker || null;
+        }
+        case 'billLink': {
+          const linkedBill = item.saleId ? billById.get(item.saleId) : null;
+          const num = linkedBill?.billNumber?.trim();
+          return num || null;
+        }
+        default:
+          return null;
+      }
+    };
+
+    const isInvalid = (v: any) => v === null || v === undefined || (typeof v === 'number' && !Number.isFinite(v));
+
+    const decorated = displayedGroupedRgbTransactions.map((item) => ({
+      item,
+      val: getSortValue(item),
+    }));
+
+    decorated.sort((a, b) => {
+      const valA = a.val;
+      const valB = b.val;
+
+      if (isInvalid(valA)) {
+        if (isInvalid(valB)) return 0;
+        return 1;
+      }
+      if (isInvalid(valB)) {
+        return -1;
+      }
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        const cmp = valA.localeCompare(valB, undefined, {
+          sensitivity: 'base',
+          numeric: rgbSortField === 'billLink',
+        });
+        return rgbSortDirection === 'asc' ? cmp : -cmp;
+      }
+
+      if (valA < valB) return rgbSortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return rgbSortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return decorated.map((d) => d.item);
+  }, [displayedGroupedRgbTransactions, rgbSortField, rgbSortDirection, billById, retailerById]);
 
   const totalRevenue = filteredBills.reduce((s, b) => s + Number(b.total || 0), 0);
   const totalPaid = filteredBills.reduce((s, b) => s + Number(b.paidAmount || 0), 0);
@@ -830,88 +942,159 @@ export const AdminBillsPage: React.FC = () => {
                 <p className="text-sm text-ink-muted font-medium">No RGB crate transactions found matching the current filters.</p>
               </div>
             ) : (
-              <div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-end gap-2">
+                  <span className="text-[11px] text-ink-subtle hidden sm:inline font-medium">
+                    (drag headers to reorder, click to sort)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsRgbColumnManagerOpen(true)}
+                    className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink font-semibold px-2.5 py-1 rounded-control bg-surface-muted hover:bg-border/40 border border-border transition-colors cursor-pointer"
+                    title="Manage table columns"
+                  >
+                    <SlidersHorizontal size={12} />
+                    <span>Columns</span>
+                  </button>
+
+                  {isRgbCustomOrder && (
+                    <button
+                      type="button"
+                      onClick={resetRgbColumns}
+                      className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink font-semibold px-2 py-1 rounded-control hover:bg-surface-muted transition-colors cursor-pointer"
+                      title="Reset column order to default"
+                    >
+                      <RotateCcw size={12} />
+                      <span className="hidden sm:inline">Reset</span>
+                    </button>
+                  )}
+                </div>
+
                 <div className="overflow-auto max-h-[calc(100vh-270px)] border border-border rounded-card">
                   <table className="w-full text-xs min-w-[680px]">
                     <thead className="sticky top-0 z-20">
                       <tr className="bg-surface-muted text-ink-subtle font-bold uppercase tracking-wider text-[11px] border-b border-border">
-                        <th className="sticky top-0 z-20 bg-surface-muted text-left py-2.5 px-3">Date</th>
-                        <th className="sticky top-0 z-20 bg-surface-muted text-left py-2.5 px-3">Shop</th>
-                        <th className="sticky top-0 z-20 bg-surface-muted text-left py-2.5 px-3">RGB Item</th>
-                        <th className="sticky top-0 z-20 bg-surface-muted text-center py-2.5 px-3">Crates Exchange Activity</th>
-                        <th className="sticky top-0 z-20 bg-surface-muted text-left py-2.5 px-3">Sold By</th>
-                        <th className="sticky top-0 z-20 bg-surface-muted text-center py-2.5 px-3">Bill Link</th>
-                        <th className="sticky top-0 z-20 bg-surface-muted py-2.5 px-3"></th>
+                        {rgbColumns.map((col) => (
+                          <ReorderableTh
+                            key={col.id}
+                            column={col}
+                            isDragging={rgbDraggedColumnId === col.id}
+                            isDragOver={rgbDragOverColumnId === col.id}
+                            dropPosition={rgbDropPosition}
+                            sortField={rgbSortField}
+                            sortDirection={rgbSortDirection}
+                            onSort={handleRgbSort}
+                            onDragStart={handleRgbDragStart}
+                            onDragOver={handleRgbDragOver}
+                            onDragLeave={handleRgbDragLeave}
+                            onDrop={handleRgbDrop}
+                            onDragEnd={handleRgbDragEnd}
+                            onTouchStart={handleRgbTouchStart}
+                            onTouchMove={handleRgbTouchMove}
+                            onTouchEnd={handleRgbTouchEnd}
+                          />
+                        ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border bg-surface-card">
-                      {displayedGroupedRgbTransactions.map((group) => {
-                        const linkedBill = group.saleId ? bills.find((b) => b.id === group.saleId) : null;
+                      {sortedGroupedRgbTransactions.map((group) => {
+                        const linkedBill = group.saleId ? billById.get(group.saleId) : null;
                         const isExpanded = expandedGroupKey === group.key;
-                        const retailer = retailers.find((r) => r.id === group.retailerId);
+                        const retailer = retailerById.get(group.retailerId);
                         const retailerShop = group.retailerName || retailer?.shopName || '—';
                         const retailerOwner = group.retailerOwner || retailer?.ownerName || '';
 
                         return (
                           <React.Fragment key={group.key}>
                             <tr className="hover:bg-surface-muted/50 transition-colors">
-                              <td className="py-2.5 px-3 text-ink-muted font-mono text-[11px]">
-                                {new Date(group.createdAt).toLocaleString('en-PK', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </td>
-                              <td className="py-2.5 px-3">
-                                <div className="font-semibold text-ink">{retailerShop}</div>
-                                {retailerOwner && <div className="text-ink-subtle text-[11px]">{retailerOwner}</div>}
-                              </td>
-                              <td className="py-2.5 px-3 font-bold text-ink">{group.itemName}</td>
-                              <td className="py-2.5 px-3 text-center">
-                                <div className="inline-flex items-center gap-1.5 flex-wrap justify-center">
-                                  {group.cratesGiven > 0 && (
-                                    <span className="px-2 py-0.5 rounded-control text-[11px] font-bold bg-warning-50 text-warning-500 border border-warning-500/30">
-                                      Given ↑ <Figure>{group.cratesGiven}</Figure>
-                                    </span>
-                                  )}
-                                  {group.cratesReturned > 0 && (
-                                    <span className="px-2 py-0.5 rounded-control text-[11px] font-bold bg-success-50 text-success-500 border border-success-500/30">
-                                      Returned ↓ <Figure>{group.cratesReturned}</Figure>
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="py-2.5 px-3 text-ink-muted">{group.workerName || 'N/A'}</td>
-                              <td className="py-2.5 px-3 text-center">
-                                {linkedBill ? (
-                                  <button
-                                    onClick={() => setExpandedGroupKey(isExpanded ? null : group.key)}
-                                    className="px-2 py-1 bg-brand-50 hover:bg-brand-100 text-brand-700 font-mono rounded-control text-[11px] border border-brand-200 inline-flex items-center gap-1 font-semibold transition-colors"
-                                  >
-                                    Bill #<Figure>{linkedBill.billNumber}</Figure>
-                                    {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                                  </button>
-                                ) : (
-                                  <span className="text-ink-subtle font-normal">Standalone</span>
-                                )}
-                              </td>
-                              <td className="py-2.5 px-3 text-center">
-                                {linkedBill && (
-                                  <button
-                                    onClick={() => setExpandedGroupKey(isExpanded ? null : group.key)}
-                                    className="text-brand-600 hover:text-brand-700"
-                                    title={isExpanded ? 'Hide Bill Details' : 'View Bill Details'}
-                                  >
-                                    {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                  </button>
-                                )}
-                              </td>
+                              {rgbColumns.map((col) => {
+                                switch (col.id) {
+                                  case 'date':
+                                    return (
+                                      <td key={col.id} className="py-2.5 px-3 text-ink-muted font-mono text-[11px]">
+                                        {new Date(group.createdAt).toLocaleString('en-PK', {
+                                          day: '2-digit',
+                                          month: 'short',
+                                          year: 'numeric',
+                                          hour: '2-digit',
+                                          minute: '2-digit',
+                                        })}
+                                      </td>
+                                    );
+                                  case 'shop':
+                                    return (
+                                      <td key={col.id} className="py-2.5 px-3">
+                                        <div className="font-semibold text-ink">{retailerShop}</div>
+                                        {retailerOwner && <div className="text-ink-subtle text-[11px]">{retailerOwner}</div>}
+                                      </td>
+                                    );
+                                  case 'rgbItem':
+                                    return (
+                                      <td key={col.id} className="py-2.5 px-3 font-bold text-ink">
+                                        {group.itemName}
+                                      </td>
+                                    );
+                                  case 'crates':
+                                    return (
+                                      <td key={col.id} className="py-2.5 px-3 text-center">
+                                        <div className="inline-flex items-center gap-1.5 flex-wrap justify-center">
+                                          {group.cratesGiven > 0 && (
+                                            <span className="px-2 py-0.5 rounded-control text-[11px] font-bold bg-warning-50 text-warning-500 border border-warning-500/30">
+                                              Given ↑ <Figure>{group.cratesGiven}</Figure>
+                                            </span>
+                                          )}
+                                          {group.cratesReturned > 0 && (
+                                            <span className="px-2 py-0.5 rounded-control text-[11px] font-bold bg-success-50 text-success-500 border border-success-500/30">
+                                              Returned ↓ <Figure>{group.cratesReturned}</Figure>
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                    );
+                                  case 'soldBy':
+                                    return (
+                                      <td key={col.id} className="py-2.5 px-3 text-ink-muted">
+                                        {group.workerName || 'N/A'}
+                                      </td>
+                                    );
+                                  case 'billLink':
+                                    return (
+                                      <td key={col.id} className="py-2.5 px-3 text-center">
+                                        {linkedBill ? (
+                                          <button
+                                            onClick={() => setExpandedGroupKey(isExpanded ? null : group.key)}
+                                            className="px-2 py-1 bg-brand-50 hover:bg-brand-100 text-brand-700 font-mono rounded-control text-[11px] border border-brand-200 inline-flex items-center gap-1 font-semibold transition-colors cursor-pointer"
+                                          >
+                                            Bill #<Figure>{linkedBill.billNumber}</Figure>
+                                            {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                          </button>
+                                        ) : (
+                                          <span className="text-ink-subtle font-normal">Standalone</span>
+                                        )}
+                                      </td>
+                                    );
+                                  case 'actions':
+                                    return (
+                                      <td key={col.id} className="py-2.5 px-3 text-center">
+                                        {linkedBill && (
+                                          <button
+                                            onClick={() => setExpandedGroupKey(isExpanded ? null : group.key)}
+                                            className="text-brand-600 hover:text-brand-700 cursor-pointer"
+                                            title={isExpanded ? 'Hide Bill Details' : 'View Bill Details'}
+                                          >
+                                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                          </button>
+                                        )}
+                                      </td>
+                                    );
+                                  default:
+                                    return null;
+                                }
+                              })}
                             </tr>
                             {isExpanded && linkedBill && (
                               <tr>
-                                <td colSpan={7} className="bg-surface-muted/60 px-4 py-3 border-t border-b border-border">
+                                <td colSpan={rgbColumns.length} className="bg-surface-muted/60 px-4 py-3 border-t border-b border-border">
                                   <RenderBillDetails bill={linkedBill} />
                                 </td>
                               </tr>
@@ -935,6 +1118,16 @@ export const AdminBillsPage: React.FC = () => {
           moveColumn={moveColumn}
           resetColumns={resetColumns}
           isCustomOrder={isCustomOrder}
+        />
+
+        {/* RGB Bills Column Manager Modal (Mobile / Accessibility) */}
+        <ColumnManagerModal
+          isOpen={isRgbColumnManagerOpen}
+          onClose={() => setIsRgbColumnManagerOpen(false)}
+          columns={rgbColumns}
+          moveColumn={moveRgbColumn}
+          resetColumns={resetRgbColumns}
+          isCustomOrder={isRgbCustomOrder}
         />
 
       </PageContainer>
