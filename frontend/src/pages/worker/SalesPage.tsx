@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Button, ReorderableTh, ColumnManagerModal } from '../../components/common';
+import { Button, ReorderableTh } from '../../components/common';
 import { Card, Figure } from '../../components/ui/Card';
 import { useStore } from '../../store';
 import {
   ShoppingCart, Trash2, Droplet, Edit2, Check, Search, X,
-  History, UserPlus, ChevronLeft, Minus, Plus, RotateCcw, SlidersHorizontal,
+  History, UserPlus, ChevronLeft, Minus, Plus, RotateCcw,
 } from 'lucide-react';
 import { Bill, BillItem, RGBRetailerBalance, RGBTransactionRecord, AllocationPlan, UdhaarAllocationMode } from '../../types';
 import { retailersService } from '../../services/retailers';
@@ -88,8 +88,6 @@ export const SalesPage: React.FC = () => {
   const [historyBillsLoading, setHistoryBillsLoading] = useState(false);
 
   // ── Column Reordering & Sorting Hook (Bills History) ────────────────────────
-  const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false);
-
   const {
     columns,
     sortField,
@@ -107,7 +105,6 @@ export const SalesPage: React.FC = () => {
     handleTouchStart,
     handleTouchMove,
     handleTouchEnd,
-    moveColumn,
     resetColumns,
   } = useReorderableColumns<SalesBillColumnId>({
     storageKey: 'pos_sales_bills_history_table_columns_order',
@@ -1551,32 +1548,18 @@ ${otherPendingText}Thank you for your business!
           <div>
             <Card variant="default">
               <div className="space-y-2">
-                <div className="flex items-center justify-end gap-2">
-                  <span className="text-[11px] text-ink-subtle hidden sm:inline font-medium">
-                    (drag headers to reorder, click to sort)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsColumnManagerOpen(true)}
-                    className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink font-semibold px-2.5 py-1 rounded-control bg-surface-muted hover:bg-border/40 border border-border transition-colors cursor-pointer"
-                    title="Manage table columns"
-                  >
-                    <SlidersHorizontal size={12} />
-                    <span>Columns</span>
-                  </button>
-
-                  {isCustomOrder && (
+                {isCustomOrder && (
+                  <div className="flex items-center justify-end">
                     <button
                       type="button"
                       onClick={resetColumns}
-                      className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink font-semibold px-2 py-1 rounded-control hover:bg-surface-muted transition-colors cursor-pointer"
+                      className="text-xs text-ink-muted hover:text-ink hover:underline font-medium transition-colors cursor-pointer"
                       title="Reset column order to default"
                     >
-                      <RotateCcw size={12} />
-                      <span className="hidden sm:inline">Reset</span>
+                      Reset order
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <div className="overflow-auto max-h-[calc(100vh-270px)] border border-border rounded-card shadow-xs">
                   <table className="w-full text-xs min-w-[540px]">
@@ -1797,15 +1780,7 @@ ${otherPendingText}Thank you for your business!
           </div>
         )}
 
-        {/* Bill History Column Manager Modal (Mobile / Accessibility) */}
-        <ColumnManagerModal
-          isOpen={isColumnManagerOpen}
-          onClose={() => setIsColumnManagerOpen(false)}
-          columns={columns}
-          moveColumn={moveColumn}
-          resetColumns={resetColumns}
-          isCustomOrder={isCustomOrder}
-        />
+
       </PageContainer>
     </Layout>
   );
