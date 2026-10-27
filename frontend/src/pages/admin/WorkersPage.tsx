@@ -1,18 +1,114 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Button } from '../../components/common';
+import { Button, ReorderableTh, ColumnManagerModal } from '../../components/common';
 import { Card, StatIcon, Figure } from '../../components/ui/Card';
 import { useStore } from '../../store';
 import { workersService } from '../../services/workers';
-import { Eye, EyeOff, X, Lock, CheckCircle, XCircle, Users, Plus, TrendingUp } from 'lucide-react';
+import { Eye, EyeOff, X, Lock, CheckCircle, XCircle, Users, Plus, TrendingUp, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { Worker } from '../../types';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
+import { useReorderableColumns, ColumnConfig } from '../../hooks/useReorderableColumns';
+
+type WorkerColumnId = 'name' | 'email' | 'phone' | 'bills' | 'revenue' | 'outstanding' | 'status' | 'actions';
+
+const DEFAULT_WORKER_COLUMNS: ColumnConfig<WorkerColumnId>[] = [
+  { id: 'name', label: 'Name', align: 'left', sortable: true, minWidth: '140px' },
+  { id: 'email', label: 'Email', align: 'left', sortable: true, minWidth: '150px' },
+  { id: 'phone', label: 'Phone', align: 'left', sortable: true, minWidth: '120px' },
+  { id: 'bills', label: 'Bills', align: 'center', sortable: true, minWidth: '90px' },
+  { id: 'revenue', label: 'Revenue', align: 'right', sortable: true, minWidth: '110px' },
+  { id: 'outstanding', label: 'Outstanding', align: 'right', sortable: true, minWidth: '120px' },
+  { id: 'status', label: 'Status', align: 'center', sortable: true, minWidth: '100px' },
+  { id: 'actions', label: 'Actions', align: 'center', sortable: false, reorderable: false, minWidth: '140px' },
+];
 
 export const WorkersPage: React.FC = () => {
   const store = useStore();
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
+  const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false);
+
+  // ── Column Reordering & Sorting Hook ───────────────────────────────────────
+  const {
+    columns,
+    sortField,
+    sortDirection,
+    draggedColumnId,
+    dragOverColumnId,
+    dropPosition,
+    isCustomOrder,
+    handleSort,
+    handleDragStart,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleDragEnd,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+    moveColumn,
+    resetColumns,
+  } = useReorderableColumns<WorkerColumnId>({
+    storageKey: 'pos_workers_table_columns_order',
+    defaultColumns: DEFAULT_WORKER_COLUMNS,
+  });
+
+  // Sort workers based on active column and direction
+  const sortedWorkers = useMemo(() => {
+    if (!sortField || !sortDirection) return workers;
+
+    return [...workers].sort((a, b) => {
+      let valA: any = null;
+      let valB: any = null;
+
+      switch (sortField) {
+        case 'name':
+          valA = a.name ? a.name.toLowerCase() : null;
+          valB = b.name ? b.name.toLowerCase() : null;
+          break;
+        case 'email':
+          valA = a.email ? a.email.toLowerCase() : null;
+          valB = b.email ? b.email.toLowerCase() : null;
+          break;
+        case 'phone':
+          valA = a.phone ? a.phone.toLowerCase() : null;
+          valB = b.phone ? b.phone.toLowerCase() : null;
+          break;
+        case 'bills':
+          valA = a.totalBills != null && !isNaN(Number(a.totalBills)) ? Number(a.totalBills) : null;
+          valB = b.totalBills != null && !isNaN(Number(b.totalBills)) ? Number(b.totalBills) : null;
+          break;
+        case 'revenue':
+          valA = a.totalRevenue != null && !isNaN(Number(a.totalRevenue)) ? Number(a.totalRevenue) : null;
+          valB = b.totalRevenue != null && !isNaN(Number(b.totalRevenue)) ? Number(b.totalRevenue) : null;
+          break;
+        case 'outstanding':
+          valA = a.totalPending != null && !isNaN(Number(a.totalPending)) ? Number(a.totalPending) : null;
+          valB = b.totalPending != null && !isNaN(Number(b.totalPending)) ? Number(b.totalPending) : null;
+          break;
+        case 'status':
+          valA = a.isActive !== undefined ? (a.isActive ? 1 : 0) : null;
+          valB = b.isActive !== undefined ? (b.isActive ? 1 : 0) : null;
+          break;
+        default:
+          return 0;
+      }
+
+      const isInvalid = (v: any) => v === null || v === undefined || (typeof v === 'number' && isNaN(v));
+      if (isInvalid(valA)) {
+        if (isInvalid(valB)) return 0;
+        return 1;
+      }
+      if (isInvalid(valB)) {
+        return -1;
+      }
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [workers, sortField, sortDirection]);
 
   // Create modal
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -237,6 +333,39 @@ export const WorkersPage: React.FC = () => {
           </Card>
         ) : (
           <Card variant="default">
+            <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-ink">Workers</h3>
+                <span className="text-[11px] text-ink-subtle hidden sm:inline font-medium">
+                  (drag headers to reorder, click to sort)
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsColumnManagerOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink font-semibold px-2.5 py-1 rounded-control bg-surface-muted hover:bg-border/40 border border-border transition-colors"
+                  title="Manage table columns"
+                >
+                  <SlidersHorizontal size={12} />
+                  <span>Columns</span>
+                </button>
+
+                {isCustomOrder && (
+                  <button
+                    type="button"
+                    onClick={resetColumns}
+                    className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink font-semibold px-2 py-1 rounded-control hover:bg-surface-muted transition-colors"
+                    title="Reset column order to default"
+                  >
+                    <RotateCcw size={12} />
+                    <span className="hidden sm:inline">Reset</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
             {loading ? (
               <div className="py-10 text-center text-sm text-ink-muted">Loading workers...</div>
             ) : workers.length === 0 ? (
@@ -258,62 +387,111 @@ export const WorkersPage: React.FC = () => {
                 <table className="w-full text-sm min-w-[620px]">
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-surface-muted text-ink-subtle font-bold uppercase tracking-wider text-[11px] border-b border-border-strong">
-                      <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">Name</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">Email</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">Phone</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-center py-3 px-3">Bills</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-right py-3 px-3">Revenue</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-right py-3 px-3">Outstanding</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-center py-3 px-3">Status</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted py-3 px-3"></th>
+                      {columns.map((col) => (
+                        <ReorderableTh
+                          key={col.id}
+                          column={col}
+                          isDragging={draggedColumnId === col.id}
+                          isDragOver={dragOverColumnId === col.id}
+                          dropPosition={dropPosition}
+                          sortField={sortField}
+                          sortDirection={sortDirection}
+                          onSort={handleSort}
+                          onDragStart={handleDragStart}
+                          onDragOver={handleDragOver}
+                          onDragLeave={handleDragLeave}
+                          onDrop={handleDrop}
+                          onDragEnd={handleDragEnd}
+                          onTouchStart={handleTouchStart}
+                          onTouchMove={handleTouchMove}
+                          onTouchEnd={handleTouchEnd}
+                        />
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {workers.map((worker) => (
+                    {sortedWorkers.map((worker) => (
                       <tr key={worker.id} className="border-b border-border hover:bg-surface-muted/50 transition-colors">
-                        <td className="py-2.5 px-3 font-medium text-ink">{worker.name}</td>
-                        <td className="py-2.5 px-3 text-ink-muted">{worker.email}</td>
-                        <td className="py-2.5 px-3 text-ink-muted">{worker.phone || '—'}</td>
-                        <td className="py-2.5 px-3 text-center text-ink">
-                          <Figure>{worker.totalBills}</Figure>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-semibold text-ink">
-                          ₨<Figure>{((worker.totalRevenue || 0) / 1000).toFixed(1)}K</Figure>
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-warning-500 font-semibold">
-                          ₨<Figure>{((worker.totalPending || 0) / 1000).toFixed(1)}K</Figure>
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span className={`px-2.5 py-0.5 rounded-control text-[10px] font-bold ${
-                            worker.isActive
-                              ? 'bg-success-50 text-success-500 border border-success-500/30'
-                              : 'bg-danger-50 text-danger-500 border border-danger-500/30'
-                          }`}>
-                            {worker.isActive ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setSelectedWorker(worker)}
-                              className="text-brand-600 hover:text-brand-700 text-xs font-semibold"
-                            >
-                              View
-                            </button>
-                            <button
-                              onClick={() => handleToggleStatus(worker)}
-                              className={`text-xs font-semibold ${worker.isActive ? 'text-danger-500 hover:text-danger-600' : 'text-success-500 hover:text-success-600'}`}
-                            >
-                              {worker.isActive ? 'Disable' : 'Enable'}
-                            </button>
-                            <button
-                              onClick={() => { setResetTarget(worker); setShowResetModal(true); }}
-                              className="text-ink-subtle hover:text-ink-muted"
-                            >
-                              <Lock size={13} />
-                            </button>
-                          </div>
-                        </td>
+                        {columns.map((col) => {
+                          switch (col.id) {
+                            case 'name':
+                              return (
+                                <td key={col.id} className="py-2.5 px-3 font-medium text-ink">
+                                  {worker.name}
+                                </td>
+                              );
+                            case 'email':
+                              return (
+                                <td key={col.id} className="py-2.5 px-3 text-ink-muted">
+                                  {worker.email}
+                                </td>
+                              );
+                            case 'phone':
+                              return (
+                                <td key={col.id} className="py-2.5 px-3 text-ink-muted">
+                                  {worker.phone || '—'}
+                                </td>
+                              );
+                            case 'bills':
+                              return (
+                                <td key={col.id} className="py-2.5 px-3 text-center text-ink">
+                                  <Figure>{worker.totalBills}</Figure>
+                                </td>
+                              );
+                            case 'revenue':
+                              return (
+                                <td key={col.id} className="py-2.5 px-3 text-right font-semibold text-ink">
+                                  ₨<Figure>{((worker.totalRevenue || 0) / 1000).toFixed(1)}K</Figure>
+                                </td>
+                              );
+                            case 'outstanding':
+                              return (
+                                <td key={col.id} className="py-2.5 px-3 text-right text-warning-500 font-semibold">
+                                  ₨<Figure>{((worker.totalPending || 0) / 1000).toFixed(1)}K</Figure>
+                                </td>
+                              );
+                            case 'status':
+                              return (
+                                <td key={col.id} className="py-2.5 px-3 text-center">
+                                  <span className={`px-2.5 py-0.5 rounded-control text-[10px] font-bold ${
+                                    worker.isActive
+                                      ? 'bg-success-50 text-success-500 border border-success-500/30'
+                                      : 'bg-danger-50 text-danger-500 border border-danger-500/30'
+                                  }`}>
+                                    {worker.isActive ? 'Active' : 'Inactive'}
+                                  </span>
+                                </td>
+                              );
+                            case 'actions':
+                              return (
+                                <td key={col.id} className="py-2.5 px-3">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button
+                                      onClick={() => setSelectedWorker(worker)}
+                                      className="text-brand-600 hover:text-brand-700 text-xs font-semibold cursor-pointer"
+                                    >
+                                      View
+                                    </button>
+                                    <button
+                                      onClick={() => handleToggleStatus(worker)}
+                                      className={`text-xs font-semibold cursor-pointer ${worker.isActive ? 'text-danger-500 hover:text-danger-600' : 'text-success-500 hover:text-success-600'}`}
+                                    >
+                                      {worker.isActive ? 'Disable' : 'Enable'}
+                                    </button>
+                                    <button
+                                      onClick={() => { setResetTarget(worker); setShowResetModal(true); }}
+                                      className="text-ink-subtle hover:text-ink-muted cursor-pointer"
+                                      title="Reset Password"
+                                    >
+                                      <Lock size={13} />
+                                    </button>
+                                  </div>
+                                </td>
+                              );
+                            default:
+                              return null;
+                          }
+                        })}
                       </tr>
                     ))}
                   </tbody>
@@ -421,6 +599,16 @@ export const WorkersPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Column Manager Modal (Mobile / Accessibility) */}
+        <ColumnManagerModal
+          isOpen={isColumnManagerOpen}
+          onClose={() => setIsColumnManagerOpen(false)}
+          columns={columns}
+          moveColumn={moveColumn}
+          resetColumns={resetColumns}
+          isCustomOrder={isCustomOrder}
+        />
       </PageContainer>
     </Layout>
   );

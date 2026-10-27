@@ -1,15 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Button } from '../../components/common';
+import { Button, ReorderableTh, ColumnManagerModal } from '../../components/common';
 import { Card, Figure } from '../../components/ui/Card';
 import { useStore } from '../../store';
 import { expensesService } from '../../services/expenses';
-import { Plus, Trash2, X, FileText, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, X, FileText, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { Expense, ExpenseCategory } from '../../types';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
+import { useReorderableColumns, ColumnConfig } from '../../hooks/useReorderableColumns';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
+
+type ExpenseColumnId = 'date' | 'title' | 'category' | 'description' | 'by' | 'amount' | 'action';
+
+const DEFAULT_EXPENSE_COLUMNS: ColumnConfig<ExpenseColumnId>[] = [
+  { id: 'date', label: 'Date', align: 'left', sortable: true, minWidth: '110px' },
+  { id: 'title', label: 'Title', align: 'left', sortable: true, minWidth: '130px' },
+  { id: 'category', label: 'Category', align: 'left', sortable: true, minWidth: '130px' },
+  { id: 'description', label: 'Description', align: 'left', sortable: true, minWidth: '160px' },
+  { id: 'by', label: 'By', align: 'left', sortable: true, minWidth: '110px' },
+  { id: 'amount', label: 'Amount', align: 'right', sortable: true, minWidth: '110px' },
+  { id: 'action', label: 'Action', align: 'center', sortable: false, reorderable: false, minWidth: '80px' },
+];
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   fuel: '⛽ Fuel',
@@ -45,9 +58,87 @@ export const ExpensesPage: React.FC = () => {
   const [period, setPeriod] = useState<PeriodTab>(null);
   const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false);
   const [addForm, setAddForm] = useState({
     title: 'Fuel', amount: '', category: 'fuel' as ExpenseCategory, description: '', date: new Date().toISOString().split('T')[0],
   });
+
+  // ── Column Reordering & Sorting Hook ───────────────────────────────────────
+  const {
+    columns,
+    sortField,
+    sortDirection,
+    draggedColumnId,
+    dragOverColumnId,
+    dropPosition,
+    isCustomOrder,
+    handleSort,
+    handleDragStart,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleDragEnd,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+    moveColumn,
+    resetColumns,
+  } = useReorderableColumns<ExpenseColumnId>({
+    storageKey: 'pos_expenses_table_columns_order',
+    defaultColumns: DEFAULT_EXPENSE_COLUMNS,
+  });
+
+  // Sort expenses based on active column and direction
+  const sortedExpenses = useMemo(() => {
+    if (!sortField || !sortDirection) return expenses;
+
+    return [...expenses].sort((a, b) => {
+      let valA: any = null;
+      let valB: any = null;
+
+      switch (sortField) {
+        case 'date':
+          valA = a.date ? (new Date(a.date || 0).getTime() || 0) : null;
+          valB = b.date ? (new Date(b.date || 0).getTime() || 0) : null;
+          break;
+        case 'title':
+          valA = a.title ? a.title.toLowerCase() : null;
+          valB = b.title ? b.title.toLowerCase() : null;
+          break;
+        case 'category':
+          valA = a.category ? a.category.toLowerCase() : null;
+          valB = b.category ? b.category.toLowerCase() : null;
+          break;
+        case 'description':
+          valA = a.description ? a.description.toLowerCase() : null;
+          valB = b.description ? b.description.toLowerCase() : null;
+          break;
+        case 'by':
+          valA = a.createdBy?.name ? a.createdBy.name.toLowerCase() : null;
+          valB = b.createdBy?.name ? b.createdBy.name.toLowerCase() : null;
+          break;
+        case 'amount':
+          valA = a.amount != null && !isNaN(Number(a.amount)) ? Number(a.amount) : null;
+          valB = b.amount != null && !isNaN(Number(b.amount)) ? Number(b.amount) : null;
+          break;
+        default:
+          return 0;
+      }
+
+      const isInvalid = (v: any) => v === null || v === undefined || (typeof v === 'number' && isNaN(v));
+      if (isInvalid(valA)) {
+        if (isInvalid(valB)) return 0;
+        return 1;
+      }
+      if (isInvalid(valB)) {
+        return -1;
+      }
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [expenses, sortField, sortDirection]);
   const [addError, setAddError] = useState('');
 
   // Custom backend filters
@@ -335,16 +426,43 @@ export const ExpensesPage: React.FC = () => {
         <Card variant="default">
           <div className="flex flex-wrap items-center gap-3 mb-4 border-b border-border pb-3">
             <div>
-              <h3 className="font-bold text-ink text-base">
-                {getTableTitle()}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-ink text-base">
+                  {getTableTitle()}
+                </h3>
+                <span className="text-[11px] text-ink-subtle hidden sm:inline font-medium">
+                  (drag headers to reorder, click to sort)
+                </span>
+              </div>
               <p className="text-xs text-ink-muted font-medium">
                 {expenses.length} record{expenses.length !== 1 ? 's' : ''} &bull; Total: <span className="font-bold text-ink">₨<Figure>{expenses.reduce((s, e) => s + Number(e.amount), 0).toLocaleString('en-PK', { minimumFractionDigits: 0 })}</Figure></span>
               </p>
             </div>
 
-            {/* Backend Query Filters */}
+            {/* Backend Query Filters & Column Actions */}
             <div className="flex flex-wrap gap-2 ml-auto items-center">
+              <button
+                type="button"
+                onClick={() => setIsColumnManagerOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink font-semibold px-2.5 py-1.5 rounded-control bg-surface-muted hover:bg-border/40 border border-border transition-colors"
+                title="Manage table columns"
+              >
+                <SlidersHorizontal size={12} />
+                <span>Columns</span>
+              </button>
+
+              {isCustomOrder && (
+                <button
+                  type="button"
+                  onClick={resetColumns}
+                  className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink font-semibold px-2 py-1.5 rounded-control hover:bg-surface-muted transition-colors"
+                  title="Reset column order to default"
+                >
+                  <RotateCcw size={12} />
+                  <span className="hidden sm:inline">Reset</span>
+                </button>
+              )}
+
               <input
                 type="date"
                 value={filterDateFrom}
@@ -410,46 +528,98 @@ export const ExpensesPage: React.FC = () => {
               <table className="w-full text-xs text-left min-w-[540px]">
                 <thead className="sticky top-0 z-20">
                   <tr className="bg-surface-muted text-ink-subtle uppercase border-b-2 border-border-strong font-bold tracking-wider text-[11px]">
-                    <th className="sticky top-0 z-20 bg-surface-muted py-3 px-3">Date</th>
-                    <th className="sticky top-0 z-20 bg-surface-muted py-3 px-3">Title</th>
-                    <th className="sticky top-0 z-20 bg-surface-muted py-3 px-3">Category</th>
-                    <th className="sticky top-0 z-20 bg-surface-muted py-3 px-3">Description</th>
-                    <th className="sticky top-0 z-20 bg-surface-muted py-3 px-3">By</th>
-                    <th className="sticky top-0 z-20 bg-surface-muted py-3 px-3 text-right">Amount</th>
-                    <th className="sticky top-0 z-20 bg-surface-muted py-3 px-3 text-center">Action</th>
+                    {columns.map((col) => (
+                      <ReorderableTh
+                        key={col.id}
+                        column={col}
+                        isDragging={draggedColumnId === col.id}
+                        isDragOver={dragOverColumnId === col.id}
+                        dropPosition={dropPosition}
+                        sortField={sortField}
+                        sortDirection={sortDirection}
+                        onSort={handleSort}
+                        onDragStart={handleDragStart}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        onDragEnd={handleDragEnd}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
+                      />
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border bg-surface-card">
-                  {expenses.map((expense) => (
+                  {sortedExpenses.map((expense) => (
                     <tr key={expense.id} className="border-b border-border hover:bg-surface-muted/50 transition-colors">
-                      <td className="py-3 px-3 text-ink-muted font-medium whitespace-nowrap">
-                        {new Date(expense.date).toLocaleDateString('en-PK', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </td>
-                      <td className="py-3 px-3 font-bold text-ink">{expense.title}</td>
-                      <td className="py-3 px-3">
-                        <span
-                          className="px-2 py-0.5 rounded-control text-[11px] font-bold border"
-                          style={{
-                            backgroundColor: CATEGORY_COLORS[expense.category] + '20',
-                            borderColor: CATEGORY_COLORS[expense.category] + '40',
-                            color: CATEGORY_COLORS[expense.category],
-                          }}
-                        >
-                          {CATEGORY_LABELS[expense.category]}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-ink-muted max-w-xs truncate">{expense.description || '—'}</td>
-                      <td className="py-3 px-3 text-ink-muted font-medium">{expense.createdBy?.name || '—'}</td>
-                      <td className="py-3 px-3 text-right font-extrabold text-ink">₨<Figure>{Number(expense.amount).toLocaleString('en-PK', { minimumFractionDigits: 0 })}</Figure></td>
-                      <td className="py-3 px-3 text-center">
-                        <button onClick={() => handleDelete(expense.id)} className="text-danger-500 hover:text-danger-600 p-1 rounded-control hover:bg-danger-50 transition-colors" title="Delete Expense">
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
+                      {columns.map((col) => {
+                        switch (col.id) {
+                          case 'date':
+                            return (
+                              <td key={col.id} className="py-3 px-3 text-ink-muted font-medium whitespace-nowrap">
+                                {new Date(expense.date).toLocaleDateString('en-PK', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </td>
+                            );
+                          case 'title':
+                            return (
+                              <td key={col.id} className="py-3 px-3 font-bold text-ink">
+                                {expense.title}
+                              </td>
+                            );
+                          case 'category':
+                            return (
+                              <td key={col.id} className="py-3 px-3">
+                                <span
+                                  className="px-2 py-0.5 rounded-control text-[11px] font-bold border"
+                                  style={{
+                                    backgroundColor: CATEGORY_COLORS[expense.category] + '20',
+                                    borderColor: CATEGORY_COLORS[expense.category] + '40',
+                                    color: CATEGORY_COLORS[expense.category],
+                                  }}
+                                >
+                                  {CATEGORY_LABELS[expense.category]}
+                                </span>
+                              </td>
+                            );
+                          case 'description':
+                            return (
+                              <td key={col.id} className="py-3 px-3 text-ink-muted max-w-xs truncate">
+                                {expense.description || '—'}
+                              </td>
+                            );
+                          case 'by':
+                            return (
+                              <td key={col.id} className="py-3 px-3 text-ink-muted font-medium">
+                                {expense.createdBy?.name || '—'}
+                              </td>
+                            );
+                          case 'amount':
+                            return (
+                              <td key={col.id} className="py-3 px-3 text-right font-extrabold text-ink">
+                                ₨<Figure>{Number(expense.amount).toLocaleString('en-PK', { minimumFractionDigits: 0 })}</Figure>
+                              </td>
+                            );
+                          case 'action':
+                            return (
+                              <td key={col.id} className="py-3 px-3 text-center">
+                                <button
+                                  onClick={() => handleDelete(expense.id)}
+                                  className="text-danger-500 hover:text-danger-600 p-1 rounded-control hover:bg-danger-50 transition-colors"
+                                  title="Delete Expense"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </td>
+                            );
+                          default:
+                            return null;
+                        }
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -562,6 +732,16 @@ export const ExpensesPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Column Manager Modal (Mobile / Accessibility) */}
+        <ColumnManagerModal
+          isOpen={isColumnManagerOpen}
+          onClose={() => setIsColumnManagerOpen(false)}
+          columns={columns}
+          moveColumn={moveColumn}
+          resetColumns={resetColumns}
+          isCustomOrder={isCustomOrder}
+        />
       </PageContainer>
     </Layout>
   );

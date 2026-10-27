@@ -1,13 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Button, Modal } from '../../components/common';
+import { Button, Modal, ReorderableTh, ColumnManagerModal } from '../../components/common';
 import { Card, Figure } from '../../components/ui/Card';
 import { useStore } from '../../store';
-import { Plus, Minus, Phone, RotateCcw, Users } from 'lucide-react';
+import { Plus, Minus, Phone, RotateCcw, Users, SlidersHorizontal } from 'lucide-react';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import { retailersService } from '../../services/retailers';
 import { rgbService } from '../../services/rgb';
+import { useReorderableColumns, ColumnConfig } from '../../hooks/useReorderableColumns';
+
+type RetailerColumnId = 'shopName' | 'ownerName' | 'contact' | 'outstanding' | 'rgbCrates' | 'actions';
+
+const DEFAULT_RETAILER_COLUMNS: ColumnConfig<RetailerColumnId>[] = [
+  { id: 'shopName', label: 'Shop Name', align: 'left', sortable: true, minWidth: '150px' },
+  { id: 'ownerName', label: 'Owner', align: 'left', sortable: true, minWidth: '140px' },
+  { id: 'contact', label: 'Contact', align: 'left', sortable: true, minWidth: '130px' },
+  { id: 'outstanding', label: 'Outstanding', align: 'right', sortable: true, minWidth: '130px' },
+  { id: 'rgbCrates', label: 'RGB Crates', align: 'center', sortable: true, minWidth: '140px' },
+  { id: 'actions', label: 'Actions', align: 'center', sortable: false, reorderable: false, minWidth: '100px' },
+];
 
 interface RetailerForm {
   shopName: string;
@@ -35,6 +47,85 @@ export const RetailersPage: React.FC = () => {
 
   // Use store data
   const mockRetailers = store.retailers;
+
+  const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false);
+
+  // ── Column Reordering & Sorting Hook ───────────────────────────────────────
+  const {
+    columns,
+    sortField,
+    sortDirection,
+    draggedColumnId,
+    dragOverColumnId,
+    dropPosition,
+    isCustomOrder,
+    handleSort,
+    handleDragStart,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleDragEnd,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+    moveColumn,
+    resetColumns,
+  } = useReorderableColumns<RetailerColumnId>({
+    storageKey: 'pos_retailers_table_columns_order',
+    defaultColumns: DEFAULT_RETAILER_COLUMNS,
+  });
+
+  // Sort retailers based on active column and direction
+  const sortedRetailers = useMemo(() => {
+    if (!sortField || !sortDirection) return mockRetailers;
+
+    return [...mockRetailers].sort((a, b) => {
+      let valA: any = null;
+      let valB: any = null;
+
+      switch (sortField) {
+        case 'shopName':
+          valA = a.shopName ? a.shopName.toLowerCase() : null;
+          valB = b.shopName ? b.shopName.toLowerCase() : null;
+          break;
+        case 'ownerName':
+          valA = a.ownerName ? a.ownerName.toLowerCase() : null;
+          valB = b.ownerName ? b.ownerName.toLowerCase() : null;
+          break;
+        case 'contact':
+          valA = a.mobileNumber || null;
+          valB = b.mobileNumber || null;
+          break;
+        case 'outstanding':
+          valA = a.outstanding != null && !isNaN(Number(a.outstanding)) ? Number(a.outstanding) : null;
+          valB = b.outstanding != null && !isNaN(Number(b.outstanding)) ? Number(b.outstanding) : null;
+          break;
+        case 'rgbCrates':
+          valA = a.rgbBalances
+            ? a.rgbBalances.reduce((sum, x) => sum + Number(x.balance || 0), 0)
+            : 0;
+          valB = b.rgbBalances
+            ? b.rgbBalances.reduce((sum, x) => sum + Number(x.balance || 0), 0)
+            : 0;
+          break;
+        default:
+          return 0;
+      }
+
+      const isInvalid = (v: any) => v === null || v === undefined || (typeof v === 'number' && isNaN(v));
+      if (isInvalid(valA)) {
+        if (isInvalid(valB)) return 0;
+        return 1;
+      }
+      if (isInvalid(valB)) {
+        return -1;
+      }
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [mockRetailers, sortField, sortDirection]);
 
   // Inline Standalone RGB Return state
   const [openReturnRetailerId, setOpenReturnRetailerId] = useState<string | null>(null);
@@ -319,7 +410,39 @@ export const RetailersPage: React.FC = () => {
 
         {/* Retailers Table */}
         <Card variant="default">
-          <h3 className="text-sm sm:text-base font-bold text-ink mb-4">Retailers</h3>
+          <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm sm:text-base font-bold text-ink">Retailers</h3>
+              <span className="text-[11px] text-ink-subtle hidden sm:inline font-medium">
+                (drag headers to reorder, click to sort)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsColumnManagerOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink font-semibold px-2.5 py-1 rounded-control bg-surface-muted hover:bg-border/40 border border-border transition-colors"
+                title="Manage table columns"
+              >
+                <SlidersHorizontal size={12} />
+                <span>Columns</span>
+              </button>
+
+              {isCustomOrder && (
+                <button
+                  type="button"
+                  onClick={resetColumns}
+                  className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink font-semibold px-2 py-1 rounded-control hover:bg-surface-muted transition-colors"
+                  title="Reset column order to default"
+                >
+                  <RotateCcw size={12} />
+                  <span className="hidden sm:inline">Reset</span>
+                </button>
+              )}
+            </div>
+          </div>
+
           {mockRetailers.length === 0 ? (
             /* Empty state — per DESIGN_TOKENS.md: no fixed min-height, show explicit empty state */
             <div className="py-12 flex flex-col items-center gap-3 text-center">
@@ -339,49 +462,91 @@ export const RetailersPage: React.FC = () => {
               <table className="w-full text-sm min-w-[500px]">
                 <thead className="sticky top-0 z-20">
                   <tr className="bg-surface-muted text-ink-subtle font-bold uppercase tracking-wider text-[11px] border-b border-border-strong">
-                    <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-4">Shop Name</th>
-                    <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-4">Owner</th>
-                    <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-4">Contact</th>
-                    <th className="sticky top-0 z-20 bg-surface-muted text-right py-3 px-4">Outstanding</th>
-                    <th className="sticky top-0 z-20 bg-surface-muted text-center py-3 px-4">RGB Crates</th>
-                    <th className="sticky top-0 z-20 bg-surface-muted text-center py-3 px-4">Actions</th>
+                    {columns.map((col) => (
+                      <ReorderableTh
+                        key={col.id}
+                        column={col}
+                        isDragging={draggedColumnId === col.id}
+                        isDragOver={dragOverColumnId === col.id}
+                        dropPosition={dropPosition}
+                        sortField={sortField}
+                        sortDirection={sortDirection}
+                        onSort={handleSort}
+                        onDragStart={handleDragStart}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        onDragEnd={handleDragEnd}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
+                      />
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {mockRetailers.map((retailer) => {
+                  {sortedRetailers.map((retailer) => {
                     const outstanding = Number(retailer.outstanding ?? 0);
                     const totalCratesPending = retailer.rgbBalances?.reduce((sum, b) => sum + (b.balance || 0), 0) || 0;
 
                     return (
                       <tr key={retailer.id} className="border-b border-border hover:bg-surface-muted/50 transition-colors">
-                        <td className="py-3 px-4 font-medium text-ink">{retailer.shopName}</td>
-                        <td className="py-3 px-4 text-ink-muted">{retailer.ownerName}</td>
-                        <td className="py-3 px-4 text-xs">
-                          <div className="flex items-center gap-1 text-brand-600">
-                            <Phone size={14} />
-                            {retailer.mobileNumber}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-right font-semibold text-ink">
-                          ₨<Figure>{outstanding.toFixed(0)}</Figure>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          {totalCratesPending > 0 ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-control text-xs font-semibold bg-surface-muted text-ink-muted border border-border">
-                              <Figure>{totalCratesPending}</Figure> crates pending
-                            </span>
-                          ) : (
-                            <span className="text-ink-subtle text-xs">—</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => navigate(`/admin/retailers/${retailer.id}`)}
-                            className="text-brand-600 hover:text-brand-700 text-sm font-semibold"
-                          >
-                            View
-                          </button>
-                        </td>
+                        {columns.map((col) => {
+                          switch (col.id) {
+                            case 'shopName':
+                              return (
+                                <td key={col.id} className="py-3 px-4 font-medium text-ink text-left">
+                                  {retailer.shopName}
+                                </td>
+                              );
+                            case 'ownerName':
+                              return (
+                                <td key={col.id} className="py-3 px-4 text-ink-muted text-left">
+                                  {retailer.ownerName}
+                                </td>
+                              );
+                            case 'contact':
+                              return (
+                                <td key={col.id} className="py-3 px-4 text-xs text-left">
+                                  <div className="flex items-center gap-1 text-brand-600">
+                                    <Phone size={14} />
+                                    {retailer.mobileNumber}
+                                  </div>
+                                </td>
+                              );
+                            case 'outstanding':
+                              return (
+                                <td key={col.id} className="py-3 px-4 text-right font-semibold text-ink">
+                                  ₨<Figure>{outstanding.toFixed(0)}</Figure>
+                                </td>
+                              );
+                            case 'rgbCrates':
+                              return (
+                                <td key={col.id} className="py-3 px-4 text-center">
+                                  {totalCratesPending > 0 ? (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-control text-xs font-semibold bg-surface-muted text-ink-muted border border-border">
+                                      <Figure>{totalCratesPending}</Figure> crates pending
+                                    </span>
+                                  ) : (
+                                    <span className="text-ink-subtle text-xs">—</span>
+                                  )}
+                                </td>
+                              );
+                            case 'actions':
+                              return (
+                                <td key={col.id} className="py-3 px-4 text-center">
+                                  <button
+                                    onClick={() => navigate(`/admin/retailers/${retailer.id}`)}
+                                    className="text-brand-600 hover:text-brand-700 text-sm font-semibold"
+                                  >
+                                    View
+                                  </button>
+                                </td>
+                              );
+                            default:
+                              return null;
+                          }
+                        })}
                       </tr>
                     );
                   })}
@@ -460,6 +625,16 @@ export const RetailersPage: React.FC = () => {
             </div>
           </div>
         </Modal>
+
+        {/* Mobile / Accessible Column Manager Modal */}
+        <ColumnManagerModal
+          isOpen={isColumnManagerOpen}
+          onClose={() => setIsColumnManagerOpen(false)}
+          columns={columns}
+          moveColumn={moveColumn}
+          resetColumns={resetColumns}
+          isCustomOrder={isCustomOrder}
+        />
       </PageContainer>
     </Layout>
   );
