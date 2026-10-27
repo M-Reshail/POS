@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
-import { ReorderableTh, ColumnManagerModal } from '../../components/common';
+import { ReorderableTh } from '../../components/common';
 import { Card, Figure } from '../../components/ui/Card';
 import { useStore } from '../../store';
 import { billsService } from '../../services/bills';
 import { rgbService } from '../../services/rgb';
-import { Search, ChevronDown, ChevronUp, Filter, RotateCcw, FileText, RefreshCw, SlidersHorizontal } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Filter, RotateCcw, FileText, RefreshCw } from 'lucide-react';
 import { Bill, RGBTransactionRecord } from '../../types';
 import { ADMIN_SIDEBAR } from '../../constants/navigation';
 import { ExpandableBillRow } from '../../components/bills/ExpandableBillRow';
@@ -323,8 +323,6 @@ export const AdminBillsPage: React.FC = () => {
   const displayedBills = filteredBills;
 
   // ── Column Reordering & Sorting Hook ───────────────────────────────────────
-  const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false);
-
   const {
     columns,
     sortField,
@@ -342,7 +340,6 @@ export const AdminBillsPage: React.FC = () => {
     handleTouchStart,
     handleTouchMove,
     handleTouchEnd,
-    moveColumn,
     resetColumns,
   } = useReorderableColumns<BillColumnId>({
     storageKey: 'pos_bills_table_columns_order',
@@ -352,8 +349,6 @@ export const AdminBillsPage: React.FC = () => {
   const columnIdsOrder = useMemo(() => columns.map((c) => c.id), [columns]);
 
   // ── Column Reordering & Sorting Hook (RGB Bills Tab) ────────────────────────
-  const [isRgbColumnManagerOpen, setIsRgbColumnManagerOpen] = useState(false);
-
   const {
     columns: rgbColumns,
     sortField: rgbSortField,
@@ -371,7 +366,6 @@ export const AdminBillsPage: React.FC = () => {
     handleTouchStart: handleRgbTouchStart,
     handleTouchMove: handleRgbTouchMove,
     handleTouchEnd: handleRgbTouchEnd,
-    moveColumn: moveRgbColumn,
     resetColumns: resetRgbColumns,
   } = useReorderableColumns<RgbColumnId>({
     storageKey: 'pos_admin_rgb_bills_table_columns_order',
@@ -859,32 +853,18 @@ export const AdminBillsPage: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="flex items-center justify-end gap-2">
-                  <span className="text-[11px] text-ink-subtle hidden sm:inline font-medium">
-                    (drag headers to reorder, click to sort)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsColumnManagerOpen(true)}
-                    className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink font-semibold px-2.5 py-1 rounded-control bg-surface-muted hover:bg-border/40 border border-border transition-colors cursor-pointer"
-                    title="Manage table columns"
-                  >
-                    <SlidersHorizontal size={12} />
-                    <span>Columns</span>
-                  </button>
-
-                  {isCustomOrder && (
+                {isCustomOrder && (
+                  <div className="flex items-center justify-end">
                     <button
                       type="button"
                       onClick={resetColumns}
-                      className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink font-semibold px-2 py-1 rounded-control hover:bg-surface-muted transition-colors cursor-pointer"
+                      className="text-xs text-ink-muted hover:text-ink hover:underline font-medium transition-colors cursor-pointer"
                       title="Reset column order to default"
                     >
-                      <RotateCcw size={12} />
-                      <span className="hidden sm:inline">Reset</span>
+                      Reset order
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <div className="overflow-auto max-h-[calc(100vh-270px)] border border-border rounded-card">
                   <table className="w-full text-xs min-w-[680px]">
@@ -943,32 +923,18 @@ export const AdminBillsPage: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="flex items-center justify-end gap-2">
-                  <span className="text-[11px] text-ink-subtle hidden sm:inline font-medium">
-                    (drag headers to reorder, click to sort)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsRgbColumnManagerOpen(true)}
-                    className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink font-semibold px-2.5 py-1 rounded-control bg-surface-muted hover:bg-border/40 border border-border transition-colors cursor-pointer"
-                    title="Manage table columns"
-                  >
-                    <SlidersHorizontal size={12} />
-                    <span>Columns</span>
-                  </button>
-
-                  {isRgbCustomOrder && (
+                {isRgbCustomOrder && (
+                  <div className="flex items-center justify-end">
                     <button
                       type="button"
                       onClick={resetRgbColumns}
-                      className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink font-semibold px-2 py-1 rounded-control hover:bg-surface-muted transition-colors cursor-pointer"
+                      className="text-xs text-ink-muted hover:text-ink hover:underline font-medium transition-colors cursor-pointer"
                       title="Reset column order to default"
                     >
-                      <RotateCcw size={12} />
-                      <span className="hidden sm:inline">Reset</span>
+                      Reset order
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <div className="overflow-auto max-h-[calc(100vh-270px)] border border-border rounded-card">
                   <table className="w-full text-xs min-w-[680px]">
@@ -1110,25 +1076,7 @@ export const AdminBillsPage: React.FC = () => {
           )}
         </Card>
 
-        {/* Sales Bills Column Manager Modal (Mobile / Accessibility) */}
-        <ColumnManagerModal
-          isOpen={isColumnManagerOpen}
-          onClose={() => setIsColumnManagerOpen(false)}
-          columns={columns}
-          moveColumn={moveColumn}
-          resetColumns={resetColumns}
-          isCustomOrder={isCustomOrder}
-        />
 
-        {/* RGB Bills Column Manager Modal (Mobile / Accessibility) */}
-        <ColumnManagerModal
-          isOpen={isRgbColumnManagerOpen}
-          onClose={() => setIsRgbColumnManagerOpen(false)}
-          columns={rgbColumns}
-          moveColumn={moveRgbColumn}
-          resetColumns={resetRgbColumns}
-          isCustomOrder={isRgbCustomOrder}
-        />
 
       </PageContainer>
     </Layout>
