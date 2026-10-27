@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Layout, PageContainer } from '../../components/Layout';
-import { Button } from '../../components/common';
+import { Button, ReorderableTh, ColumnManagerModal } from '../../components/common';
 import { Card, Figure } from '../../components/ui/Card';
 import { useStore } from '../../store';
 import {
   ShoppingCart, Trash2, Droplet, Edit2, Check, Search, X,
-  History, UserPlus, ChevronLeft, Minus, Plus, RotateCcw,
+  History, UserPlus, ChevronLeft, Minus, Plus, RotateCcw, SlidersHorizontal,
 } from 'lucide-react';
 import { Bill, BillItem, RGBRetailerBalance, RGBTransactionRecord, AllocationPlan, UdhaarAllocationMode } from '../../types';
 import { retailersService } from '../../services/retailers';
@@ -13,6 +13,22 @@ import { billsService } from '../../services/bills';
 import { rgbService } from '../../services/rgb';
 import { ADMIN_SIDEBAR, WORKER_SIDEBAR } from '../../constants/navigation';
 import { ExpandableBillRow } from '../../components/bills/ExpandableBillRow';
+import { useReorderableColumns, ColumnConfig } from '../../hooks/useReorderableColumns';
+
+type SalesBillColumnId = 'billNumber' | 'shop' | 'soldBy' | 'total' | 'paid' | 'pending' | 'mode' | 'status' | 'date' | 'actions';
+
+const DEFAULT_SALES_BILL_COLUMNS: ColumnConfig<SalesBillColumnId>[] = [
+  { id: 'billNumber', label: 'Bill#', align: 'left', sortable: true, minWidth: '95px' },
+  { id: 'shop', label: 'Retailer', align: 'left', sortable: true, minWidth: '130px' },
+  { id: 'soldBy', label: 'Worker', align: 'left', sortable: true, minWidth: '110px' },
+  { id: 'total', label: 'Total', align: 'right', sortable: true, minWidth: '100px' },
+  { id: 'paid', label: 'Paid', align: 'right', sortable: true, minWidth: '100px' },
+  { id: 'pending', label: 'Udhari', align: 'right', sortable: true, minWidth: '100px' },
+  { id: 'mode', label: 'Mode', align: 'center', sortable: true, minWidth: '90px' },
+  { id: 'status', label: 'Status', align: 'center', sortable: true, minWidth: '95px' },
+  { id: 'date', label: 'Date', align: 'left', sortable: true, minWidth: '110px' },
+  { id: 'actions', label: 'Actions', align: 'center', sortable: false, reorderable: false, minWidth: '70px' },
+];
 
 interface CartItem extends BillItem {
   isEditingPrice?: boolean;
@@ -70,6 +86,35 @@ export const SalesPage: React.FC = () => {
   const [selectedBillForDetails, setSelectedBillForDetails] = useState<string | null>(null);
   const [historyBills, setHistoryBills] = useState<Bill[]>([]);
   const [historyBillsLoading, setHistoryBillsLoading] = useState(false);
+
+  // ── Column Reordering & Sorting Hook (Bills History) ────────────────────────
+  const [isColumnManagerOpen, setIsColumnManagerOpen] = useState(false);
+
+  const {
+    columns,
+    sortField,
+    sortDirection,
+    draggedColumnId,
+    dragOverColumnId,
+    dropPosition,
+    isCustomOrder,
+    handleSort,
+    handleDragStart,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleDragEnd,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+    moveColumn,
+    resetColumns,
+  } = useReorderableColumns<SalesBillColumnId>({
+    storageKey: 'pos_sales_bills_history_table_columns_order',
+    defaultColumns: DEFAULT_SALES_BILL_COLUMNS,
+  });
+
+  const columnIdsOrder = useMemo(() => columns.map((c) => c.id), [columns]);
 
   // RGB History tab (Full dataset loaded in single call)
   const [rgbHistory, setRgbHistory] = useState<RGBTransactionRecord[]>([]);
@@ -572,6 +617,94 @@ ${otherPendingText}Thank you for your business!
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [historyBills, retailers, historySearchTerm, historyDateFilter]);
+
+  const retailerById = useMemo(() => new Map(retailers.map((r) => [r.id, r])), [retailers]);
+  const workerById = useMemo(() => new Map((store.workers || []).map((w) => [w.id, w])), [store.workers]);
+
+  const sortedHistoryBills = useMemo(() => {
+    if (!sortField || !sortDirection) return filteredHistoryBills;
+
+    const getSortValue = (bill: Bill): any => {
+      switch (sortField) {
+        case 'billNumber':
+          return bill.billNumber ? String(bill.billNumber).trim() : null;
+        case 'shop': {
+          const ret = bill.retailer || retailerById.get(bill.retailerId);
+          const shop = (ret?.shopName || '').trim();
+          return shop || null;
+        }
+        case 'soldBy': {
+          const wName = bill.worker?.name || workerById.get(bill.workerId)?.name;
+          return wName?.trim() || null;
+        }
+        case 'total': {
+          const n = Number(bill.total);
+          return Number.isFinite(n) ? n : null;
+        }
+        case 'paid': {
+          const n = Number(bill.paidAmount);
+          return Number.isFinite(n) ? n : null;
+        }
+        case 'pending': {
+          const n = Number(bill.pendingAmount);
+          return Number.isFinite(n) ? n : null;
+        }
+        case 'mode':
+          return bill.paymentMode?.trim().toLowerCase() || null;
+        case 'status':
+          return bill.status?.trim().toLowerCase() || null;
+        case 'date': {
+          const t = bill.createdAt ? new Date(bill.createdAt).getTime() : NaN;
+          return Number.isFinite(t) ? t : null;
+        }
+        default:
+          return null;
+      }
+    };
+
+    const isInvalid = (v: any) => v === null || v === undefined || (typeof v === 'number' && !Number.isFinite(v));
+
+    const decorated = filteredHistoryBills.map((bill) => ({
+      bill,
+      val: getSortValue(bill),
+    }));
+
+    decorated.sort((a, b) => {
+      const valA = a.val;
+      const valB = b.val;
+
+      if (isInvalid(valA)) {
+        if (isInvalid(valB)) return 0;
+        return 1;
+      }
+      if (isInvalid(valB)) {
+        return -1;
+      }
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        const cmp = valA.localeCompare(valB, undefined, {
+          sensitivity: 'base',
+          numeric: sortField === 'billNumber',
+        });
+        return sortDirection === 'asc' ? cmp : -cmp;
+      }
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+
+      // Tie-breaker when sorting by date: billNumber
+      if (sortField === 'date') {
+        const bnA = a.bill.billNumber ? String(a.bill.billNumber) : '';
+        const bnB = b.bill.billNumber ? String(b.bill.billNumber) : '';
+        const tieCmp = bnA.localeCompare(bnB, undefined, { numeric: true, sensitivity: 'base' });
+        return sortDirection === 'asc' ? tieCmp : -tieCmp;
+      }
+
+      return 0;
+    });
+
+    return decorated.map((d) => d.bill);
+  }, [filteredHistoryBills, sortField, sortDirection, retailerById, workerById]);
 
   const isAdmin = currentUser?.role === 'admin';
   const sidebarItems = isAdmin ? ADMIN_SIDEBAR : WORKER_SIDEBAR;
@@ -1417,47 +1550,87 @@ ${otherPendingText}Thank you for your business!
         {viewMode === 'history' && (
           <div>
             <Card variant="default">
-              <div className="overflow-auto max-h-[calc(100vh-270px)] border border-border rounded-card shadow-xs">
-                <table className="w-full text-xs min-w-[540px]">
-                  <thead className="sticky top-0 z-20 shadow-xs">
-                    <tr className="bg-surface-muted text-ink-subtle font-bold uppercase tracking-wider text-[11px] border-b border-border">
-                      <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">Bill#</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">Retailer</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">Worker</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-right py-3 px-3">Total</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-right py-3 px-3">Paid</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-right py-3 px-3">Udhari</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-center py-3 px-3">Mode</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-center py-3 px-3">Status</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">Date</th>
-                      <th className="sticky top-0 z-20 bg-surface-muted py-3 px-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border bg-surface-card">
-                    {filteredHistoryBills.map((bill) => (
-                      <ExpandableBillRow
-                        key={bill.id}
-                        bill={bill}
-                        showRetailer={true}
-                        showWorker={true}
-                        colSpan={10}
-                        isExpanded={selectedBillForDetails === bill.id}
-                        onToggleExpand={() =>
-                          setSelectedBillForDetails((prev) => (prev === bill.id ? null : bill.id))
-                        }
-                        onPaymentSuccess={async () => {
-                          await Promise.all([loadHistoryBills(), store.fetchInitialData()]);
-                        }}
-                        viewMode="admin-bills"
-                      />
-                    ))}
-                  </tbody>
-                </table>
-                {filteredHistoryBills.length === 0 && (
-                  <p className="text-center text-ink-muted py-12 text-sm">
-                    {historyBillsLoading ? 'Loading bills...' : 'No bills found'}
-                  </p>
-                )}
+              <div className="space-y-2">
+                <div className="flex items-center justify-end gap-2">
+                  <span className="text-[11px] text-ink-subtle hidden sm:inline font-medium">
+                    (drag headers to reorder, click to sort)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsColumnManagerOpen(true)}
+                    className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-ink font-semibold px-2.5 py-1 rounded-control bg-surface-muted hover:bg-border/40 border border-border transition-colors cursor-pointer"
+                    title="Manage table columns"
+                  >
+                    <SlidersHorizontal size={12} />
+                    <span>Columns</span>
+                  </button>
+
+                  {isCustomOrder && (
+                    <button
+                      type="button"
+                      onClick={resetColumns}
+                      className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink font-semibold px-2 py-1 rounded-control hover:bg-surface-muted transition-colors cursor-pointer"
+                      title="Reset column order to default"
+                    >
+                      <RotateCcw size={12} />
+                      <span className="hidden sm:inline">Reset</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="overflow-auto max-h-[calc(100vh-270px)] border border-border rounded-card shadow-xs">
+                  <table className="w-full text-xs min-w-[540px]">
+                    <thead className="sticky top-0 z-20 shadow-xs">
+                      <tr className="bg-surface-muted text-ink-subtle font-bold uppercase tracking-wider text-[11px] border-b border-border">
+                        {columns.map((col) => (
+                          <ReorderableTh
+                            key={col.id}
+                            column={col}
+                            isDragging={draggedColumnId === col.id}
+                            isDragOver={dragOverColumnId === col.id}
+                            dropPosition={dropPosition}
+                            sortField={sortField}
+                            sortDirection={sortDirection}
+                            onSort={handleSort}
+                            onDragStart={handleDragStart}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                            onDragEnd={handleDragEnd}
+                            onTouchStart={handleTouchStart}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
+                          />
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border bg-surface-card">
+                      {sortedHistoryBills.map((bill) => (
+                        <ExpandableBillRow
+                          key={bill.id}
+                          bill={bill}
+                          showRetailer={true}
+                          showWorker={true}
+                          colSpan={columns.length}
+                          columnOrder={columnIdsOrder}
+                          isExpanded={selectedBillForDetails === bill.id}
+                          onToggleExpand={() =>
+                            setSelectedBillForDetails((prev) => (prev === bill.id ? null : bill.id))
+                          }
+                          onPaymentSuccess={async () => {
+                            await Promise.all([loadHistoryBills(), store.fetchInitialData()]);
+                          }}
+                          viewMode="admin-bills"
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                  {sortedHistoryBills.length === 0 && (
+                    <p className="text-center text-ink-muted py-12 text-sm">
+                      {historyBillsLoading ? 'Loading bills...' : 'No bills found'}
+                    </p>
+                  )}
+                </div>
               </div>
             </Card>
           </div>
@@ -1623,6 +1796,16 @@ ${otherPendingText}Thank you for your business!
             </div>
           </div>
         )}
+
+        {/* Bill History Column Manager Modal (Mobile / Accessibility) */}
+        <ColumnManagerModal
+          isOpen={isColumnManagerOpen}
+          onClose={() => setIsColumnManagerOpen(false)}
+          columns={columns}
+          moveColumn={moveColumn}
+          resetColumns={resetColumns}
+          isCustomOrder={isCustomOrder}
+        />
       </PageContainer>
     </Layout>
   );
