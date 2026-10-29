@@ -30,6 +30,17 @@ const DEFAULT_SALES_BILL_COLUMNS: ColumnConfig<SalesBillColumnId>[] = [
   { id: 'actions', label: 'Actions', align: 'center', sortable: false, reorderable: false, minWidth: '70px' },
 ];
 
+type SalesRgbColumnId = 'date' | 'shop' | 'rgbItem' | 'crates' | 'soldBy' | 'billLink';
+
+const DEFAULT_SALES_RGB_COLUMNS: ColumnConfig<SalesRgbColumnId>[] = [
+  { id: 'date', label: 'Date', align: 'left', sortable: true, minWidth: '130px' },
+  { id: 'shop', label: 'Retailer', align: 'left', sortable: true, minWidth: '130px' },
+  { id: 'rgbItem', label: 'RGB Item', align: 'left', sortable: true, minWidth: '120px' },
+  { id: 'crates', label: 'Crate Exchange Activity', align: 'center', sortable: true, minWidth: '170px' },
+  { id: 'soldBy', label: 'Worker', align: 'left', sortable: true, minWidth: '110px' },
+  { id: 'billLink', label: 'Bill Link', align: 'center', sortable: true, minWidth: '110px' },
+];
+
 interface CartItem extends BillItem {
   isEditingPrice?: boolean;
   editPrice?: string;
@@ -116,6 +127,30 @@ export const SalesPage: React.FC = () => {
   // RGB History tab (Full dataset loaded in single call)
   const [rgbHistory, setRgbHistory] = useState<RGBTransactionRecord[]>([]);
   const [rgbHistoryLoading, setRgbHistoryLoading] = useState(false);
+
+  // ── Column Reordering & Sorting Hook (RGB History) ──────────────────────────
+  const {
+    columns: rgbColumns,
+    sortField: rgbSortField,
+    sortDirection: rgbSortDirection,
+    draggedColumnId: rgbDraggedColumnId,
+    dragOverColumnId: rgbDragOverColumnId,
+    dropPosition: rgbDropPosition,
+    isCustomOrder: rgbIsCustomOrder,
+    handleSort: handleRgbSort,
+    handleDragStart: handleRgbDragStart,
+    handleDragOver: handleRgbDragOver,
+    handleDragLeave: handleRgbDragLeave,
+    handleDrop: handleRgbDrop,
+    handleDragEnd: handleRgbDragEnd,
+    handleTouchStart: handleRgbTouchStart,
+    handleTouchMove: handleRgbTouchMove,
+    handleTouchEnd: handleRgbTouchEnd,
+    resetColumns: resetRgbColumns,
+  } = useReorderableColumns<SalesRgbColumnId>({
+    storageKey: 'pos_sales_rgb_history_table_columns_order',
+    defaultColumns: DEFAULT_SALES_RGB_COLUMNS,
+  });
 
   // Add Retailer Modal
   const [showAddRetailerModal, setShowAddRetailerModal] = useState(false);
@@ -266,6 +301,77 @@ export const SalesPage: React.FC = () => {
 
     return groups;
   }, [rgbHistory, historySearchTerm, historyDateFilter]);
+
+  // ── Sort RGB History (decorate-sort-undecorate) ─────────────────────────────
+  const sortedWorkerRgbHistory = useMemo(() => {
+    if (!rgbSortField || !rgbSortDirection) return groupedWorkerRgbHistory;
+
+    type GroupType = (typeof groupedWorkerRgbHistory)[0];
+
+    const getSortValue = (item: GroupType): any => {
+      switch (rgbSortField) {
+        case 'date': {
+          const t = item.createdAt ? new Date(item.createdAt).getTime() : NaN;
+          return Number.isFinite(t) ? t : null;
+        }
+        case 'shop': {
+          const shop = (item.retailerName || '').trim();
+          return shop || null;
+        }
+        case 'rgbItem': {
+          const name = (item.itemName || '').trim();
+          return name || null;
+        }
+        case 'crates': {
+          const diff = Number(item.cratesGiven ?? NaN) - Number(item.cratesReturned ?? NaN);
+          return Number.isFinite(diff) ? diff : null;
+        }
+        case 'soldBy': {
+          const w = (item.workerName || '').trim();
+          return !w || w.toUpperCase() === 'N/A' ? null : w;
+        }
+        case 'billLink': {
+          return item.saleId ? 'linked' : null;
+        }
+        default:
+          return null;
+      }
+    };
+
+    const isInvalid = (v: any) => v === null || v === undefined || (typeof v === 'number' && !Number.isFinite(v));
+
+    const decorated = groupedWorkerRgbHistory.map((item) => ({
+      item,
+      val: getSortValue(item),
+    }));
+
+    decorated.sort((a, b) => {
+      const valA = a.val;
+      const valB = b.val;
+
+      if (isInvalid(valA)) {
+        if (isInvalid(valB)) return 0;
+        return 1;
+      }
+      if (isInvalid(valB)) {
+        return -1;
+      }
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        const cmp = valA.localeCompare(valB, undefined, {
+          sensitivity: 'base',
+        });
+        return rgbSortDirection === 'asc' ? cmp : -cmp;
+      }
+
+      if (valA < valB) return rgbSortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return rgbSortDirection === 'asc' ? 1 : -1;
+
+      return 0;
+    });
+
+    return decorated.map((d) => d.item);
+  }, [groupedWorkerRgbHistory, rgbSortField, rgbSortDirection]);
 
   // ── Cart-derived stock map (real-time, updates on every cart change) ──────────
   // Maps productId → quantity currently in cart (non-RGB items only)
@@ -1626,64 +1732,123 @@ ${otherPendingText}Thank you for your business!
               {rgbHistoryLoading ? (
                 <div className="py-12 text-center text-sm text-ink-muted">Loading RGB history...</div>
               ) : (
-                <div className="overflow-auto max-h-[calc(100vh-270px)] border border-border rounded-card shadow-xs">
-                  <table className="w-full text-xs min-w-[540px]">
-                    <thead className="sticky top-0 z-20 shadow-xs">
-                      <tr className="bg-surface-muted text-ink-subtle font-bold uppercase tracking-wider text-[11px] border-b border-border">
-                        <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">Date</th>
-                        <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">Retailer</th>
-                        <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">RGB Item</th>
-                        <th className="sticky top-0 z-20 bg-surface-muted text-center py-3 px-3">Crate Exchange Activity</th>
-                        <th className="sticky top-0 z-20 bg-surface-muted text-left py-3 px-3">Worker</th>
-                        <th className="sticky top-0 z-20 bg-surface-muted text-center py-3 px-3">Bill Link</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border bg-surface-card">
-                      {groupedWorkerRgbHistory.map((group) => (
-                        <tr key={group.key} className="hover:bg-surface-muted/50 transition-colors">
-                          <td className="py-2.5 px-3 text-ink-muted font-mono text-[11px]">
-                            {new Date(group.createdAt).toLocaleString('en-PK', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                            })}
-                          </td>
-                          <td className="py-2.5 px-3 font-semibold text-ink">{group.retailerName}</td>
-                          <td className="py-2.5 px-3 font-bold text-ink">{group.itemName}</td>
-                          <td className="py-2.5 px-3 text-center">
-                            <div className="inline-flex items-center gap-1.5 flex-wrap justify-center">
-                              {group.cratesGiven > 0 && (
-                                <span className="px-2 py-0.5 rounded-control text-xs font-semibold bg-surface-muted text-ink border border-border">
-                                  Given ↑ <Figure>{group.cratesGiven}</Figure>
-                                </span>
-                              )}
-                              {group.cratesReturned > 0 && (
-                                <span className="px-2 py-0.5 rounded-control text-xs font-semibold bg-surface-muted text-ink border border-border">
-                                  Returned ↓ <Figure>{group.cratesReturned}</Figure>
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-3 text-ink-muted">{group.workerName || 'N/A'}</td>
-                          <td className="py-2.5 px-3 text-center">
-                            {group.saleId ? (
-                              <span className="px-2 py-0.5 bg-info-50 text-info-500 font-mono rounded-control text-[11px] border border-info-500/30 font-semibold">
-                                Linked to Sale
-                              </span>
-                            ) : (
-                              <span className="text-ink-subtle font-normal">Standalone</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {groupedWorkerRgbHistory.length === 0 && (
-                    <p className="text-center text-ink-muted py-12 text-sm">No RGB activity recorded yet</p>
+                <div className="space-y-2">
+                  {rgbIsCustomOrder && (
+                    <div className="flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={resetRgbColumns}
+                        className="text-xs text-ink-muted hover:text-ink hover:underline font-medium transition-colors cursor-pointer"
+                        title="Reset column order to default"
+                      >
+                        Reset order
+                      </button>
+                    </div>
                   )}
+
+                  <div className="overflow-auto max-h-[calc(100vh-270px)] border border-border rounded-card shadow-xs">
+                    <table className="w-full text-xs min-w-[540px]">
+                      <thead className="sticky top-0 z-20 shadow-xs">
+                        <tr className="bg-surface-muted text-ink-subtle font-bold uppercase tracking-wider text-[11px] border-b border-border">
+                          {rgbColumns.map((col) => (
+                            <ReorderableTh
+                              key={col.id}
+                              column={col}
+                              isDragging={rgbDraggedColumnId === col.id}
+                              isDragOver={rgbDragOverColumnId === col.id}
+                              dropPosition={rgbDropPosition}
+                              sortField={rgbSortField}
+                              sortDirection={rgbSortDirection}
+                              onSort={handleRgbSort}
+                              onDragStart={handleRgbDragStart}
+                              onDragOver={handleRgbDragOver}
+                              onDragLeave={handleRgbDragLeave}
+                              onDrop={handleRgbDrop}
+                              onDragEnd={handleRgbDragEnd}
+                              onTouchStart={handleRgbTouchStart}
+                              onTouchMove={handleRgbTouchMove}
+                              onTouchEnd={handleRgbTouchEnd}
+                            />
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border bg-surface-card">
+                        {sortedWorkerRgbHistory.map((group) => (
+                          <tr key={group.key} className="hover:bg-surface-muted/50 transition-colors">
+                            {rgbColumns.map((col) => {
+                              switch (col.id) {
+                                case 'date':
+                                  return (
+                                    <td key={col.id} className="py-2.5 px-3 text-ink-muted font-mono text-[11px]">
+                                      {new Date(group.createdAt).toLocaleString('en-PK', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                        second: '2-digit',
+                                      })}
+                                    </td>
+                                  );
+                                case 'shop':
+                                  return (
+                                    <td key={col.id} className="py-2.5 px-3 font-semibold text-ink">
+                                      {group.retailerName}
+                                    </td>
+                                  );
+                                case 'rgbItem':
+                                  return (
+                                    <td key={col.id} className="py-2.5 px-3 font-bold text-ink">
+                                      {group.itemName}
+                                    </td>
+                                  );
+                                case 'crates':
+                                  return (
+                                    <td key={col.id} className="py-2.5 px-3 text-center">
+                                      <div className="inline-flex items-center gap-1.5 flex-wrap justify-center">
+                                        {group.cratesGiven > 0 && (
+                                          <span className="px-2 py-0.5 rounded-control text-xs font-semibold bg-surface-muted text-ink border border-border">
+                                            Given ↑ <Figure>{group.cratesGiven}</Figure>
+                                          </span>
+                                        )}
+                                        {group.cratesReturned > 0 && (
+                                          <span className="px-2 py-0.5 rounded-control text-xs font-semibold bg-surface-muted text-ink border border-border">
+                                            Returned ↓ <Figure>{group.cratesReturned}</Figure>
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                  );
+                                case 'soldBy':
+                                  return (
+                                    <td key={col.id} className="py-2.5 px-3 text-ink-muted">
+                                      {group.workerName || 'N/A'}
+                                    </td>
+                                  );
+                                case 'billLink':
+                                  return (
+                                    <td key={col.id} className="py-2.5 px-3 text-center">
+                                      {group.saleId ? (
+                                        <span className="px-2 py-0.5 bg-info-50 text-info-500 font-mono rounded-control text-[11px] border border-info-500/30 font-semibold">
+                                          Linked to Sale
+                                        </span>
+                                      ) : (
+                                        <span className="text-ink-subtle font-normal">Standalone</span>
+                                      )}
+                                    </td>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {groupedWorkerRgbHistory.length === 0 && (
+                      <p className="text-center text-ink-muted py-12 text-sm">No RGB activity recorded yet</p>
+                    )}
+                  </div>
                 </div>
               )}
             </Card>
